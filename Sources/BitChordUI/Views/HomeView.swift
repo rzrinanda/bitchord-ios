@@ -1,0 +1,159 @@
+import SwiftUI
+import BitChordCore
+
+public struct HomeView: View {
+    @ObservedObject var engine = AudioPlayerEngine.shared
+    
+    // Sample featured tracks to showcase initial experience
+    private let featuredTracks: [Track] = [
+        Track(
+            id: "sample_1",
+            title: "Starboy",
+            artist: "The Weeknd ft. Daft Punk",
+            album: "Starboy",
+            duration: 230,
+            isLossless: true,
+            sampleRate: 96000,
+            bitDepth: 24
+        ),
+        Track(
+            id: "sample_2",
+            title: "Blinding Lights",
+            artist: "The Weeknd",
+            album: "After Hours",
+            duration: 200,
+            isLossless: true,
+            sampleRate: 48000,
+            bitDepth: 24
+        ),
+        Track(
+            id: "sample_3",
+            title: "Levitating",
+            artist: "Dua Lipa",
+            album: "Future Nostalgia",
+            duration: 203,
+            isLossless: false
+        ),
+        Track(
+            id: "sample_4",
+            title: "Get Lucky",
+            artist: "Daft Punk ft. Pharrell Williams",
+            album: "Random Access Memories",
+            duration: 248,
+            isLossless: true,
+            sampleRate: 192000,
+            bitDepth: 24
+        )
+    ]
+    
+    public init() {}
+    
+    public var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 26) {
+                    // Hero Featured Card
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("FEATURED PLAYLIST")
+                            .font(.caption)
+                            .fontWeight(.bold)
+                            .foregroundColor(.red)
+                        
+                        Text("Today's Hi-Res Hits")
+                            .font(.system(size: 26, weight: .bold))
+                            .foregroundColor(.primary)
+                        
+                        Text("Bit-perfect lossless streaming with synchronized dynamic lyrics.")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.horizontal)
+                    
+                    // Quick Picks Horizontal Carousel
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Quick Picks")
+                            .font(.title2.bold())
+                            .padding(.horizontal)
+                        
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 16) {
+                                ForEach(featuredTracks) { track in
+                                    TrackCardView(track: track) {
+                                        engine.setQueue(featuredTracks, startIndex: featuredTracks.firstIndex(of: track) ?? 0)
+                                    }
+                                }
+                            }
+                            .padding(.horizontal)
+                        }
+                    }
+                    
+                    // Audio Engine Features Banner
+                    HStack(spacing: 16) {
+                        Image(systemName: "waveform.path.ecg")
+                            .font(.system(size: 32))
+                            .foregroundColor(.red)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Bit-Perfect & Lossless")
+                                .font(.headline)
+                            Text("Automatic DAC sample-rate switching and dynamic lyrics caching enabled.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.secondary.opacity(0.1))
+                    .cornerRadius(14)
+                    .padding(.horizontal)
+                }
+                .padding(.vertical)
+                .padding(.bottom, 80) // Spacing for MiniPlayer
+            }
+            .navigationTitle("Listen Now")
+        }
+    }
+}
+
+public struct TrackCardView: View {
+    public let track: Track
+    public var onPlay: () -> Void
+    
+    public var body: some View {
+        Button(action: onPlay) {
+            VStack(alignment: .leading, spacing: 8) {
+                ZStack(alignment: .bottomTrailing) {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(LinearGradient(colors: [.indigo, .purple], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 150, height: 150)
+                    
+                    Image(systemName: "music.note")
+                        .font(.system(size: 40))
+                        .foregroundColor(.white.opacity(0.8))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    
+                    if track.isLossless {
+                        Text(track.audioBadge)
+                            .font(.system(size: 8, weight: .bold))
+                            .padding(4)
+                            .background(.ultraThinMaterial)
+                            .cornerRadius(4)
+                            .padding(6)
+                    }
+                }
+                .frame(width: 150, height: 150)
+                
+                Text(track.title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .lineLimit(1)
+                    .foregroundColor(.primary)
+                
+                Text(track.artist)
+                    .font(.system(size: 12))
+                    .lineLimit(1)
+                    .foregroundColor(.secondary)
+            }
+            .frame(width: 150)
+        }
+        .buttonStyle(.plain)
+    }
+}
