@@ -22,7 +22,7 @@ public actor SpotifyImporter {
         }
         
         let type = pathComponents[1] // "track" or "playlist"
-        let spotifyId = pathComponents[2]
+        _ = pathComponents[2]
         
         // Use Spotify open oEmbed endpoint to retrieve title and artist metadata without OAuth
         let oEmbedURL = URL(string: "https://open.spotify.com/oembed?url=\(url.absoluteString)")!

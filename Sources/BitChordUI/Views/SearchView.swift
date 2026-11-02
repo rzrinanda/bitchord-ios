@@ -12,17 +12,74 @@ public enum SearchFilter: String, CaseIterable, Identifiable {
 public struct SearchView: View {
     @ObservedObject var engine = AudioPlayerEngine.shared
     @ObservedObject var library = LibraryDatabase.shared
+    
     @State private var query: String = ""
     @State private var searchResults: [Track] = []
     @State private var isSearching: Bool = false
     @State private var selectedFilter: SearchFilter = .all
+    @State private var searchTask: Task<Void, Never>? = nil
+    
+    // Curated trending artist / genre tags
+    private let trendingTags = [
+        "The Weeknd", "Taylor Swift", "Coldplay", "Dua Lipa",
+        "Daft Punk", "Billie Eilish", "Bruno Mars", "Olivia Rodrigo",
+        "Post Malone", "Kendrick Lamar"
+    ]
+    
+    private let genreCards: [(title: String, colors: [Color])] = [
+        ("Pop Hits", [Color.pink, Color.purple]),
+        ("Hip-Hop & Rap", [Color.orange, Color.red]),
+        ("Rock & Alternative", [Color.blue, Color.indigo]),
+        ("Electronic & Dance", [Color.cyan, Color.blue]),
+        ("R&B & Soul", [Color.purple, Color.pink]),
+        ("Indie & Folk", [Color.green, Color.teal])
+    ]
     
     public init() {}
     
     public var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Category Filter Chips
+                // MARK: - Dedicated Search Bar (Always Visible)
+                HStack(spacing: 10) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.secondary)
+                        .font(.system(size: 16, weight: .medium))
+                    
+                    TextField("Search songs, artists, albums...", text: $query)
+                        .font(.system(size: 16))
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .submitLabel(.search)
+                        .onSubmit {
+                            performSearch()
+                        }
+                        .onChange(of: query) { newQuery in
+                            debounceSearch(newQuery)
+                        }
+                    
+                    if !query.isEmpty {
+                        Button {
+                            query = ""
+                            searchResults = []
+                            searchTask?.cancel()
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                                .font(.system(size: 16))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(Color.secondary.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .padding(.horizontal, 16)
+                .padding(.top, 4)
+                .padding(.bottom, 8)
+                
+                // MARK: - Category Filter Chips
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         ForEach(SearchFilter.allCases) { filter in
@@ -42,17 +99,100 @@ public struct SearchView: View {
                         }
                     }
                     .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
+                    .padding(.bottom, 8)
                 }
                 
+                Divider()
+                    .opacity(0.3)
+                
+                // MARK: - Search Content
                 if isSearching {
                     Spacer()
-                    ProgressView("Searching catalog...")
-                        .padding()
+                    VStack(spacing: 12) {
+                        ProgressView()
+                            .scaleEffect(1.2)
+                        Text("Searching music catalog...")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
                     Spacer()
+                } else if query.isEmpty && searchResults.isEmpty {
+                    // Empty Search Landing (Discovery / Trending)
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 22) {
+                            // Trending Tags
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("TRENDING SEARCHES")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundColor(.secondary)
+                                
+                                LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: 8)], spacing: 8) {
+                                    ForEach(trendingTags, id: \.self) { tag in
+                                        Button {
+                                            query = tag
+                                            performSearch()
+                                        } label: {
+                                            HStack(spacing: 6) {
+                                                Image(systemName: "chart.line.uptrend.xyaxis")
+                                                    .font(.system(size: 11))
+                                                    .foregroundColor(.red)
+                                                Text(tag)
+                                                    .font(.system(size: 13, weight: .medium))
+                                                    .foregroundColor(.primary)
+                                            }
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 8)
+                                            .background(Color.secondary.opacity(0.12))
+                                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.top, 16)
+                            
+                            // Browse Genres
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("BROWSE GENRES")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundColor(.secondary)
+                                
+                                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                                    ForEach(genreCards, id: \.title) { genre in
+                                        Button {
+                                            query = genre.title
+                                            performSearch()
+                                        } label: {
+                                            ZStack(alignment: .bottomLeading) {
+                                                LinearGradient(
+                                                    colors: genre.colors,
+                                                    startPoint: .topLeading,
+                                                    endPoint: .bottomTrailing
+                                                )
+                                                .frame(height: 75)
+                                                .cornerRadius(12)
+                                                
+                                                Text(genre.title)
+                                                    .font(.system(size: 15, weight: .bold))
+                                                    .foregroundColor(.white)
+                                                    .padding(12)
+                                            }
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 24)
+                        }
+                    }
                 } else if searchResults.isEmpty && !query.isEmpty {
+                    Spacer()
                     ContentUnavailableView.search(text: query)
+                    Spacer()
                 } else {
+                    // Results List
                     List {
                         ForEach(searchResults) { track in
                             Button {
@@ -82,19 +222,26 @@ public struct SearchView: View {
                                     
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(track.title)
-                                            .font(.body)
-                                            .foregroundColor(.primary)
+                                            .font(.system(size: 15, weight: .semibold))
+                                            .foregroundColor(engine.currentTrack?.id == track.id ? .red : .primary)
                                             .lineLimit(1)
                                         Text(track.artist)
-                                            .font(.subheadline)
+                                            .font(.system(size: 13))
                                             .foregroundColor(.secondary)
                                             .lineLimit(1)
                                     }
+                                    
                                     Spacer()
-                                    if track.isLossless {
+                                    
+                                    if engine.currentTrack?.id == track.id {
+                                        Image(systemName: "waveform")
+                                            .font(.system(size: 14, weight: .bold))
+                                            .foregroundColor(.red)
+                                    } else if track.isLossless {
                                         Text("LOSSLESS")
                                             .font(.system(size: 9, weight: .bold))
-                                            .padding(4)
+                                            .padding(.horizontal, 5)
+                                            .padding(.vertical, 3)
                                             .background(Color.secondary.opacity(0.15))
                                             .cornerRadius(4)
                                     }
@@ -126,23 +273,43 @@ public struct SearchView: View {
                 }
             }
             .navigationTitle("Search")
-            .searchable(text: $query, prompt: "Songs, Artists, Albums, Playlists")
-            .onSubmit(of: .search) {
-                performSearch()
+        }
+    }
+    
+    private func debounceSearch(_ text: String) {
+        searchTask?.cancel()
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            searchResults = []
+            return
+        }
+        searchTask = Task {
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            if !Task.isCancelled {
+                await MainActor.run {
+                    performSearch()
+                }
             }
         }
     }
     
     private func performSearch() {
-        guard !query.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
         isSearching = true
         Task {
             do {
-                self.searchResults = try await YTMusicClient.shared.search(query: query)
+                let results = try await YTMusicClient.shared.search(query: trimmed, filter: selectedFilter.rawValue)
+                await MainActor.run {
+                    self.searchResults = results
+                    self.isSearching = false
+                }
             } catch {
-                self.searchResults = []
+                await MainActor.run {
+                    self.searchResults = []
+                    self.isSearching = false
+                }
             }
-            self.isSearching = false
         }
     }
 }

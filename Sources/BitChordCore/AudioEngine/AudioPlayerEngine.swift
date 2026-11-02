@@ -30,6 +30,7 @@ public final class AudioPlayerEngine: ObservableObject {
     private var originalQueue: [Track] = []
     private var player: AVPlayer?
     private var timeObserverToken: Any?
+    private var playerItemObservation: NSKeyValueObservation?
     
     public init() {
         setupAudioSession()
@@ -115,15 +116,20 @@ public final class AudioPlayerEngine: ObservableObject {
         self.status = .loading
         
         if let directURL = track.streamURL {
-            startPlaying(url: directURL)
+            startPlaying(url: directURL, for: track)
             return
         }
         
-        // Resolve stream URL asynchronously from YouTube / Audio sources
+        // Resolve stream URL asynchronously from YouTube / Audio sources with multi-source fallback
         Task { @MainActor [weak self] in
             guard let self = self else { return }
             do {
-                let streamInfo = try await StreamExtractor.shared.extractAudioStream(trackId: track.id)
+                let streamInfo = try await StreamExtractor.shared.extractAudioStream(
+                    trackId: track.id,
+                    title: track.title,
+                    artist: track.artist,
+                    preferredQuality: .high
+                )
                 var updatedTrack = track
                 updatedTrack.streamURL = streamInfo.streamURL
                 
@@ -132,21 +138,47 @@ public final class AudioPlayerEngine: ObservableObject {
                     if index < self.queue.count {
                         self.queue[index] = updatedTrack
                     }
-                    self.startPlaying(url: streamInfo.streamURL)
+                    self.startPlaying(url: streamInfo.streamURL, for: updatedTrack)
                 }
             } catch {
                 print("[BitChord AudioEngine] Failed to resolve audio stream: \(error.localizedDescription)")
-                self.status = .error
+                self.attemptStreamFallback(for: track)
             }
         }
     }
     
-    private func startPlaying(url: URL) {
+    private func startPlaying(url: URL, for track: Track) {
+        playerItemObservation?.invalidate()
+        playerItemObservation = nil
+        
         let playerItem = AVPlayerItem(url: url)
         if player == nil {
             player = AVPlayer(playerItem: playerItem)
         } else {
             player?.replaceCurrentItem(with: playerItem)
+        }
+        
+        player?.automaticallyWaitsToMinimizeStalling = true
+        
+        // Observe buffer and playback readiness
+        playerItemObservation = playerItem.observe(\.status, options: [.new, .initial]) { [weak self] item, _ in
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                switch item.status {
+                case .readyToPlay:
+                    self.status = .playing
+                    self.player?.rate = self.playbackSpeed
+                    self.player?.play()
+                    self.updateNowPlayingInfo()
+                case .failed:
+                    print("[BitChord AudioEngine] AVPlayerItem failed: \(String(describing: item.error))")
+                    self.attemptStreamFallback(for: track)
+                case .unknown:
+                    break
+                @unknown default:
+                    break
+                }
+            }
         }
         
         NotificationCenter.default.addObserver(
@@ -164,6 +196,30 @@ public final class AudioPlayerEngine: ObservableObject {
         player?.play()
         self.status = .playing
         updateNowPlayingInfo()
+    }
+    
+    private func attemptStreamFallback(for track: Track) {
+        Task { @MainActor [weak self] in
+            guard let self = self else { return }
+            guard self.currentTrack?.id == track.id else { return }
+            
+            // Search audio catalog for reliable stream fallback
+            let query = "\(track.title) \(track.artist)"
+            if let results = await YTMusicClient.shared.searchViaITunesDirect(query: query),
+               let firstWithStream = results.first(where: { $0.streamURL != nil }),
+               let fallbackURL = firstWithStream.streamURL {
+                print("[BitChord AudioEngine] Successfully recovered with fallback audio stream: \(fallbackURL)")
+                var recoveredTrack = track
+                recoveredTrack.streamURL = fallbackURL
+                self.currentTrack = recoveredTrack
+                if self.queueIndex < self.queue.count {
+                    self.queue[self.queueIndex] = recoveredTrack
+                }
+                self.startPlaying(url: fallbackURL, for: recoveredTrack)
+            } else {
+                self.status = .error
+            }
+        }
     }
     
     public func togglePlayPause() {
@@ -313,7 +369,7 @@ public final class AudioPlayerEngine: ObservableObject {
             return
         }
         
-        var info: [String: Any] = [
+        let info: [String: Any] = [
             MPMediaItemPropertyTitle: track.title,
             MPMediaItemPropertyArtist: track.artist,
             MPMediaItemPropertyAlbumTitle: track.album,
