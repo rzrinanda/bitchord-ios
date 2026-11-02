@@ -41,6 +41,9 @@
 		BC000031BLD000000000000 /* Sources/BitChordUI/Views/SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000031FILE000000000000 /* Sources/BitChordUI/Views/SearchView.swift */; };
 		BC000032BLD000000000000 /* Sources/BitChordUI/Views/SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000032FILE000000000000 /* Sources/BitChordUI/Views/SettingsView.swift */; };
 		BC000033BLD000000000000 /* Sources/BitChordUI/Views/SyncedLyricsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000033FILE000000000000 /* Sources/BitChordUI/Views/SyncedLyricsView.swift */; };
+		BC000034BLD000000000000 /* Sources/BitChordCore/Services/AccountManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000034FILE000000000000 /* Sources/BitChordCore/Services/AccountManager.swift */; };
+		BC000035BLD000000000000 /* Sources/BitChordUI/Components/AccountMenuSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000035FILE000000000000 /* Sources/BitChordUI/Components/AccountMenuSheet.swift */; };
+		BC000036BLD000000000000 /* Sources/BitChordUI/Views/ExploreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000036FILE000000000000 /* Sources/BitChordUI/Views/ExploreView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -80,6 +83,9 @@
 		BC000031FILE000000000000 /* Sources/BitChordUI/Views/SearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordUI/Views/SearchView.swift; sourceTree = SOURCE_ROOT; };
 		BC000032FILE000000000000 /* Sources/BitChordUI/Views/SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordUI/Views/SettingsView.swift; sourceTree = SOURCE_ROOT; };
 		BC000033FILE000000000000 /* Sources/BitChordUI/Views/SyncedLyricsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordUI/Views/SyncedLyricsView.swift; sourceTree = SOURCE_ROOT; };
+		BC000034FILE000000000000 /* Sources/BitChordCore/Services/AccountManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordCore/Services/AccountManager.swift; sourceTree = SOURCE_ROOT; };
+		BC000035FILE000000000000 /* Sources/BitChordUI/Components/AccountMenuSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordUI/Components/AccountMenuSheet.swift; sourceTree = SOURCE_ROOT; };
+		BC000036FILE000000000000 /* Sources/BitChordUI/Views/ExploreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordUI/Views/ExploreView.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -129,6 +135,9 @@
 				BC000031FILE000000000000 /* Sources/BitChordUI/Views/SearchView.swift */,
 				BC000032FILE000000000000 /* Sources/BitChordUI/Views/SettingsView.swift */,
 				BC000033FILE000000000000 /* Sources/BitChordUI/Views/SyncedLyricsView.swift */,
+				BC000034FILE000000000000 /* Sources/BitChordCore/Services/AccountManager.swift */,
+				BC000035FILE000000000000 /* Sources/BitChordUI/Components/AccountMenuSheet.swift */,
+				BC000036FILE000000000000 /* Sources/BitChordUI/Views/ExploreView.swift */,
 				BC000000ASSETS000000000001 /* Assets.xcassets */,
 				BC000000PLIST000000000001 /* BitChord-Info.plist */,
 				BC000000GRP0000000000002 /* Products */,
@@ -245,6 +254,9 @@
 				BC000031BLD000000000000 /* Sources/BitChordUI/Views/SearchView.swift in Sources */,
 				BC000032BLD000000000000 /* Sources/BitChordUI/Views/SettingsView.swift in Sources */,
 				BC000033BLD000000000000 /* Sources/BitChordUI/Views/SyncedLyricsView.swift in Sources */,
+				BC000034BLD000000000000 /* Sources/BitChordCore/Services/AccountManager.swift in Sources */,
+				BC000035BLD000000000000 /* Sources/BitChordUI/Components/AccountMenuSheet.swift in Sources */,
+				BC000036BLD000000000000 /* Sources/BitChordUI/Views/ExploreView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

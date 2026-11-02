@@ -1,10 +1,9 @@
 import SwiftUI
 
-public enum SearchFilter: String, CaseIterable, Identifiable {
-    case all = "All"
-    case songs = "Songs"
-    case albums = "Albums"
-    case artists = "Artists"
+public enum MusicSource: String, CaseIterable, Identifiable {
+    case youtube = "YouTube"
+    case library = "Library"
+    case addons = "Addons"
     
     public var id: String { rawValue }
 }
@@ -12,179 +11,199 @@ public enum SearchFilter: String, CaseIterable, Identifiable {
 public struct SearchView: View {
     @ObservedObject var engine = AudioPlayerEngine.shared
     @ObservedObject var library = LibraryDatabase.shared
+    @ObservedObject var accountManager = AccountManager.shared
     
     @State private var query: String = ""
     @State private var searchResults: [Track] = []
     @State private var isSearching: Bool = false
-    @State private var selectedFilter: SearchFilter = .all
+    @State private var selectedSource: MusicSource = .youtube
     @State private var searchTask: Task<Void, Never>? = nil
-    
-    // Curated trending artist / genre tags
-    private let trendingTags = [
-        "The Weeknd", "Taylor Swift", "Coldplay", "Dua Lipa",
-        "Daft Punk", "Billie Eilish", "Bruno Mars", "Olivia Rodrigo",
-        "Post Malone", "Kendrick Lamar"
-    ]
-    
-    private let genreCards: [(title: String, colors: [Color])] = [
-        ("Pop Hits", [Color.pink, Color.purple]),
-        ("Hip-Hop & Rap", [Color.orange, Color.red]),
-        ("Rock & Alternative", [Color.blue, Color.indigo]),
-        ("Electronic & Dance", [Color.cyan, Color.blue]),
-        ("R&B & Soul", [Color.purple, Color.pink]),
-        ("Indie & Folk", [Color.green, Color.teal])
-    ]
+    @State private var showingAccountMenu: Bool = false
     
     public init() {}
     
     public var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // MARK: - Dedicated Search Bar (Always Visible)
-                HStack(spacing: 10) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundColor(.secondary)
-                        .font(.system(size: 16, weight: .medium))
-                    
-                    TextField("Search songs, artists, albums...", text: $query)
-                        .font(.system(size: 16))
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                        .submitLabel(.search)
-                        .onSubmit {
-                            performSearch()
-                        }
-                        .onChange(of: query) { newQuery in
-                            debounceSearch(newQuery)
-                        }
-                    
-                    if !query.isEmpty {
-                        Button {
-                            query = ""
-                            searchResults = []
-                            searchTask?.cancel()
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.secondary)
-                                .font(.system(size: 16))
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(Color.secondary.opacity(0.12))
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .padding(.horizontal, 16)
-                .padding(.top, 4)
-                .padding(.bottom, 8)
-                
-                // MARK: - Category Filter Chips
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(SearchFilter.allCases) { filter in
-                            Button {
-                                selectedFilter = filter
+                // MARK: - Search Bar & Account Avatar (Matching Car HU Photo 2)
+                HStack(spacing: 12) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundColor(.secondary)
+                            .font(.system(size: 16, weight: .medium))
+                        
+                        TextField("Artists, Songs, Lyrics and More", text: $query)
+                            .font(.system(size: 15))
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                            .submitLabel(.search)
+                            .onSubmit {
                                 performSearch()
+                            }
+                            .onChange(of: query) { newQuery in
+                                debounceSearch(newQuery)
+                            }
+                        
+                        if !query.isEmpty {
+                            Button {
+                                query = ""
+                                searchResults = []
+                                searchTask?.cancel()
                             } label: {
-                                Text(filter.rawValue)
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .padding(.horizontal, 14)
-                                    .padding(.vertical, 7)
-                                    .background(selectedFilter == filter ? Color.red : Color.secondary.opacity(0.15))
-                                    .foregroundColor(selectedFilter == filter ? .white : .primary)
-                                    .clipShape(Capsule())
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.secondary)
+                                    .font(.system(size: 16))
                             }
                             .buttonStyle(.plain)
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 8)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(Color.secondary.opacity(0.12))
+                    .clipShape(Capsule())
+                    
+                    // Avatar Button
+                    Button {
+                        showingAccountMenu = true
+                    } label: {
+                        ZStack {
+                            Circle()
+                                .fill(Color.cyan.opacity(0.85))
+                                .frame(width: 34, height: 34)
+                            Text(accountManager.activeAccount.avatarLetter)
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(.white)
+                        }
+                    }
+                    .buttonStyle(.plain)
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 10)
                 
-                Divider()
-                    .opacity(0.3)
+                // MARK: - Source Selector Pills (YouTube | Library | Addons)
+                HStack(spacing: 0) {
+                    ForEach(MusicSource.allCases) { source in
+                        Button {
+                            selectedSource = source
+                            if !query.isEmpty {
+                                performSearch()
+                            }
+                        } label: {
+                            Text(source.rawValue)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(selectedSource == source ? .primary : .secondary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                                .background(
+                                    selectedSource == source
+                                        ? Color.secondary.opacity(0.2)
+                                        : Color.clear
+                                )
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(4)
+                .background(Color.secondary.opacity(0.08))
+                .clipShape(Capsule())
+                .padding(.horizontal, 16)
+                .padding(.bottom, 12)
                 
-                // MARK: - Search Content
+                // MARK: - Content
                 if isSearching {
                     Spacer()
                     VStack(spacing: 12) {
                         ProgressView()
                             .scaleEffect(1.2)
-                        Text("Searching music catalog...")
+                        Text("Searching \(selectedSource.rawValue)...")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                     }
                     Spacer()
                 } else if query.isEmpty && searchResults.isEmpty {
-                    // Empty Search Landing (Discovery / Trending)
+                    // Recent Searches Section (Matching Car HU Photo 2)
                     ScrollView {
-                        VStack(alignment: .leading, spacing: 22) {
-                            // Trending Tags
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text("TRENDING SEARCHES")
-                                    .font(.system(size: 12, weight: .bold))
-                                    .foregroundColor(.secondary)
-                                
-                                LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: 8)], spacing: 8) {
-                                    ForEach(trendingTags, id: \.self) { tag in
-                                        Button {
-                                            query = tag
-                                            performSearch()
-                                        } label: {
-                                            HStack(spacing: 6) {
-                                                Image(systemName: "chart.line.uptrend.xyaxis")
-                                                    .font(.system(size: 11))
-                                                    .foregroundColor(.red)
-                                                Text(tag)
-                                                    .font(.system(size: 13, weight: .medium))
-                                                    .foregroundColor(.primary)
-                                            }
-                                            .padding(.horizontal, 12)
-                                            .padding(.vertical, 8)
-                                            .background(Color.secondary.opacity(0.12))
-                                            .clipShape(RoundedRectangle(cornerRadius: 10))
-                                        }
-                                        .buttonStyle(.plain)
+                        VStack(alignment: .leading, spacing: 16) {
+                            HStack {
+                                Text("Recent searches")
+                                    .font(.system(size: 17, weight: .bold))
+                                    .foregroundColor(.primary)
+                                Spacer()
+                                if !library.recentSearches.isEmpty {
+                                    Button("Clear") {
+                                        library.clearRecentSearches()
                                     }
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(.secondary)
                                 }
                             }
                             .padding(.horizontal, 16)
-                            .padding(.top, 16)
+                            .padding(.top, 8)
                             
-                            // Browse Genres
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text("BROWSE GENRES")
-                                    .font(.system(size: 12, weight: .bold))
+                            if library.recentSearches.isEmpty {
+                                Text("No recent searches")
+                                    .font(.subheadline)
                                     .foregroundColor(.secondary)
-                                
-                                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                                    ForEach(genreCards, id: \.title) { genre in
-                                        Button {
-                                            query = genre.title
-                                            performSearch()
-                                        } label: {
-                                            ZStack(alignment: .bottomLeading) {
-                                                LinearGradient(
-                                                    colors: genre.colors,
-                                                    startPoint: .topLeading,
-                                                    endPoint: .bottomTrailing
-                                                )
-                                                .frame(height: 75)
-                                                .cornerRadius(12)
-                                                
-                                                Text(genre.title)
-                                                    .font(.system(size: 15, weight: .bold))
-                                                    .foregroundColor(.white)
-                                                    .padding(12)
+                                    .padding(.horizontal, 16)
+                                    .padding(.top, 12)
+                            } else {
+                                VStack(spacing: 4) {
+                                    ForEach(library.recentSearches) { track in
+                                        HStack(spacing: 12) {
+                                            Button {
+                                                engine.setQueue([track])
+                                                library.recordPlayback(track: track)
+                                            } label: {
+                                                HStack(spacing: 12) {
+                                                    if let artURL = track.artworkURL {
+                                                        AsyncImage(url: artURL) { phase in
+                                                            if let img = phase.image {
+                                                                img.resizable().aspectRatio(contentMode: .fill)
+                                                            } else {
+                                                                Color.gray.opacity(0.3)
+                                                            }
+                                                        }
+                                                        .frame(width: 44, height: 44)
+                                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                                    } else {
+                                                        BitChordLogoView(size: 44, cornerRadius: 8)
+                                                    }
+                                                    
+                                                    VStack(alignment: .leading, spacing: 2) {
+                                                        Text(track.title)
+                                                            .font(.system(size: 15, weight: .semibold))
+                                                            .foregroundColor(.primary)
+                                                            .lineLimit(1)
+                                                        Text("Lagu • \(track.artist)")
+                                                            .font(.system(size: 12))
+                                                            .foregroundColor(.secondary)
+                                                            .lineLimit(1)
+                                                    }
+                                                    Spacer()
+                                                }
                                             }
+                                            .buttonStyle(.plain)
+                                            
+                                            // Delete search item button 'x'
+                                            Button {
+                                                library.removeRecentSearch(trackId: track.id)
+                                            } label: {
+                                                Image(systemName: "xmark")
+                                                    .font(.system(size: 14, weight: .semibold))
+                                                    .foregroundColor(.secondary)
+                                                    .padding(8)
+                                            }
+                                            .buttonStyle(.plain)
                                         }
-                                        .buttonStyle(.plain)
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 6)
                                     }
                                 }
                             }
-                            .padding(.horizontal, 16)
-                            .padding(.bottom, 24)
+                            
+                            Spacer(minLength: 80)
                         }
                     }
                 } else if searchResults.isEmpty && !query.isEmpty {
@@ -192,12 +211,13 @@ public struct SearchView: View {
                     ContentUnavailableView.search(text: query)
                     Spacer()
                 } else {
-                    // Results List
+                    // Active Search Results
                     List {
                         ForEach(searchResults) { track in
                             Button {
                                 engine.setQueue([track])
                                 library.recordPlayback(track: track)
+                                library.addRecentSearch(track: track)
                             } label: {
                                 HStack(spacing: 12) {
                                     if let artURL = track.artworkURL {
@@ -211,13 +231,7 @@ public struct SearchView: View {
                                         .frame(width: 48, height: 48)
                                         .clipShape(RoundedRectangle(cornerRadius: 8))
                                     } else {
-                                        ZStack {
-                                            RoundedRectangle(cornerRadius: 8)
-                                                .fill(Color.gray.opacity(0.2))
-                                            Image(systemName: "music.note")
-                                                .foregroundColor(.secondary)
-                                        }
-                                        .frame(width: 48, height: 48)
+                                        BitChordLogoView(size: 48, cornerRadius: 8)
                                     }
                                     
                                     VStack(alignment: .leading, spacing: 2) {
@@ -273,6 +287,10 @@ public struct SearchView: View {
                 }
             }
             .navigationTitle("Search")
+            .navigationBarTitleDisplayMode(.inline)
+            .sheet(isPresented: $showingAccountMenu) {
+                AccountMenuSheet()
+            }
         }
     }
     
@@ -296,10 +314,20 @@ public struct SearchView: View {
     private func performSearch() {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        
+        if selectedSource == .library {
+            // Search local library
+            let lower = trimmed.lowercased()
+            self.searchResults = library.likedTracks.filter {
+                $0.title.lowercased().contains(lower) || $0.artist.lowercased().contains(lower)
+            }
+            return
+        }
+        
         isSearching = true
         Task {
             do {
-                let results = try await YTMusicClient.shared.search(query: trimmed, filter: selectedFilter.rawValue)
+                let results = try await YTMusicClient.shared.search(query: trimmed)
                 await MainActor.run {
                     self.searchResults = results
                     self.isSearching = false

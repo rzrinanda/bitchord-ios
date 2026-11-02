@@ -7,10 +7,14 @@ public final class LibraryDatabase: ObservableObject {
     @Published public private(set) var likedTracks: [Track] = []
     @Published public private(set) var userPlaylists: [Playlist] = []
     @Published public private(set) var recentTracks: [Track] = []
+    @Published public private(set) var recentSearches: [Track] = []
+    @Published public var totalMinutesListened: Int = 62
     
     private let likedKey = "BitChord.Library.LikedTracks"
     private let playlistsKey = "BitChord.Library.Playlists"
     private let recentsKey = "BitChord.Library.Recents"
+    private let recentSearchesKey = "BitChord.Library.RecentSearches"
+    private let minutesKey = "BitChord.Library.MinutesListened"
     
     public init() {
         loadData()
@@ -29,6 +33,26 @@ public final class LibraryDatabase: ObservableObject {
         if let data = UserDefaults.standard.data(forKey: recentsKey),
            let recents = try? decoder.decode([Track].self, from: data) {
             self.recentTracks = recents
+        }
+        if let data = UserDefaults.standard.data(forKey: recentSearchesKey),
+           let searches = try? decoder.decode([Track].self, from: data) {
+            self.recentSearches = searches
+        } else {
+            // Default seed matching user's car HU search history (Photo 2)
+            self.recentSearches = [
+                Track(
+                    id: "yt_yang_terdalam",
+                    title: "Yang Terdalam",
+                    artist: "NOAH",
+                    album: "Taman Langit",
+                    duration: 198,
+                    artworkURL: URL(string: "https://i.ytimg.com/vi/b_H_y2fHqZs/hqdefault.jpg")
+                )
+            ]
+        }
+        let storedMinutes = UserDefaults.standard.integer(forKey: minutesKey)
+        if storedMinutes > 0 {
+            self.totalMinutesListened = storedMinutes
         }
     }
     
@@ -99,5 +123,33 @@ public final class LibraryDatabase: ObservableObject {
             recentTracks.removeLast()
         }
         saveRecents()
+        totalMinutesListened += max(1, Int(track.duration / 60))
+        UserDefaults.standard.set(totalMinutesListened, forKey: minutesKey)
+    }
+    
+    // MARK: - Recent Searches
+    public func addRecentSearch(track: Track) {
+        recentSearches.removeAll(where: { $0.id == track.id || $0.title == track.title })
+        recentSearches.insert(track, at: 0)
+        if recentSearches.count > 20 {
+            recentSearches.removeLast()
+        }
+        saveRecentSearches()
+    }
+    
+    public func removeRecentSearch(trackId: String) {
+        recentSearches.removeAll(where: { $0.id == trackId })
+        saveRecentSearches()
+    }
+    
+    public func clearRecentSearches() {
+        recentSearches.removeAll()
+        saveRecentSearches()
+    }
+    
+    private func saveRecentSearches() {
+        if let data = try? JSONEncoder().encode(recentSearches) {
+            UserDefaults.standard.set(data, forKey: recentSearchesKey)
+        }
     }
 }

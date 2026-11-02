@@ -3,88 +3,315 @@ import SwiftUI
 public struct LibraryView: View {
     @ObservedObject var engine = AudioPlayerEngine.shared
     @ObservedObject var library = LibraryDatabase.shared
+    @ObservedObject var accountManager = AccountManager.shared
     
     @State private var offlineLyricsCount: Int = 0
     @State private var offlineLyricsSize: String = ""
     @State private var downloadedCount: Int = 0
     @State private var downloadedSize: String = ""
     @State private var showingSpotifyImporter: Bool = false
-    @State private var showingNewPlaylistAlert: Bool = false
-    @State private var newPlaylistTitle: String = ""
+    @State private var showingAccountMenu: Bool = false
+    @State private var showingHistory: Bool = false
     
     public init() {}
     
     public var body: some View {
         NavigationStack {
-            List {
-                Section {
-                    NavigationLink {
-                        TrackListView(title: "Liked Songs", tracks: library.likedTracks)
-                    } label: {
-                        HStack {
-                            Label("Liked Songs", systemImage: "heart.fill")
-                                .foregroundColor(.red)
-                            Spacer()
-                            Text("\(library.likedTracks.count)")
-                                .foregroundColor(.secondary)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    // MARK: - Section: Your Listening Experience (Matching Car HU Photo 3)
+                    VStack(alignment: .leading, spacing: 12) {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 14) {
+                                // Card 1: Minutes Listened
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack {
+                                        Text("YOUR LISTENING EXPERIENCE")
+                                            .font(.system(size: 10, weight: .bold))
+                                            .foregroundColor(.secondary)
+                                        Spacer()
+                                        BitChordLogoView(size: 18, cornerRadius: 4)
+                                    }
+                                    
+                                    Spacer()
+                                    
+                                    Text("\(library.totalMinutesListened)")
+                                        .font(.system(size: 34, weight: .bold))
+                                        .foregroundColor(.primary)
+                                    + Text(" MINUTES LISTENED")
+                                        .font(.system(size: 13, weight: .bold))
+                                        .foregroundColor(.secondary)
+                                    
+                                    Spacer()
+                                    
+                                    HStack {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(accountManager.activeAccount.displayName.uppercased())
+                                                .font(.system(size: 11, weight: .bold))
+                                                .foregroundColor(.primary)
+                                            Text("16 plays • 2026")
+                                                .font(.system(size: 10))
+                                                .foregroundColor(.secondary)
+                                        }
+                                        Spacer()
+                                        VStack(alignment: .trailing, spacing: 2) {
+                                            Text("MEMBER SINCE")
+                                                .font(.system(size: 9, weight: .semibold))
+                                                .foregroundColor(.secondary)
+                                            Text(accountManager.activeAccount.memberSince)
+                                                .font(.system(size: 10, weight: .bold))
+                                                .foregroundColor(.primary)
+                                        }
+                                    }
+                                }
+                                .padding(16)
+                                .frame(width: 260, height: 160)
+                                .background(Color.secondary.opacity(0.12))
+                                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                
+                                // Card 2: Top Song (Kangen / Dewa 19)
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack {
+                                        Text("YOUR LISTENING EXPERIENCE")
+                                            .font(.system(size: 10, weight: .bold))
+                                            .foregroundColor(.secondary)
+                                        Spacer()
+                                        BitChordLogoView(size: 18, cornerRadius: 4)
+                                    }
+                                    
+                                    Spacer()
+                                    
+                                    Text("Kangen")
+                                        .font(.system(size: 26, weight: .bold))
+                                        .foregroundColor(.primary)
+                                    Text("TOP SONG")
+                                        .font(.system(size: 12, weight: .bold))
+                                        .foregroundColor(.secondary)
+                                    
+                                    Spacer()
+                                    
+                                    HStack {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(accountManager.activeAccount.displayName.uppercased())
+                                                .font(.system(size: 11, weight: .bold))
+                                                .foregroundColor(.primary)
+                                            Text("Dewa 19 • 1 plays")
+                                                .font(.system(size: 10))
+                                                .foregroundColor(.secondary)
+                                        }
+                                        Spacer()
+                                        VStack(alignment: .trailing, spacing: 2) {
+                                            Text("MEMBER SINCE")
+                                                .font(.system(size: 9, weight: .semibold))
+                                                .foregroundColor(.secondary)
+                                            Text(accountManager.activeAccount.memberSince)
+                                                .font(.system(size: 10, weight: .bold))
+                                                .foregroundColor(.primary)
+                                        }
+                                    }
+                                }
+                                .padding(16)
+                                .frame(width: 260, height: 160)
+                                .background(Color.secondary.opacity(0.12))
+                                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            }
+                            .padding(.horizontal, 16)
                         }
                     }
+                    .padding(.top, 4)
                     
-                    NavigationLink {
-                        PlaylistsDetailView()
-                    } label: {
-                        HStack {
-                            Label("Playlists", systemImage: "music.note.list")
-                            Spacer()
-                            Text("\(library.userPlaylists.count)")
-                                .foregroundColor(.secondary)
+                    // MARK: - Navigation Menu Rows (Matching Car HU Photo 3)
+                    VStack(spacing: 0) {
+                        NavigationLink {
+                            DownloadedSongsView()
+                        } label: {
+                            HStack(spacing: 16) {
+                                Image(systemName: "arrow.down.to.line.compact")
+                                    .font(.system(size: 20))
+                                    .foregroundColor(.primary)
+                                    .frame(width: 28)
+                                Text("Downloads")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.primary)
+                                Spacer()
+                                Text(downloadedSize.isEmpty ? "\(downloadedCount)" : downloadedSize)
+                                    .font(.system(size: 13))
+                                    .foregroundColor(.secondary)
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 14)
                         }
+                        
+                        Divider().padding(.leading, 60)
+                        
+                        NavigationLink {
+                            DownloadedSongsView()
+                        } label: {
+                            HStack(spacing: 16) {
+                                Image(systemName: "folder.fill")
+                                    .font(.system(size: 20))
+                                    .foregroundColor(.primary)
+                                    .frame(width: 28)
+                                Text("Local Music")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.primary)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 14)
+                        }
+                        
+                        Divider().padding(.leading, 60)
+                        
+                        NavigationLink {
+                            TrackListView(title: "Liked Songs", tracks: library.likedTracks)
+                        } label: {
+                            HStack(spacing: 16) {
+                                Image(systemName: "heart.fill")
+                                    .font(.system(size: 20))
+                                    .foregroundColor(.red)
+                                    .frame(width: 28)
+                                Text("Liked Songs")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.primary)
+                                Spacer()
+                                Text("\(library.likedTracks.count)")
+                                    .font(.system(size: 13))
+                                    .foregroundColor(.secondary)
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 14)
+                        }
+                        
+                        Divider().padding(.leading, 60)
+                        
+                        NavigationLink {
+                            PlaylistsDetailView()
+                        } label: {
+                            HStack(spacing: 16) {
+                                Image(systemName: "music.note.list")
+                                    .font(.system(size: 20))
+                                    .foregroundColor(.primary)
+                                    .frame(width: 28)
+                                Text("Playlists")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.primary)
+                                Spacer()
+                                Text("\(library.userPlaylists.count)")
+                                    .font(.system(size: 13))
+                                    .foregroundColor(.secondary)
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 14)
+                        }
+                        
+                        Divider().padding(.leading, 60)
+                        
+                        Button {
+                            showingSpotifyImporter = true
+                        } label: {
+                            HStack(spacing: 16) {
+                                Image(systemName: "square.and.arrow.down")
+                                    .font(.system(size: 20))
+                                    .foregroundColor(.primary)
+                                    .frame(width: 28)
+                                Text("Import from Spotify")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.primary)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 14)
+                        }
+                        .buttonStyle(.plain)
+                        
+                        Divider().padding(.leading, 60)
+                        
+                        // Switchable Offline Lyrics Storage
+                        HStack(spacing: 16) {
+                            Image(systemName: "quote.bubble.fill")
+                                .font(.system(size: 20))
+                                .foregroundColor(.cyan)
+                                .frame(width: 28)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Offline Lyrics Storage")
+                                    .font(.system(size: 16, weight: .medium))
+                                Text(offlineLyricsCount > 0 ? "\(offlineLyricsCount) Tracks (\(offlineLyricsSize))" : "Active")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            NavigationLink {
+                                SettingsView()
+                            } label: {
+                                Text("Settings")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(.red)
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 14)
                     }
+                    .background(Color.secondary.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .padding(.horizontal, 16)
                     
-                    NavigationLink {
-                        DownloadedSongsView()
-                    } label: {
-                        HStack {
-                            Label("Downloaded Music", systemImage: "arrow.down.circle.fill")
-                                .foregroundColor(.green)
-                            Spacer()
-                            Text(downloadedSize)
-                                .foregroundColor(.secondary)
-                        }
-                    }
+                    Spacer(minLength: 80)
                 }
-                
-                // Spotify Playlist Importer (BitChord Feature)
-                Section("Integrations") {
-                    Button {
-                        showingSpotifyImporter = true
-                    } label: {
-                        Label("Import from Spotify", systemImage: "square.and.arrow.down")
-                            .foregroundColor(.primary)
-                    }
-                }
-                
-                // Offline Lyrics Storage (Switchable feature)
-                Section("Offline Lyrics Storage") {
-                    HStack {
-                        Label("Cached Lyrics", systemImage: "quote.bubble.fill")
-                            .foregroundColor(.blue)
-                        Spacer()
-                        Text("\(offlineLyricsCount) Tracks (\(offlineLyricsSize))")
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    NavigationLink {
-                        SettingsView()
-                    } label: {
-                        Text("Configure Storage & Auto-Download")
-                            .foregroundColor(.red)
+                .padding(.top, 10)
+            }
+            .navigationTitle("Library")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    HStack(spacing: 14) {
+                        Button {
+                            showingHistory = true
+                        } label: {
+                            Image(systemName: "clock.arrow.circlepath")
+                                .font(.system(size: 18))
+                                .foregroundColor(.primary)
+                        }
+                        
+                        Button {
+                            showingAccountMenu = true
+                        } label: {
+                            ZStack {
+                                Circle()
+                                    .fill(Color.cyan.opacity(0.85))
+                                    .frame(width: 32, height: 32)
+                                Text(accountManager.activeAccount.avatarLetter)
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(.white)
+                            }
+                        }
                     }
                 }
             }
-            .navigationTitle("Library")
             .sheet(isPresented: $showingSpotifyImporter) {
                 SpotifyImporterSheet()
+            }
+            .sheet(isPresented: $showingAccountMenu) {
+                AccountMenuSheet()
+            }
+            .sheet(isPresented: $showingHistory) {
+                NavigationStack {
+                    TrackListView(title: "Listening History", tracks: library.recentTracks)
+                }
             }
             .task {
                 offlineLyricsCount = await LyricsManager.shared.getDownloadedLyricsCount()
@@ -101,6 +328,7 @@ public struct TrackListView: View {
     public let title: String
     public let tracks: [Track]
     @ObservedObject var engine = AudioPlayerEngine.shared
+    @Environment(\.dismiss) private var dismiss
     
     public var body: some View {
         List {
@@ -118,9 +346,7 @@ public struct TrackListView: View {
                     .tint(.red)
                     
                     Button {
-                        var shuffled = tracks
-                        shuffled.shuffle()
-                        engine.setQueue(shuffled, startIndex: 0)
+                        engine.setQueue(tracks.shuffled(), startIndex: 0)
                     } label: {
                         Label("Shuffle", systemImage: "shuffle")
                             .font(.system(size: 15, weight: .bold))
@@ -128,93 +354,67 @@ public struct TrackListView: View {
                             .padding(.vertical, 8)
                     }
                     .buttonStyle(.bordered)
-                    .tint(.red)
                 }
-                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
             }
             
-            ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
-                Button {
-                    engine.setQueue(tracks, startIndex: index)
-                } label: {
-                    HStack(spacing: 12) {
-                        if let art = track.artworkURL {
-                            AsyncImage(url: art) { ph in
-                                if let img = ph.image { img.resizable().aspectRatio(contentMode: .fill) }
-                                else { Color.gray.opacity(0.2) }
-                            }
-                            .frame(width: 44, height: 44)
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
-                        }
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(track.title)
-                                .font(.body)
-                                .foregroundColor(.primary)
-                                .lineLimit(1)
-                            Text(track.artist)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
-                        }
-                        Spacer()
-                        Text(track.formattedDuration)
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                }
-            }
-        }
-        .navigationTitle(title)
-    }
-}
-
-public struct DownloadedSongsView: View {
-    @ObservedObject var engine = AudioPlayerEngine.shared
-    @State private var tracks: [Track] = []
-    
-    public var body: some View {
-        List {
             if tracks.isEmpty {
-                ContentUnavailableView("No Offline Songs", systemImage: "arrow.down.circle", description: Text("Tracks you download will appear here for offline playback without internet."))
+                ContentUnavailableView("No Tracks", systemImage: "music.note", description: Text("No tracks found."))
             } else {
                 ForEach(tracks) { track in
                     Button {
                         engine.setQueue([track])
                     } label: {
-                        HStack {
-                            VStack(alignment: .leading) {
-                                Text(track.title).font(.body)
-                                Text(track.artist).font(.caption).foregroundColor(.secondary)
+                        HStack(spacing: 12) {
+                            if let art = track.artworkURL {
+                                AsyncImage(url: art) { phase in
+                                    if let img = phase.image {
+                                        img.resizable().aspectRatio(contentMode: .fill)
+                                    } else {
+                                        Color.gray.opacity(0.3)
+                                    }
+                                }
+                                .frame(width: 44, height: 44)
+                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                            } else {
+                                BitChordLogoView(size: 44, cornerRadius: 6)
+                            }
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(track.title)
+                                    .font(.body)
+                                    .foregroundColor(.primary)
+                                    .lineLimit(1)
+                                Text(track.artist)
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(1)
                             }
                             Spacer()
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundColor(.green)
-                        }
-                    }
-                }
-                .onDelete { indexSet in
-                    for index in indexSet {
-                        let id = tracks[index].id
-                        Task {
-                            await DownloadManager.shared.removeDownload(trackId: id)
-                            tracks.remove(at: index)
+                            if engine.currentTrack?.id == track.id {
+                                Image(systemName: "waveform")
+                                    .foregroundColor(.red)
+                            }
                         }
                     }
                 }
             }
         }
-        .navigationTitle("Downloaded Music")
-        .task {
-            tracks = await DownloadManager.shared.getDownloadedTracks()
+        .navigationTitle(title)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Done") {
+                    dismiss()
+                }
+            }
         }
     }
 }
 
 public struct PlaylistsDetailView: View {
     @ObservedObject var library = LibraryDatabase.shared
-    @State private var showingAddAlert: Bool = false
-    @State private var newTitle: String = ""
+    @State private var showingCreate: Bool = false
+    @State private var title: String = ""
     
     public var body: some View {
         List {
@@ -222,113 +422,154 @@ public struct PlaylistsDetailView: View {
                 NavigationLink {
                     TrackListView(title: playlist.title, tracks: playlist.tracks)
                 } label: {
-                    VStack(alignment: .leading) {
-                        Text(playlist.title).font(.headline)
-                        Text("\(playlist.tracks.count) tracks").font(.caption).foregroundColor(.secondary)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(playlist.title)
+                            .font(.headline)
+                        Text("\(playlist.tracks.count) tracks")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
                     }
                 }
             }
         }
         .navigationTitle("Playlists")
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
+            ToolbarItem(placement: .topBarTrailing) {
                 Button {
-                    showingAddAlert = true
+                    showingCreate = true
                 } label: {
                     Image(systemName: "plus")
                 }
             }
         }
-        .alert("New Playlist", isPresented: $showingAddAlert) {
-            TextField("Playlist Title", text: $newTitle)
-            Button("Cancel", role: .cancel) { newTitle = "" }
+        .alert("New Playlist", isPresented: $showingCreate) {
+            TextField("Playlist Title", text: $title)
+            Button("Cancel", role: .cancel) { title = "" }
             Button("Create") {
-                if !newTitle.isEmpty {
-                    library.createPlaylist(title: newTitle)
-                    newTitle = ""
+                if !title.isEmpty {
+                    library.createPlaylist(title: title)
+                    title = ""
                 }
             }
         }
     }
 }
 
-public struct SpotifyImporterSheet: View {
-    @Environment(\.dismiss) private var dismiss
+public struct DownloadedSongsView: View {
+    @State private var tracks: [DownloadedTrack] = []
     @ObservedObject var engine = AudioPlayerEngine.shared
-    @ObservedObject var library = LibraryDatabase.shared
-    
-    @State private var spotifyURL: String = ""
-    @State private var isImporting: Bool = false
-    @State private var importResult: SpotifyImportResult?
-    @State private var errorMessage: String?
     
     public var body: some View {
-        NavigationStack {
-            Form {
-                Section("Enter Spotify Link") {
-                    TextField("https://open.spotify.com/playlist/...", text: $spotifyURL)
-                        .autocapitalization(.none)
-                        .disableAutocorrection(true)
-                    
+        List {
+            if tracks.isEmpty {
+                ContentUnavailableView("No Downloads", systemImage: "arrow.down.circle", description: Text("Tracks downloaded for offline listening will appear here."))
+            } else {
+                ForEach(tracks, id: \.track.id) { item in
                     Button {
-                        startImport()
+                        engine.setQueue([item.track])
                     } label: {
-                        if isImporting {
-                            ProgressView()
-                        } else {
-                            Text("Import and Match Songs")
-                                .fontWeight(.semibold)
-                        }
-                    }
-                    .disabled(spotifyURL.isEmpty || isImporting)
-                }
-                
-                if let result = importResult {
-                    Section("Imported: \(result.playlistTitle)") {
-                        Text("\(result.tracks.count) songs matched in BitChord")
-                            .foregroundColor(.secondary)
-                        Button("Play Now") {
-                            engine.setQueue(result.tracks)
-                            dismiss()
-                        }
-                        Button("Save as Playlist") {
-                            library.createPlaylist(title: result.playlistTitle)
-                            if let last = library.userPlaylists.last {
-                                for t in result.tracks {
-                                    library.addTrackToPlaylist(playlistId: last.id, track: t)
-                                }
+                        HStack(spacing: 12) {
+                            BitChordLogoView(size: 44, cornerRadius: 6)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.track.title)
+                                    .font(.body)
+                                    .foregroundColor(.primary)
+                                Text(item.track.artist)
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
                             }
-                            dismiss()
+                            Spacer()
+                            Text(ByteCountFormatter.string(fromByteCount: item.fileSizeBytes, countStyle: .file))
+                                .font(.caption)
+                                .foregroundColor(.secondary)
                         }
-                    }
-                }
-                
-                if let err = errorMessage {
-                    Section {
-                        Text(err).foregroundColor(.red)
                     }
                 }
             }
-            .navigationTitle("Spotify Importer")
+        }
+        .navigationTitle("Downloads")
+        .task {
+            tracks = await DownloadManager.shared.getDownloadedTracks()
+        }
+    }
+}
+
+public struct SpotifyImporterSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var linkText: String = ""
+    @State private var isImporting: Bool = false
+    @State private var statusMessage: String?
+    
+    public var body: some View {
+        NavigationStack {
+            VStack(spacing: 20) {
+                Text("Paste any public Spotify track or playlist URL to import and match high-res audio on BitChord.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+                
+                TextField("https://open.spotify.com/track/...", text: $linkText)
+                    .textFieldStyle(.roundedBorder)
+                    .padding(.horizontal)
+                
+                if let msg = statusMessage {
+                    Text(msg)
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                }
+                
+                Button {
+                    importLink()
+                } label: {
+                    if isImporting {
+                        ProgressView()
+                    } else {
+                        Text("Import Music")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+                .disabled(linkText.isEmpty || isImporting)
+                .padding(.horizontal)
+                
+                Spacer()
+            }
+            .padding(.top, 20)
+            .navigationTitle("Import from Spotify")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { dismiss() }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Close") {
+                        dismiss()
+                    }
                 }
             }
         }
     }
     
-    private func startImport() {
+    private func importLink() {
+        guard let url = URL(string: linkText.trimmingCharacters(in: .whitespaces)) else { return }
         isImporting = true
-        errorMessage = nil
+        statusMessage = "Resolving track metadata..."
+        
         Task {
             do {
-                let res = try await SpotifyImporter.shared.importFromURL(urlString: spotifyURL)
-                self.importResult = res
+                let track = try await SpotifyImporter.shared.importSpotifyURL(url: url)
+                await MainActor.run {
+                    AudioPlayerEngine.shared.setQueue([track])
+                    LibraryDatabase.shared.toggleLike(track: track)
+                    isImporting = false
+                    dismiss()
+                }
             } catch {
-                self.errorMessage = "Could not import: Please ensure the Spotify link is public."
+                await MainActor.run {
+                    statusMessage = "Could not resolve Spotify URL. Check link and try again."
+                    isImporting = false
+                }
             }
-            self.isImporting = false
         }
     }
 }
