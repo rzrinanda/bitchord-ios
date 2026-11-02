@@ -25,25 +25,30 @@ public actor YTMusicClient {
     }
     
     /// Multi-source resilient high-speed music search:
-    /// Queries iTunes Music (instant 100ms response + working audio stream) and YouTube Innertube in parallel
+    /// Queries YouTube Music catalog first for full-length tracks, enriched with Apple Music metadata
     public func search(query: String, filter: String? = nil) async throws -> [Track] {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty else { return [] }
         
-        // 1. High-speed parallel query: iTunes + YouTube Innertube
-        async let itunesFetch = searchViaITunes(query: trimmedQuery)
+        // 1. Parallel query: YouTube Innertube + iTunes metadata
         async let innertubeFetch = searchViaInnertube(query: trimmedQuery)
+        async let itunesFetch = searchViaITunes(query: trimmedQuery)
         
-        let (itunesResults, innertubeResults) = await (itunesFetch, innertubeFetch)
+        let (innertubeResults, itunesResults) = await (innertubeFetch, itunesFetch)
         
         var combinedTracks: [Track] = []
-        if let itunes = itunesResults, !itunes.isEmpty {
-            combinedTracks.append(contentsOf: itunes)
+        
+        // Prioritize full YouTube Music tracks (with real 11-char videoId)
+        if !innertubeResults.isEmpty {
+            combinedTracks.append(contentsOf: innertubeResults)
         }
         
-        for ytTrack in innertubeResults {
-            if !combinedTracks.contains(where: { $0.title.lowercased() == ytTrack.title.lowercased() }) {
-                combinedTracks.append(ytTrack)
+        // Append additional tracks from iTunes metadata (guaranteed full streaming via StreamExtractor)
+        if let itunes = itunesResults {
+            for itTrack in itunes {
+                if !combinedTracks.contains(where: { $0.title.lowercased() == itTrack.title.lowercased() }) {
+                    combinedTracks.append(itTrack)
+                }
             }
         }
         
@@ -59,6 +64,26 @@ public actor YTMusicClient {
         // Strategy 3: Fallback to Invidious
         if let invidiousResults = await searchViaInvidious(query: trimmedQuery), !invidiousResults.isEmpty {
             return invidiousResults
+        }
+        
+        return []
+    }
+    
+    /// Generates radio / autoplay recommendations of similar full-length tracks
+    public func fetchRadioTracks(for track: Track) async -> [Track] {
+        let cleanArtist = track.artist
+            .components(separatedBy: " ft.")[0]
+            .components(separatedBy: " feat.")[0]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            
+        let radioQuery = "\(cleanArtist) top songs"
+        if let results = try? await search(query: radioQuery), !results.isEmpty {
+            return results.filter { $0.id != track.id }
+        }
+        
+        // Fallback to related search
+        if let related = try? await search(query: "\(track.title) similar songs"), !related.isEmpty {
+            return related.filter { $0.id != track.id }
         }
         
         return []
@@ -207,11 +232,7 @@ public actor YTMusicClient {
                     artworkURL = URL(string: highRes)
                 }
                 
-                var streamURL: URL? = nil
-                if let preview = item["previewUrl"] as? String {
-                    streamURL = URL(string: preview)
-                }
-                
+                // Keep streamURL nil so full length audio is extracted from YouTube
                 tracks.append(
                     Track(
                         id: trackId,
@@ -220,7 +241,7 @@ public actor YTMusicClient {
                         album: album,
                         duration: duration,
                         artworkURL: artworkURL,
-                        streamURL: streamURL,
+                        streamURL: nil,
                         isLossless: true
                     )
                 )

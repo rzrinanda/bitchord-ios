@@ -7,7 +7,9 @@ public struct TrackContextMenuSheet: View {
     @Environment(\.dismiss) private var dismiss
     
     @State private var showingPlaylistPicker: Bool = false
-    @State private var toastMessage: String?
+    @State private var showingCreatePlaylistAlert: Bool = false
+    @State private var newPlaylistName: String = ""
+    @State private var actionMessage: String?
     
     public init(track: Track) {
         self.track = track
@@ -48,11 +50,31 @@ public struct TrackContextMenuSheet: View {
                 .padding(.top, 20)
                 .padding(.bottom, 14)
                 
+                // Feedback confirmation banner
+                if let msg = actionMessage {
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                        Text(msg)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.primary)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(Color.green.opacity(0.15))
+                    .clipShape(Capsule())
+                    .padding(.bottom, 10)
+                    .transition(.opacity.combined(with: .scale))
+                }
+                
                 // MARK: - Top Quick Actions (Matching Car HU Photo 3: Like | Dislike | Share)
                 HStack(spacing: 0) {
                     // Like
                     Button {
                         library.toggleLike(track: track)
+                        withAnimation {
+                            actionMessage = library.isLiked(trackId: track.id) ? "Added to Liked Songs" : "Removed from Liked Songs"
+                        }
                     } label: {
                         VStack(spacing: 6) {
                             Image(systemName: library.isLiked(trackId: track.id) ? "star.fill" : "star")
@@ -68,8 +90,12 @@ public struct TrackContextMenuSheet: View {
                     
                     // Dislike
                     Button {
-                        // Dislike removes from recommendations
-                        dismiss()
+                        withAnimation {
+                            actionMessage = "Marked as Disliked"
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                            dismiss()
+                        }
                     } label: {
                         VStack(spacing: 6) {
                             Image(systemName: "heart.slash")
@@ -111,7 +137,6 @@ public struct TrackContextMenuSheet: View {
                 VStack(spacing: 2) {
                     // 1. Convert to video
                     Button {
-                        // Switch to video / canvas mode if available
                         dismiss()
                     } label: {
                         HStack(spacing: 16) {
@@ -150,9 +175,13 @@ public struct TrackContextMenuSheet: View {
                     
                     // 3. Start radio
                     Button {
-                        // Radio plays track and automatically triggers similar song suggestions
-                        engine.setQueue([track])
-                        dismiss()
+                        engine.startRadio(for: track)
+                        withAnimation {
+                            actionMessage = "Radio started with similar songs"
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                            dismiss()
+                        }
                     } label: {
                         HStack(spacing: 16) {
                             Image(systemName: "dot.radiowaves.left.and.right")
@@ -172,7 +201,12 @@ public struct TrackContextMenuSheet: View {
                     // 4. Play next
                     Button {
                         engine.insertNextInQueue(track)
-                        dismiss()
+                        withAnimation {
+                            actionMessage = "\(track.title) will play next"
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                            dismiss()
+                        }
                     } label: {
                         HStack(spacing: 16) {
                             Image(systemName: "text.line.first.and.arrowtriangle.forward")
@@ -192,7 +226,12 @@ public struct TrackContextMenuSheet: View {
                     // 5. Add to queue
                     Button {
                         engine.appendToQueue(track)
-                        dismiss()
+                        withAnimation {
+                            actionMessage = "Added to queue"
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                            dismiss()
+                        }
                     } label: {
                         HStack(spacing: 16) {
                             Image(systemName: "text.badge.plus")
@@ -220,32 +259,73 @@ public struct TrackContextMenuSheet: View {
                     }
                 }
             }
+            // Add to Playlist Sheet
             .sheet(isPresented: $showingPlaylistPicker) {
                 NavigationStack {
                     List {
-                        ForEach(library.userPlaylists) { playlist in
-                            Button {
-                                library.addTrackToPlaylist(playlistId: playlist.id, track: track)
-                                showingPlaylistPicker = false
-                                dismiss()
-                            } label: {
-                                HStack {
-                                    Image(systemName: "music.note.list")
-                                        .foregroundColor(.red)
-                                    Text(playlist.title)
-                                        .foregroundColor(.primary)
-                                    Spacer()
-                                    Text("\(playlist.tracks.count) tracks")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
+                        Button {
+                            showingCreatePlaylistAlert = true
+                        } label: {
+                            HStack {
+                                Image(systemName: "plus.circle.fill")
+                                    .font(.system(size: 20))
+                                    .foregroundColor(.red)
+                                Text("New Playlist")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(.primary)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                        
+                        if library.userPlaylists.isEmpty {
+                            Text("No playlists yet. Tap 'New Playlist' above to create one.")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        } else {
+                            ForEach(library.userPlaylists) { playlist in
+                                Button {
+                                    library.addTrackToPlaylist(playlistId: playlist.id, track: track)
+                                    showingPlaylistPicker = false
+                                    withAnimation {
+                                        actionMessage = "Added to '\(playlist.title)'"
+                                    }
+                                } label: {
+                                    HStack {
+                                        Image(systemName: "music.note.list")
+                                            .foregroundColor(.red)
+                                        Text(playlist.title)
+                                            .foregroundColor(.primary)
+                                        Spacer()
+                                        Text("\(playlist.tracks.count) tracks")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    .padding(.vertical, 4)
                                 }
                             }
                         }
                     }
-                    .navigationTitle("Select Playlist")
+                    .navigationTitle("Add to Playlist")
                     .toolbar {
                         ToolbarItem(placement: .topBarLeading) {
                             Button("Cancel") { showingPlaylistPicker = false }
+                        }
+                    }
+                    .alert("Create Playlist", isPresented: $showingCreatePlaylistAlert) {
+                        TextField("Playlist Name", text: $newPlaylistName)
+                        Button("Cancel", role: .cancel) { newPlaylistName = "" }
+                        Button("Create & Add") {
+                            if !newPlaylistName.isEmpty {
+                                library.createPlaylist(title: newPlaylistName)
+                                if let created = library.userPlaylists.last {
+                                    library.addTrackToPlaylist(playlistId: created.id, track: track)
+                                }
+                                newPlaylistName = ""
+                                showingPlaylistPicker = false
+                                withAnimation {
+                                    actionMessage = "Created and added to playlist"
+                                }
+                            }
                         }
                     }
                 }

@@ -262,6 +262,27 @@ public final class AudioPlayerEngine: ObservableObject {
             playTrack(at: queueIndex + 1)
         } else if repeatMode == .all && !queue.isEmpty {
             playTrack(at: 0)
+        } else if let current = currentTrack {
+            // AutoPlay continuation when reaching end of queue
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                let more = await YTMusicClient.shared.fetchRadioTracks(for: current)
+                if !more.isEmpty {
+                    let nextIdx = self.queue.count
+                    for t in more {
+                        if !self.queue.contains(where: { $0.id == t.id }) {
+                            self.queue.append(t)
+                            self.originalQueue.append(t)
+                        }
+                    }
+                    if nextIdx < self.queue.count {
+                        self.playTrack(at: nextIdx)
+                    }
+                } else {
+                    self.status = .idle
+                    self.currentTime = 0
+                }
+            }
         } else {
             status = .idle
             currentTime = 0
@@ -271,13 +292,33 @@ public final class AudioPlayerEngine: ObservableObject {
     public func previousTrack() {
         if currentTime > 3.0 {
             seek(to: 0)
+            resume()
             return
         }
         
         if queueIndex - 1 >= 0 {
             playTrack(at: queueIndex - 1)
+        } else if queue.count > 1 {
+            playTrack(at: queue.count - 1)
         } else {
             seek(to: 0)
+            resume()
+        }
+    }
+    
+    public func startRadio(for track: Track) {
+        setQueue([track], startIndex: 0)
+        Task { [weak self] in
+            guard let self = self else { return }
+            let radioTracks = await YTMusicClient.shared.fetchRadioTracks(for: track)
+            await MainActor.run {
+                for t in radioTracks {
+                    if !self.queue.contains(where: { $0.id == t.id }) {
+                        self.queue.append(t)
+                        self.originalQueue.append(t)
+                    }
+                }
+            }
         }
     }
     

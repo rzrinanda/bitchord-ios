@@ -58,23 +58,22 @@ public actor StreamExtractor {
             }
         }
         
-        // Strategy 1: Direct YouTube Innertube Player API (iOS / Android Client)
+        // Strategy 1: Direct YouTube Innertube Player API (iOS Client - Full Length Audio)
         if effectiveVideoId.count == 11, let direct = await extractViaYouTubeInnertube(trackId: effectiveVideoId) {
             return direct
         }
         
-        // Strategy 2: Title & Artist High-Fidelity Audio Catalog (Instant 100% reliable)
-        if let title = title, !title.isEmpty,
-           let fallback = await extractViaAudioCatalog(title: title, artist: artist) {
-            return fallback
+        // Strategy 2: Direct YouTube Innertube Player API (Android Client - Full Length Audio)
+        if effectiveVideoId.count == 11, let androidStream = await extractViaYouTubeAndroid(trackId: effectiveVideoId) {
+            return androidStream
         }
         
-        // Strategy 3: Piped Audio Streams
+        // Strategy 3: Piped Audio Streams (Full Length Audio)
         if effectiveVideoId.count == 11, let piped = await extractViaPiped(trackId: effectiveVideoId, preferredQuality: preferredQuality) {
             return piped
         }
         
-        // Strategy 4: Invidious Audio Streams
+        // Strategy 4: Invidious Audio Streams (Full Length Audio)
         if effectiveVideoId.count == 11, let invidious = await extractViaInvidious(trackId: effectiveVideoId) {
             return invidious
         }
@@ -211,6 +210,57 @@ public actor StreamExtractor {
             return StreamInfo(streamURL: streamURL, format: "video/mp4", bitrate: 128)
         }
         
+        return nil
+    }
+    
+    // MARK: - 1b. Direct YouTube Innertube (Android Client - Full Length Audio)
+    private func extractViaYouTubeAndroid(trackId: String) async -> StreamInfo? {
+        guard let url = URL(string: "https://www.youtube.com/youtubei/v1/player?key=\(innertubeKey)") else { return nil }
+        
+        let body: [String: Any] = [
+            "context": [
+                "client": [
+                    "clientName": "ANDROID",
+                    "clientVersion": "19.29.35",
+                    "androidSdkVersion": 34,
+                    "hl": "en",
+                    "gl": "US"
+                ]
+            ],
+            "videoId": trackId
+        ]
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("com.google.android.youtube/19.29.35 (Linux; U; Android 14; en_US)", forHTTPHeaderField: "User-Agent")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        request.timeoutInterval = 6.0
+        
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse, http.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let streamingData = json["streamingData"] as? [String: Any] else {
+            return nil
+        }
+        
+        if let adaptiveFormats = streamingData["adaptiveFormats"] as? [[String: Any]] {
+            let audioStreams = adaptiveFormats.filter { format in
+                let mime = format["mimeType"] as? String ?? ""
+                return mime.contains("audio") && format["url"] != nil
+            }
+            if let best = audioStreams.first,
+               let urlString = best["url"] as? String,
+               let streamURL = URL(string: urlString) {
+                let bitrate = (best["bitrate"] as? Int ?? 256000) / 1000
+                return StreamInfo(
+                    streamURL: streamURL,
+                    format: "audio/mp4",
+                    bitrate: bitrate,
+                    isLossless: true
+                )
+            }
+        }
         return nil
     }
     
