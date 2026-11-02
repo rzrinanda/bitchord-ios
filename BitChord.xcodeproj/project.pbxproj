@@ -1,0 +1,361 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		BC0001012D70000100000001 /* BitChordApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0000012D70000100000001 /* BitChordApp.swift */; };
+		BC0001012D70000100000002 /* Track.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0000012D70000100000002 /* Track.swift */; };
+		BC0001012D70000100000003 /* Album.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0000012D70000100000003 /* Album.swift */; };
+		BC0001012D70000100000004 /* Artist.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0000012D70000100000004 /* Artist.swift */; };
+		BC0001012D70000100000005 /* Playlist.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0000012D70000100000005 /* Playlist.swift */; };
+		BC0001012D70000100000006 /* Lyrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0000012D70000100000006 /* Lyrics.swift */; };
+		BC0001012D70000100000007 /* AudioQuality.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0000012D70000100000007 /* AudioQuality.swift */; };
+		BC0001012D70000100000008 /* PlaybackState.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0000012D70000100000008 /* PlaybackState.swift */; };
+		BC0001012D70000100000009 /* AudioPlayerEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0000012D70000100000009 /* AudioPlayerEngine.swift */; };
+		BC0001012D70000100000010 /* CrossfadeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0000012D70000100000010 /* CrossfadeManager.swift */; };
+		BC0001012D70000100000011 /* EqualizerPreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0000012D70000100000011 /* EqualizerPreset.swift */; };
+		BC0001012D70000100000012 /* SleepTimer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0000012D70000100000012 /* SleepTimer.swift */; };
+		BC0001012D70000100000013 /* LRCParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0000012D70000100000013 /* LRCParser.swift */; };
+		BC0001012D70000100000014 /* LyricsStorageManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0000012D70000100000014 /* LyricsStorageManager.swift */; };
+		BC0001012D70000100000015 /* LRCLIBClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0000012D70000100000015 /* LRCLIBClient.swift */; };
+		BC0001012D70000100000016 /* LyricsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0000012D70000100000016 /* LyricsManager.swift */; };
+		BC0001012D70000100000017 /* YTMusicClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0000012D70000100000017 /* YTMusicClient.swift */; };
+		BC0001012D70000100000018 /* StreamExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0000012D70000100000018 /* StreamExtractor.swift */; };
+		BC0001012D70000100000019 /* InnertubeEndpoints.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0000012D70000100000019 /* InnertubeEndpoints.swift */; };
+		BC0001012D70000100000020 /* BitChordSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0000012D70000100000020 /* BitChordSettings.swift */; };
+		BC0001012D70000100000021 /* LastFmScrobbler.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0000012D70000100000021 /* LastFmScrobbler.swift */; };
+		BC0001012D70000100000022 /* FrostedGlass.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0000012D70000100000022 /* FrostedGlass.swift */; };
+		BC0001012D70000100000023 /* DynamicBackgroundGradient.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0000012D70000100000023 /* DynamicBackgroundGradient.swift */; };
+		BC0001012D70000100000024 /* MiniPlayerBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0000012D70000100000024 /* MiniPlayerBar.swift */; };
+		BC0001012D70000100000025 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0000012D70000100000025 /* HomeView.swift */; };
+		BC0001012D70000100000026 /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0000012D70000100000026 /* SearchView.swift */; };
+		BC0001012D70000100000027 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0000012D70000100000027 /* LibraryView.swift */; };
+		BC0001012D70000100000028 /* NowPlayingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0000012D70000100000028 /* NowPlayingView.swift */; };
+		BC0001012D70000100000029 /* SyncedLyricsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0000012D70000100000029 /* SyncedLyricsView.swift */; };
+		BC0001012D70000100000030 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0000012D70000100000030 /* SettingsView.swift */; };
+		BC0001012D70000100000031 /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0000012D70000100000031 /* MainTabView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		BC0000002D70000100000001 /* BitChord.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BitChord.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		BC0000002D70000100000002 /* BitChord-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "BitChord-Info.plist"; sourceTree = "<group>"; };
+		BC0000012D70000100000001 /* BitChordApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BitChordApp.swift; sourceTree = "<group>"; };
+		BC0000012D70000100000002 /* Track.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Track.swift; sourceTree = "<group>"; };
+		BC0000012D70000100000003 /* Album.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Album.swift; sourceTree = "<group>"; };
+		BC0000012D70000100000004 /* Artist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Artist.swift; sourceTree = "<group>"; };
+		BC0000012D70000100000005 /* Playlist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Playlist.swift; sourceTree = "<group>"; };
+		BC0000012D70000100000006 /* Lyrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Lyrics.swift; sourceTree = "<group>"; };
+		BC0000012D70000100000007 /* AudioQuality.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioQuality.swift; sourceTree = "<group>"; };
+		BC0000012D70000100000008 /* PlaybackState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackState.swift; sourceTree = "<group>"; };
+		BC0000012D70000100000009 /* AudioPlayerEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPlayerEngine.swift; sourceTree = "<group>"; };
+		BC0000012D70000100000010 /* CrossfadeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrossfadeManager.swift; sourceTree = "<group>"; };
+		BC0000012D70000100000011 /* EqualizerPreset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EqualizerPreset.swift; sourceTree = "<group>"; };
+		BC0000012D70000100000012 /* SleepTimer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepTimer.swift; sourceTree = "<group>"; };
+		BC0000012D70000100000013 /* LRCParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LRCParser.swift; sourceTree = "<group>"; };
+		BC0000012D70000100000014 /* LyricsStorageManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsStorageManager.swift; sourceTree = "<group>"; };
+		BC0000012D70000100000015 /* LRCLIBClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LRCLIBClient.swift; sourceTree = "<group>"; };
+		BC0000012D70000100000016 /* LyricsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsManager.swift; sourceTree = "<group>"; };
+		BC0000012D70000100000017 /* YTMusicClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YTMusicClient.swift; sourceTree = "<group>"; };
+		BC0000012D70000100000018 /* StreamExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamExtractor.swift; sourceTree = "<group>"; };
+		BC0000012D70000100000019 /* InnertubeEndpoints.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InnertubeEndpoints.swift; sourceTree = "<group>"; };
+		BC0000012D70000100000020 /* BitChordSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BitChordSettings.swift; sourceTree = "<group>"; };
+		BC0000012D70000100000021 /* LastFmScrobbler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LastFmScrobbler.swift; sourceTree = "<group>"; };
+		BC0000012D70000100000022 /* FrostedGlass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrostedGlass.swift; sourceTree = "<group>"; };
+		BC0000012D70000100000023 /* DynamicBackgroundGradient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DynamicBackgroundGradient.swift; sourceTree = "<group>"; };
+		BC0000012D70000100000024 /* MiniPlayerBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniPlayerBar.swift; sourceTree = "<group>"; };
+		BC0000012D70000100000025 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
+		BC0000012D70000100000026 /* SearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchView.swift; sourceTree = "<group>"; };
+		BC0000012D70000100000027 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
+		BC0000012D70000100000028 /* NowPlayingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingView.swift; sourceTree = "<group>"; };
+		BC0000012D70000100000029 /* SyncedLyricsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncedLyricsView.swift; sourceTree = "<group>"; };
+		BC0000012D70000100000030 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		BC0000012D70000100000031 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		BC0000032D70000100000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		BC0000042D70000100000001 = {
+			isa = PBXGroup;
+			children = (
+				BC0000042D70000100000002 /* Sources */,
+				BC0000002D70000100000002 /* BitChord-Info.plist */,
+				BC0000042D70000100000009 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		BC0000042D70000100000002 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				BC0000042D70000100000003 /* BitChordCore */,
+				BC0000042D70000100000004 /* BitChordUI */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		BC0000042D70000100000003 /* BitChordCore */ = {
+			isa = PBXGroup;
+			children = (
+				BC0000012D70000100000002 /* Track.swift */,
+				BC0000012D70000100000003 /* Album.swift */,
+				BC0000012D70000100000004 /* Artist.swift */,
+				BC0000012D70000100000005 /* Playlist.swift */,
+				BC0000012D70000100000006 /* Lyrics.swift */,
+				BC0000012D70000100000007 /* AudioQuality.swift */,
+				BC0000012D70000100000008 /* PlaybackState.swift */,
+				BC0000012D70000100000009 /* AudioPlayerEngine.swift */,
+				BC0000012D70000100000010 /* CrossfadeManager.swift */,
+				BC0000012D70000100000011 /* EqualizerPreset.swift */,
+				BC0000012D70000100000012 /* SleepTimer.swift */,
+				BC0000012D70000100000013 /* LRCParser.swift */,
+				BC0000012D70000100000014 /* LyricsStorageManager.swift */,
+				BC0000012D70000100000015 /* LRCLIBClient.swift */,
+				BC0000012D70000100000016 /* LyricsManager.swift */,
+				BC0000012D70000100000017 /* YTMusicClient.swift */,
+				BC0000012D70000100000018 /* StreamExtractor.swift */,
+				BC0000012D70000100000019 /* InnertubeEndpoints.swift */,
+				BC0000012D70000100000020 /* BitChordSettings.swift */,
+				BC0000012D70000100000021 /* LastFmScrobbler.swift */,
+			);
+			path = BitChordCore;
+			sourceTree = "<group>";
+		};
+		BC0000042D70000100000004 /* BitChordUI */ = {
+			isa = PBXGroup;
+			children = (
+				BC0000012D70000100000001 /* BitChordApp.swift */,
+				BC0000012D70000100000022 /* FrostedGlass.swift */,
+				BC0000012D70000100000023 /* DynamicBackgroundGradient.swift */,
+				BC0000012D70000100000024 /* MiniPlayerBar.swift */,
+				BC0000012D70000100000025 /* HomeView.swift */,
+				BC0000012D70000100000026 /* SearchView.swift */,
+				BC0000012D70000100000027 /* LibraryView.swift */,
+				BC0000012D70000100000028 /* NowPlayingView.swift */,
+				BC0000012D70000100000029 /* SyncedLyricsView.swift */,
+				BC0000012D70000100000030 /* SettingsView.swift */,
+				BC0000012D70000100000031 /* MainTabView.swift */,
+			);
+			path = BitChordUI;
+			sourceTree = "<group>";
+		};
+		BC0000042D70000100000009 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				BC0000002D70000100000001 /* BitChord.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		BC0000052D70000100000001 /* BitChord */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BC0000082D70000100000001 /* Build configuration list for PBXNativeTarget "BitChord" */;
+			buildPhases = (
+				BC0000022D70000100000001 /* Sources */,
+				BC0000032D70000100000001 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = BitChord;
+			productName = BitChord;
+			productReference = BC0000002D70000100000001 /* BitChord.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		BC0000062D70000100000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					BC0000052D70000100000001 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+				};
+			};
+			buildConfigurationList = BC0000072D70000100000001 /* Build configuration list for PBXProject "BitChord" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = BC0000042D70000100000001;
+			productRefGroup = BC0000042D70000100000009 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				BC0000052D70000100000001 /* BitChord */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		BC0000022D70000100000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BC0001012D70000100000001 /* BitChordApp.swift in Sources */,
+				BC0001012D70000100000002 /* Track.swift in Sources */,
+				BC0001012D70000100000003 /* Album.swift in Sources */,
+				BC0001012D70000100000004 /* Artist.swift in Sources */,
+				BC0001012D70000100000005 /* Playlist.swift in Sources */,
+				BC0001012D70000100000006 /* Lyrics.swift in Sources */,
+				BC0001012D70000100000007 /* AudioQuality.swift in Sources */,
+				BC0001012D70000100000008 /* PlaybackState.swift in Sources */,
+				BC0001012D70000100000009 /* AudioPlayerEngine.swift in Sources */,
+				BC0001012D70000100000010 /* CrossfadeManager.swift in Sources */,
+				BC0001012D70000100000011 /* EqualizerPreset.swift in Sources */,
+				BC0001012D70000100000012 /* SleepTimer.swift in Sources */,
+				BC0001012D70000100000013 /* LRCParser.swift in Sources */,
+				BC0001012D70000100000014 /* LyricsStorageManager.swift in Sources */,
+				BC0001012D70000100000015 /* LRCLIBClient.swift in Sources */,
+				BC0001012D70000100000016 /* LyricsManager.swift in Sources */,
+				BC0001012D70000100000017 /* YTMusicClient.swift in Sources */,
+				BC0001012D70000100000018 /* StreamExtractor.swift in Sources */,
+				BC0001012D70000100000019 /* InnertubeEndpoints.swift in Sources */,
+				BC0001012D70000100000020 /* BitChordSettings.swift in Sources */,
+				BC0001012D70000100000021 /* LastFmScrobbler.swift in Sources */,
+				BC0001012D70000100000022 /* FrostedGlass.swift in Sources */,
+				BC0001012D70000100000023 /* DynamicBackgroundGradient.swift in Sources */,
+				BC0001012D70000100000024 /* MiniPlayerBar.swift in Sources */,
+				BC0001012D70000100000025 /* HomeView.swift in Sources */,
+				BC0001012D70000100000026 /* SearchView.swift in Sources */,
+				BC0001012D70000100000027 /* LibraryView.swift in Sources */,
+				BC0001012D70000100000028 /* NowPlayingView.swift in Sources */,
+				BC0001012D70000100000029 /* SyncedLyricsView.swift in Sources */,
+				BC0001012D70000100000030 /* SettingsView.swift in Sources */,
+				BC0001012D70000100000031 /* MainTabView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		BC0000092D70000100000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		BC0000092D70000100000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		BC00000A2D70000100000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "BitChord-Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.rzrinanda.bitchord;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		BC00000A2D70000100000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "BitChord-Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.rzrinanda.bitchord;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		BC0000072D70000100000001 /* Build configuration list for PBXProject "BitChord" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BC0000092D70000100000001 /* Debug */,
+				BC0000092D70000100000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		BC0000082D70000100000001 /* Build configuration list for PBXNativeTarget "BitChord" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BC00000A2D70000100000001 /* Debug */,
+				BC00000A2D70000100000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+	};
+	rootObject = BC0000062D70000100000001 /* Project object */;
+}
