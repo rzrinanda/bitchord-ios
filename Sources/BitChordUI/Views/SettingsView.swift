@@ -1,5 +1,4 @@
 import SwiftUI
-import BitChordCore
 
 public struct SettingsView: View {
     @ObservedObject var settings = BitChordSettings.shared

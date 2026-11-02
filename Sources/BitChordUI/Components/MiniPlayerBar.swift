@@ -1,5 +1,4 @@
 import SwiftUI
-import BitChordCore
 
 public struct MiniPlayerBar: View {
     @ObservedObject var engine = AudioPlayerEngine.shared

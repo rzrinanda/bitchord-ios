@@ -1,5 +1,4 @@
 import SwiftUI
-import BitChordCore
 
 @main
 public struct BitChordApp: App {

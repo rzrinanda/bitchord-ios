@@ -1,5 +1,4 @@
 import SwiftUI
-import BitChordCore
 
 public struct SyncedLyricsView: View {
     public let track: Track

@@ -9,12 +9,8 @@ let package = Package(
     ],
     products: [
         .library(
-            name: "BitChordCore",
-            targets: ["BitChordCore"]
-        ),
-        .library(
-            name: "BitChordUI",
-            targets: ["BitChordUI"]
+            name: "BitChord",
+            targets: ["BitChord"]
         ),
         .executable(
             name: "BitChordTestsRunner",
@@ -23,17 +19,12 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "BitChordCore",
+            name: "BitChord",
             path: "Sources/BitChordCore"
-        ),
-        .target(
-            name: "BitChordUI",
-            dependencies: ["BitChordCore"],
-            path: "Sources/BitChordUI"
         ),
         .executableTarget(
             name: "BitChordTestsRunner",
-            dependencies: ["BitChordCore"],
+            dependencies: ["BitChord"],
             path: "Tests/BitChordTestsRunner"
         )
     ]

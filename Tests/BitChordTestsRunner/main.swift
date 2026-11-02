@@ -1,5 +1,5 @@
 import Foundation
-import BitChordCore
+import BitChord
 
 @MainActor
 func runAllTests() async {

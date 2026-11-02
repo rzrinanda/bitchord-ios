@@ -1,5 +1,4 @@
 import SwiftUI
-import BitChordCore
 
 public struct FrostedGlassModifier: ViewModifier {
     public var cornerRadius: CGFloat = 16

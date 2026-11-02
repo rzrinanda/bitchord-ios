@@ -1,5 +1,4 @@
 import SwiftUI
-import BitChordCore
 
 public struct DynamicBackgroundGradient: View {
     public var accentColor: Color
