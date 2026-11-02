@@ -4,6 +4,7 @@ public struct ExploreView: View {
     @ObservedObject var engine = AudioPlayerEngine.shared
     @ObservedObject var library = LibraryDatabase.shared
     @State private var showingAccountMenu: Bool = false
+    @State private var selectedTrackForMenu: Track? = nil
     
     // Curated Indonesian & Global charts
     private let charts: [(title: String, subtitle: String, image: String, color: Color)] = [
@@ -16,7 +17,7 @@ public struct ExploreView: View {
     // Explore featured Indonesian songs matching user's taste (NOAH, Dewa 19, etc.)
     private let exploreSongs: [Track] = [
         Track(
-            id: "yt_mpy_sempurna",
+            id: "aL3Z_bA8d38",
             title: "Mimpi Yang Sempurna",
             artist: "NOAH",
             album: "Taman Langit",
@@ -25,7 +26,7 @@ public struct ExploreView: View {
             isLossless: true
         ),
         Track(
-            id: "yt_kangen_d19",
+            id: "q_k8g6X2jls",
             title: "Kangen",
             artist: "Dewa 19",
             album: "19",
@@ -34,7 +35,7 @@ public struct ExploreView: View {
             isLossless: true
         ),
         Track(
-            id: "yt_separuh_aku",
+            id: "wO0A0XcWy88",
             title: "Separuh Aku",
             artist: "NOAH",
             album: "Seperti Seharusnya",
@@ -43,7 +44,7 @@ public struct ExploreView: View {
             isLossless: true
         ),
         Track(
-            id: "yt_roman_picisan",
+            id: "m9g4Q6Y3kYs",
             title: "Roman Picisan",
             artist: "Dewa 19",
             album: "Bintang Lima",
@@ -52,7 +53,7 @@ public struct ExploreView: View {
             isLossless: true
         ),
         Track(
-            id: "yt_yang_terdalam",
+            id: "b_H_y2fHqZs",
             title: "Yang Terdalam",
             artist: "NOAH",
             album: "Taman Langit",
@@ -111,53 +112,81 @@ public struct ExploreView: View {
                         
                         VStack(spacing: 6) {
                             ForEach(exploreSongs) { track in
-                                Button {
-                                    engine.setQueue(exploreSongs, startIndex: exploreSongs.firstIndex(where: { $0.id == track.id }) ?? 0)
-                                    library.recordPlayback(track: track)
-                                } label: {
-                                    HStack(spacing: 12) {
-                                        if let artURL = track.artworkURL {
-                                            AsyncImage(url: artURL) { phase in
-                                                if let img = phase.image {
-                                                    img.resizable().aspectRatio(contentMode: .fill)
-                                                } else {
-                                                    Color.gray.opacity(0.3)
+                                HStack(spacing: 12) {
+                                    Button {
+                                        engine.setQueue(exploreSongs, startIndex: exploreSongs.firstIndex(where: { $0.id == track.id }) ?? 0)
+                                        library.recordPlayback(track: track)
+                                    } label: {
+                                        HStack(spacing: 12) {
+                                            if let artURL = track.artworkURL {
+                                                AsyncImage(url: artURL) { phase in
+                                                    if let img = phase.image {
+                                                        img.resizable().aspectRatio(contentMode: .fill)
+                                                    } else {
+                                                        Color.gray.opacity(0.3)
+                                                    }
                                                 }
+                                                .frame(width: 48, height: 48)
+                                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                            } else {
+                                                BitChordLogoView(size: 48, cornerRadius: 8)
                                             }
-                                            .frame(width: 48, height: 48)
-                                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                                        } else {
-                                            BitChordLogoView(size: 48, cornerRadius: 8)
-                                        }
-                                        
-                                        VStack(alignment: .leading, spacing: 3) {
-                                            Text(track.title)
-                                                .font(.system(size: 15, weight: .semibold))
-                                                .foregroundColor(engine.currentTrack?.id == track.id ? .red : .primary)
-                                                .lineLimit(1)
-                                            Text(track.artist)
-                                                .font(.system(size: 13))
-                                                .foregroundColor(.secondary)
-                                                .lineLimit(1)
-                                        }
-                                        
-                                        Spacer()
-                                        
-                                        if engine.currentTrack?.id == track.id {
-                                            Image(systemName: "waveform")
-                                                .font(.system(size: 14, weight: .bold))
-                                                .foregroundColor(.red)
-                                        } else {
-                                            Image(systemName: "play.circle.fill")
-                                                .font(.system(size: 22))
-                                                .foregroundColor(.secondary.opacity(0.7))
+                                            
+                                            VStack(alignment: .leading, spacing: 3) {
+                                                Text(track.title)
+                                                    .font(.system(size: 15, weight: .semibold))
+                                                    .foregroundColor(engine.currentTrack?.id == track.id ? .red : .primary)
+                                                    .lineLimit(1)
+                                                Text(track.artist)
+                                                    .font(.system(size: 13))
+                                                    .foregroundColor(.secondary)
+                                                    .lineLimit(1)
+                                            }
+                                            
+                                            Spacer()
+                                            
+                                            if engine.currentTrack?.id == track.id {
+                                                Image(systemName: "waveform")
+                                                    .font(.system(size: 14, weight: .bold))
+                                                    .foregroundColor(.red)
+                                                    .padding(.trailing, 4)
+                                            }
                                         }
                                     }
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 6)
-                                    .contentShape(Rectangle())
+                                    .buttonStyle(.plain)
+                                    
+                                    // 3-dots menu button (Matching Car HU Photo 2 & 3)
+                                    Button {
+                                        selectedTrackForMenu = track
+                                    } label: {
+                                        Image(systemName: "ellipsis")
+                                            .font(.system(size: 16, weight: .medium))
+                                            .foregroundColor(.secondary)
+                                            .frame(width: 36, height: 36)
+                                    }
+                                    .buttonStyle(.plain)
                                 }
-                                .buttonStyle(.plain)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 6)
+                                .contentShape(Rectangle())
+                                .contextMenu {
+                                    Button {
+                                        engine.insertNextInQueue(track)
+                                    } label: {
+                                        Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
+                                    }
+                                    Button {
+                                        engine.appendToQueue(track)
+                                    } label: {
+                                        Label("Add to Queue", systemImage: "text.badge.plus")
+                                    }
+                                    Button {
+                                        library.toggleLike(track: track)
+                                    } label: {
+                                        Label(library.isLiked(trackId: track.id) ? "Unlike" : "Like",
+                                              systemImage: library.isLiked(trackId: track.id) ? "star.fill" : "star")
+                                    }
+                                }
                             }
                         }
                     }
@@ -185,6 +214,9 @@ public struct ExploreView: View {
             }
             .sheet(isPresented: $showingAccountMenu) {
                 AccountMenuSheet()
+            }
+            .sheet(item: $selectedTrackForMenu) { track in
+                TrackContextMenuSheet(track: track)
             }
         }
     }

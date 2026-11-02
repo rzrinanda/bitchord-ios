@@ -303,11 +303,19 @@ public final class AudioPlayerEngine: ObservableObject {
             timeObserverToken = nil
         }
         
-        let interval = CMTime(seconds: 0.25, preferredTimescale: 600)
+        let interval = CMTime(seconds: 0.1, preferredTimescale: 600)
         timeObserverToken = player?.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             Task { @MainActor [weak self] in
                 guard let self = self else { return }
                 self.currentTime = time.seconds
+                
+                // Keep actual audio stream duration synchronized
+                if let item = self.player?.currentItem {
+                    let realDuration = item.duration.seconds
+                    if realDuration.isFinite && realDuration > 0 && abs(self.duration - realDuration) > 0.5 {
+                        self.duration = realDuration
+                    }
+                }
                 
                 // Handle crossfade volume ramping
                 if self.crossfadeDuration > 0 && self.duration > 0 {
@@ -317,11 +325,6 @@ public final class AudioPlayerEngine: ObservableObject {
                         crossfadeDuration: self.crossfadeDuration
                     )
                     self.player?.volume = fadeVol * self.volume
-                }
-                
-                // Auto transition at track completion
-                if self.duration > 0 && self.currentTime >= (self.duration - 0.3) {
-                    self.nextTrack()
                 }
             }
         }

@@ -8,6 +8,7 @@ public struct SyncedLyricsView: View {
     @State private var isLoading: Bool = true
     @State private var isSavedLocally: Bool = false
     @State private var autoScrollEnabled: Bool = true
+    @State private var currentActiveIndex: Int? = nil
     
     public init(track: Track) {
         self.track = track
@@ -65,7 +66,7 @@ public struct SyncedLyricsView: View {
                     ScrollView(showsIndicators: false) {
                         VStack(alignment: .leading, spacing: 22) {
                             ForEach(Array(lyrics.lines.enumerated()), id: \.element.id) { index, line in
-                                let isActive = lyrics.activeLineIndex(for: engine.currentTime) == index
+                                let isActive = currentActiveIndex == index
                                 
                                 Button {
                                     engine.seek(to: line.timestamp)
@@ -86,10 +87,14 @@ public struct SyncedLyricsView: View {
                         .padding(.horizontal, 28)
                         .padding(.vertical, 40)
                     }
-                    .onChange(of: lyrics.activeLineIndex(for: engine.currentTime)) { _, newIndex in
-                        if autoScrollEnabled, let activeIndex = newIndex {
-                            withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
-                                proxy.scrollTo(activeIndex, anchor: .center)
+                    .onChange(of: engine.currentTime) { _, newTime in
+                        let newIndex = lyrics.activeLineIndex(for: newTime)
+                        if newIndex != currentActiveIndex {
+                            currentActiveIndex = newIndex
+                            if autoScrollEnabled, let active = newIndex {
+                                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                                    proxy.scrollTo(active, anchor: .center)
+                                }
                             }
                         }
                     }
@@ -118,7 +123,9 @@ public struct SyncedLyricsView: View {
         .task {
             isLoading = true
             isSavedLocally = await LyricsManager.shared.isLyricsSavedLocally(for: track.id)
-            self.lyrics = await LyricsManager.shared.loadLyrics(for: track)
+            let loaded = await LyricsManager.shared.loadLyrics(for: track)
+            self.lyrics = loaded
+            self.currentActiveIndex = loaded?.activeLineIndex(for: engine.currentTime)
             isSavedLocally = await LyricsManager.shared.isLyricsSavedLocally(for: track.id)
             isLoading = false
         }

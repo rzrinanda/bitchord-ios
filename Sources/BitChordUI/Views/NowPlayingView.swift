@@ -253,55 +253,274 @@ public struct QueueSheetView: View {
     @ObservedObject var engine = AudioPlayerEngine.shared
     @Environment(\.dismiss) private var dismiss
     
+    // AutoPlay suggested tracks
+    private let autoPlaySuggestions: [Track] = [
+        Track(
+            id: "yt_intheend",
+            title: "In the End",
+            artist: "Linkin Park",
+            album: "Hybrid Theory",
+            duration: 216,
+            artworkURL: URL(string: "https://i.ytimg.com/vi/eVTXPUF4Oz4/hqdefault.jpg")
+        ),
+        Track(
+            id: "yt_numb",
+            title: "Numb",
+            artist: "Linkin Park",
+            album: "Meteora",
+            duration: 187,
+            artworkURL: URL(string: "https://i.ytimg.com/vi/kXYiU_JCYtU/hqdefault.jpg")
+        )
+    ]
+    
     public init() {}
     
     public var body: some View {
         NavigationStack {
-            List {
-                Section("Now Playing") {
-                    if let track = engine.currentTrack {
-                        HStack {
-                            Image(systemName: "speaker.wave.3.fill")
-                                .foregroundColor(.red)
-                            VStack(alignment: .leading) {
-                                Text(track.title).font(.headline)
-                                Text(track.artist).font(.subheadline).foregroundColor(.secondary)
-                            }
+            VStack(spacing: 0) {
+                // Header (Matching Car HU Photo 4)
+                HStack {
+                    Text("Queue")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundColor(.primary)
+                    Spacer()
+                    Button("Clear") {
+                        if let current = engine.currentTrack {
+                            engine.setQueue([current])
                         }
                     }
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    
+                    Button("Done") {
+                        dismiss()
+                    }
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(.primary)
+                    .padding(.leading, 12)
                 }
+                .padding(.horizontal, 20)
+                .padding(.top, 18)
+                .padding(.bottom, 12)
                 
-                Section("Up Next") {
-                    ForEach(Array(engine.queue.enumerated()), id: \.offset) { index, track in
-                        HStack {
-                            Text("\(index + 1)")
-                                .font(.caption)
+                Divider().opacity(0.3)
+                
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        // MARK: - Now Playing
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Now playing")
+                                .font(.system(size: 13, weight: .semibold))
                                 .foregroundColor(.secondary)
-                                .frame(width: 24)
-                            VStack(alignment: .leading) {
-                                Text(track.title).font(.body)
-                                Text(track.artist).font(.caption).foregroundColor(.secondary)
+                                .padding(.horizontal, 20)
+                            
+                            if let current = engine.currentTrack {
+                                HStack(spacing: 12) {
+                                    if let art = current.artworkURL {
+                                        AsyncImage(url: art) { phase in
+                                            if let img = phase.image {
+                                                img.resizable().aspectRatio(contentMode: .fill)
+                                            } else {
+                                                Color.gray.opacity(0.3)
+                                            }
+                                        }
+                                        .frame(width: 44, height: 44)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    } else {
+                                        BitChordLogoView(size: 44, cornerRadius: 8)
+                                    }
+                                    
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(current.title)
+                                            .font(.system(size: 15, weight: .semibold))
+                                            .foregroundColor(.primary)
+                                            .lineLimit(1)
+                                        Text(current.artist)
+                                            .font(.system(size: 13))
+                                            .foregroundColor(.secondary)
+                                            .lineLimit(1)
+                                    }
+                                    Spacer()
+                                    
+                                    Image(systemName: "waveform")
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundColor(.red)
+                                        .padding(.trailing, 4)
+                                    
+                                    Button {
+                                        engine.nextTrack()
+                                    } label: {
+                                        Image(systemName: "xmark")
+                                            .font(.system(size: 13, weight: .semibold))
+                                            .foregroundColor(.secondary)
+                                            .padding(6)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 8)
+                                .background(Color.secondary.opacity(0.08))
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .padding(.horizontal, 16)
                             }
-                            Spacer()
                         }
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            engine.playTrack(at: index)
+                        .padding(.top, 8)
+                        
+                        // MARK: - Next in queue
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Next in queue")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Button("Clear") {
+                                    if let current = engine.currentTrack {
+                                        engine.setQueue([current])
+                                    }
+                                }
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.secondary)
+                            }
+                            .padding(.horizontal, 20)
+                            
+                            let upNext = engine.queue.enumerated().filter { $0.offset > engine.queueIndex }
+                            if upNext.isEmpty {
+                                Text("No upcoming tracks")
+                                    .font(.system(size: 13))
+                                    .foregroundColor(.secondary)
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 6)
+                            } else {
+                                VStack(spacing: 4) {
+                                    ForEach(upNext, id: \.element.id) { index, track in
+                                        HStack(spacing: 12) {
+                                            Image(systemName: "line.3.horizontal")
+                                                .font(.system(size: 14))
+                                                .foregroundColor(.secondary)
+                                            
+                                            if let art = track.artworkURL {
+                                                AsyncImage(url: art) { phase in
+                                                    if let img = phase.image {
+                                                        img.resizable().aspectRatio(contentMode: .fill)
+                                                    } else {
+                                                        Color.gray.opacity(0.3)
+                                                    }
+                                                }
+                                                .frame(width: 40, height: 40)
+                                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                                            } else {
+                                                BitChordLogoView(size: 40, cornerRadius: 6)
+                                            }
+                                            
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(track.title)
+                                                    .font(.system(size: 14, weight: .semibold))
+                                                    .foregroundColor(.primary)
+                                                    .lineLimit(1)
+                                                Text(track.artist)
+                                                    .font(.system(size: 12))
+                                                    .foregroundColor(.secondary)
+                                                    .lineLimit(1)
+                                            }
+                                            Spacer()
+                                            
+                                            Button {
+                                                engine.removeTrackFromQueue(at: index)
+                                            } label: {
+                                                Image(systemName: "xmark")
+                                                    .font(.system(size: 13))
+                                                    .foregroundColor(.secondary)
+                                                    .padding(6)
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+                                        .padding(.horizontal, 20)
+                                        .padding(.vertical, 6)
+                                        .contentShape(Rectangle())
+                                        .onTapGesture {
+                                            engine.playTrack(at: index)
+                                        }
+                                    }
+                                }
+                            }
                         }
-                    }
-                    .onDelete { indexSet in
-                        for index in indexSet {
-                            engine.removeTrackFromQueue(at: index)
+                        
+                        // MARK: - AutoPlay Section (Matching Car HU Photo 4)
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "infinity")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(.primary)
+                                Text("AutoPlay")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(.primary)
+                            }
+                            .padding(.horizontal, 20)
+                            
+                            Text("Similar music, selected to play next")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                                .padding(.horizontal, 20)
+                            
+                            VStack(spacing: 4) {
+                                ForEach(autoPlaySuggestions) { track in
+                                    HStack(spacing: 12) {
+                                        Image(systemName: "line.3.horizontal")
+                                            .font(.system(size: 14))
+                                            .foregroundColor(.secondary)
+                                        
+                                        if let art = track.artworkURL {
+                                            AsyncImage(url: art) { phase in
+                                                if let img = phase.image {
+                                                    img.resizable().aspectRatio(contentMode: .fill)
+                                                } else {
+                                                    Color.gray.opacity(0.3)
+                                                }
+                                            }
+                                            .frame(width: 40, height: 40)
+                                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                                        } else {
+                                            BitChordLogoView(size: 40, cornerRadius: 6)
+                                        }
+                                        
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(track.title)
+                                                .font(.system(size: 14, weight: .semibold))
+                                                .foregroundColor(.primary)
+                                                .lineLimit(1)
+                                            Text(track.artist)
+                                                .font(.system(size: 12))
+                                                .foregroundColor(.secondary)
+                                                .lineLimit(1)
+                                        }
+                                        Spacer()
+                                        
+                                        Button {
+                                            engine.appendToQueue(track)
+                                        } label: {
+                                            Image(systemName: "plus")
+                                                .font(.system(size: 14, weight: .bold))
+                                                .foregroundColor(.primary)
+                                                .padding(6)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 6)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        engine.appendToQueue(track)
+                                    }
+                                }
+                            }
                         }
+                        
+                        Spacer(minLength: 40)
                     }
                 }
             }
-            .navigationTitle("Playing Next")
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
     }
 }

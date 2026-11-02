@@ -49,8 +49,17 @@ public actor StreamExtractor {
         artist: String? = nil,
         preferredQuality: AudioQuality = .high
     ) async throws -> StreamInfo {
+        var effectiveVideoId = trackId
+        
+        // If trackId is an alias or placeholder, resolve real YouTube 11-char videoId first
+        if effectiveVideoId.count != 11 || effectiveVideoId.contains("_") {
+            if let title = title, let resolvedId = await resolveYouTubeVideoId(title: title, artist: artist) {
+                effectiveVideoId = resolvedId
+            }
+        }
+        
         // Strategy 1: Direct YouTube Innertube Player API (iOS / Android Client)
-        if let direct = await extractViaYouTubeInnertube(trackId: trackId) {
+        if effectiveVideoId.count == 11, let direct = await extractViaYouTubeInnertube(trackId: effectiveVideoId) {
             return direct
         }
         
@@ -61,16 +70,63 @@ public actor StreamExtractor {
         }
         
         // Strategy 3: Piped Audio Streams
-        if let piped = await extractViaPiped(trackId: trackId, preferredQuality: preferredQuality) {
+        if effectiveVideoId.count == 11, let piped = await extractViaPiped(trackId: effectiveVideoId, preferredQuality: preferredQuality) {
             return piped
         }
         
         // Strategy 4: Invidious Audio Streams
-        if let invidious = await extractViaInvidious(trackId: trackId) {
+        if effectiveVideoId.count == 11, let invidious = await extractViaInvidious(trackId: effectiveVideoId) {
             return invidious
         }
         
         throw URLError(.cannotFindHost)
+    }
+    
+    // Resolve YouTube 11-char Video ID from search
+    private func resolveYouTubeVideoId(title: String, artist: String?) async -> String? {
+        let query = "\(title) \(artist ?? "")".trimmingCharacters(in: .whitespacesAndNewlines)
+        let body: [String: Any] = [
+            "context": [
+                "client": [
+                    "clientName": "IOS",
+                    "clientVersion": "19.29.1",
+                    "deviceModel": "iPhone16,2",
+                    "hl": "en",
+                    "gl": "US"
+                ]
+            ],
+            "query": query
+        ]
+        guard let url = URL(string: "https://www.youtube.com/youtubei/v1/search?key=\(innertubeKey)") else { return nil }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("com.google.ios.youtube/19.29.1", forHTTPHeaderField: "User-Agent")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        request.timeoutInterval = 4.0
+        
+        guard let (data, resp) = try? await URLSession.shared.data(for: request),
+              let http = resp as? HTTPURLResponse, http.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        
+        if let contents = json["contents"] as? [String: Any],
+           let sectionList = contents["sectionListRenderer"] as? [String: Any],
+           let sections = sectionList["contents"] as? [[String: Any]] {
+            for section in sections {
+                if let itemSection = section["itemSectionRenderer"] as? [String: Any],
+                   let contentsArray = itemSection["contents"] as? [[String: Any]] {
+                    for item in contentsArray {
+                        if let videoRenderer = item["videoRenderer"] as? [String: Any],
+                           let vId = videoRenderer["videoId"] as? String, vId.count == 11 {
+                            return vId
+                        }
+                    }
+                }
+            }
+        }
+        return nil
     }
     
     // MARK: - 1. Direct YouTube Innertube (iOS Client with Public Key)
@@ -160,32 +216,44 @@ public actor StreamExtractor {
     
     // MARK: - 2. High-Fidelity Audio Catalog Fallback (Instant AAC / ALAC)
     private func extractViaAudioCatalog(title: String, artist: String?) async -> StreamInfo? {
-        let cleanQuery = "\(title) \(artist ?? "")".trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let encoded = cleanQuery.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "https://itunes.apple.com/search?term=\(encoded)&media=music&entity=song&limit=5") else {
-            return nil
-        }
+        let cleanTitle = title
+            .replacingOccurrences(of: "\\(.*\\)", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "\\[.*\\]", with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 4.0
+        let queries = [
+            "\(cleanTitle) \(artist ?? "")",
+            cleanTitle
+        ]
         
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
-              let http = response as? HTTPURLResponse, http.statusCode == 200,
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let results = json["results"] as? [[String: Any]] else {
-            return nil
-        }
-        
-        for item in results {
-            if let preview = item["previewUrl"] as? String,
-               let streamURL = URL(string: preview) {
-                return StreamInfo(
-                    streamURL: streamURL,
-                    format: "audio/m4a",
-                    bitrate: 256,
-                    isLossless: true,
-                    sampleRate: 44100
-                )
+        for q in queries {
+            let cleanQuery = q.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let encoded = cleanQuery.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+                  let url = URL(string: "https://itunes.apple.com/search?term=\(encoded)&media=music&entity=song&limit=5") else {
+                continue
+            }
+            
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 3.5
+            
+            guard let (data, response) = try? await URLSession.shared.data(for: request),
+                  let http = response as? HTTPURLResponse, http.statusCode == 200,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let results = json["results"] as? [[String: Any]] else {
+                continue
+            }
+            
+            for item in results {
+                if let preview = item["previewUrl"] as? String,
+                   let streamURL = URL(string: preview) {
+                    return StreamInfo(
+                        streamURL: streamURL,
+                        format: "audio/m4a",
+                        bitrate: 256,
+                        isLossless: true,
+                        sampleRate: 44100
+                    )
+                }
             }
         }
         

@@ -9,7 +9,7 @@ public struct HomeView: View {
     // Top Picks matching user's car Head Unit (Photo 1 & 4)
     private let topPicks: [Track] = [
         Track(
-            id: "yt_mpy_sempurna",
+            id: "aL3Z_bA8d38",
             title: "Mimpi Yang Sempurna",
             artist: "NOAH",
             album: "Taman Langit",
@@ -18,7 +18,7 @@ public struct HomeView: View {
             isLossless: true
         ),
         Track(
-            id: "yt_kangen_d19",
+            id: "q_k8g6X2jls",
             title: "Kangen",
             artist: "Dewa 19",
             album: "19",
@@ -27,7 +27,7 @@ public struct HomeView: View {
             isLossless: true
         ),
         Track(
-            id: "yt_separuh_aku",
+            id: "wO0A0XcWy88",
             title: "Separuh Aku",
             artist: "NOAH",
             album: "Seperti Seharusnya",
@@ -36,7 +36,7 @@ public struct HomeView: View {
             isLossless: true
         ),
         Track(
-            id: "yt_yang_terdalam",
+            id: "b_H_y2fHqZs",
             title: "Yang Terdalam",
             artist: "NOAH",
             album: "Taman Langit",

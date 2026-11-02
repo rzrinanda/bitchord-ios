@@ -20,42 +20,50 @@ public actor LRCLIBClient {
         self.session = session
     }
     
-    /// Fetches lyrics from LRCLIB using exact track information
+    /// Fetches lyrics from LRCLIB using resilient fuzzy track and artist matching
     public func fetchLyrics(
         trackName: String,
         artistName: String,
         albumName: String? = nil,
         duration: TimeInterval? = nil
     ) async throws -> LRCLIBResponse {
+        let cleanTrack = trackName
+            .replacingOccurrences(of: "\\(.*\\)", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "\\[.*\\]", with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            
+        let cleanArtist = artistName
+            .components(separatedBy: " ft.")[0]
+            .components(separatedBy: " feat.")[0]
+            .components(separatedBy: " &")[0]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            
+        // Strategy 1: Direct get with clean terms
         var components = URLComponents(url: baseURL.appendingPathComponent("get"), resolvingAgainstBaseURL: true)!
         var queryItems: [URLQueryItem] = [
-            URLQueryItem(name: "track_name", value: trackName),
-            URLQueryItem(name: "artist_name", value: artistName)
+            URLQueryItem(name: "track_name", value: cleanTrack),
+            URLQueryItem(name: "artist_name", value: cleanArtist)
         ]
         if let album = albumName, !album.isEmpty {
             queryItems.append(URLQueryItem(name: "album_name", value: album))
         }
-        if let dur = duration, dur > 0 {
-            queryItems.append(URLQueryItem(name: "duration", value: String(Int(dur))))
-        }
         components.queryItems = queryItems
         
-        guard let url = components.url else {
-            throw URLError(.badURL)
+        if let url = components.url {
+            var request = URLRequest(url: url)
+            request.setValue("BitChord-iOS/1.0", forHTTPHeaderField: "User-Agent")
+            request.timeoutInterval = 5.0
+            
+            if let (data, response) = try? await session.data(for: request),
+               let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode),
+               let item = try? JSONDecoder().decode(LRCLIBResponse.self, from: data),
+               item.syncedLyrics != nil || item.plainLyrics != nil {
+                return item
+            }
         }
         
-        var request = URLRequest(url: url)
-        request.setValue("BitChord-iOS/1.0 (https://github.com/rzrinanda/bitchord-ios)", forHTTPHeaderField: "User-Agent")
-        request.timeoutInterval = 8.0
-        
-        let (data, response) = try await session.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
-            // Try search fallback if direct get returns 404
-            return try await searchLyricsFallback(query: "\(artistName) \(trackName)")
-        }
-        
-        let decoder = JSONDecoder()
-        return try decoder.decode(LRCLIBResponse.self, from: data)
+        // Strategy 2: Flexible search query fallback
+        return try await searchLyricsFallback(query: "\(cleanArtist) \(cleanTrack)")
     }
     
     /// Search fallback if exact match query failed
