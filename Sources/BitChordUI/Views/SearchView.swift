@@ -159,7 +159,8 @@ public struct SearchView: View {
                                     ForEach(library.recentSearches) { track in
                                         HStack(spacing: 12) {
                                             Button {
-                                                engine.setQueue([track])
+                                                let idx = library.recentSearches.firstIndex(where: { $0.id == track.id }) ?? 0
+                                                engine.setQueue(library.recentSearches, startIndex: idx)
                                                 library.recordPlayback(track: track)
                                             } label: {
                                                 HStack(spacing: 12) {

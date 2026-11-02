@@ -72,7 +72,7 @@ func runAllTests() async {
         engine.removeTrackFromQueue(at: 1)
         assertTest(!engine.queue.contains(where: { $0.id == "testD" }), "Engine: removeTrackFromQueue removes track from queue")
         
-        // 9. Repeat & Shuffle
+        // 9. Repeat, Shuffle & Loop / AutoPlay
         engine.cycleRepeatMode()
         assertTest(engine.repeatMode == .all, "Engine: cycleRepeatMode switches to .all")
         engine.cycleRepeatMode()
@@ -80,10 +80,40 @@ func runAllTests() async {
         engine.cycleRepeatMode()
         assertTest(engine.repeatMode == .off, "Engine: cycleRepeatMode cycles back to .off")
         
+        // Loop at end of queue with repeatMode == .all
+        engine.cycleRepeatMode() // now .all
+        engine.setQueue([trackA, trackB], startIndex: 1)
+        engine.nextTrack()
+        assertTest(engine.currentTrack?.id == "testA", "Engine: nextTrack() loops back to 0 when repeatMode is .all")
+        engine.cycleRepeatMode() // .one
+        engine.cycleRepeatMode() // .off
+        
+        // AutoPlay / Loop toggle
+        assertTest(engine.isAutoPlayEnabled == true, "Engine: isAutoPlayEnabled defaults to true")
+        engine.toggleAutoPlay()
+        assertTest(engine.isAutoPlayEnabled == false, "Engine: toggleAutoPlay switches to false")
+        engine.toggleAutoPlay()
+        assertTest(engine.isAutoPlayEnabled == true, "Engine: toggleAutoPlay switches back to true")
+        
+        // Shuffle & Restore Invariants
+        let t1 = Track(id: "1", title: "1", artist: "A", duration: 100)
+        let t2 = Track(id: "2", title: "2", artist: "A", duration: 100)
+        let t3 = Track(id: "3", title: "3", artist: "A", duration: 100)
+        let t4 = Track(id: "4", title: "4", artist: "A", duration: 100)
+        engine.setQueue([t1, t2, t3, t4], startIndex: 0)
         engine.toggleShuffle()
         assertTest(engine.shuffleMode == .on, "Engine: toggleShuffle switches to .on")
+        assertTest(engine.queue.count == 4, "Engine: Shuffled queue maintains all 4 tracks")
+        assertTest(engine.currentTrack?.id == "1", "Engine: Shuffled queue maintains currently playing track at index 0")
         engine.toggleShuffle()
         assertTest(engine.shuffleMode == .off, "Engine: toggleShuffle switches back to .off")
+        assertTest(engine.queue.map { $0.id } == ["1", "2", "3", "4"], "Engine: Shuffle off restores exact original queue order")
+        
+        // Clear queue
+        engine.clearUpcomingQueue()
+        assertTest(engine.queue.count == 1, "Engine: clearUpcomingQueue leaves only current track in queue")
+        engine.clearQueue()
+        assertTest(engine.queue.count == 1, "Engine: clearQueue maintains current track")
     }
     
     // MARK: - Test 2: LRC Parser (Line-Level & Syllable-Level Timing)

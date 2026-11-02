@@ -19,6 +19,7 @@ public final class AudioPlayerEngine: ObservableObject {
     @Published public var bitPerfectEnabled: Bool = false
     @Published public var crossfadeDuration: TimeInterval = 3.0 // 0 to 12s
     @Published public var automixEnabled: Bool = false
+    @Published public var isAutoPlayEnabled: Bool = true
     @Published public var skipSilenceEnabled: Bool = false
     
     // Queue & Modes
@@ -31,6 +32,7 @@ public final class AudioPlayerEngine: ObservableObject {
     private var player: AVPlayer?
     private var timeObserverToken: Any?
     private var playerItemObservation: NSKeyValueObservation?
+    private var playerItemEndObserver: NSObjectProtocol?
     
     public init() {
         setupAudioSession()
@@ -56,6 +58,16 @@ public final class AudioPlayerEngine: ObservableObject {
         self.originalQueue = tracks
         self.queue = tracks
         self.queueIndex = min(max(0, startIndex), tracks.count - 1)
+        
+        // If shuffle is active when setting a new queue, preserve active song and shuffle upcoming
+        if shuffleMode == .on {
+            let active = tracks[self.queueIndex]
+            var others = tracks.filter { $0.id != active.id }
+            others.shuffle()
+            self.queue = [active] + others
+            self.queueIndex = 0
+        }
+        
         playTrack(at: self.queueIndex)
     }
     
@@ -72,36 +84,78 @@ public final class AudioPlayerEngine: ObservableObject {
     
     public func removeTrackFromQueue(at index: Int) {
         guard index >= 0 && index < queue.count else { return }
-        queue.remove(at: index)
+        let removed = queue.remove(at: index)
+        if let origIdx = originalQueue.firstIndex(where: { $0.id == removed.id }) {
+            originalQueue.remove(at: origIdx)
+        }
         if index < queueIndex {
             queueIndex -= 1
+        }
+    }
+    
+    public func clearUpcomingQueue() {
+        guard queueIndex < queue.count else { return }
+        let kept = Array(queue.prefix(queueIndex + 1))
+        queue = kept
+        originalQueue = originalQueue.filter { orig in
+            kept.contains(where: { $0.id == orig.id })
+        }
+    }
+    
+    public func clearQueue() {
+        if let current = currentTrack {
+            queue = [current]
+            originalQueue = [current]
+            queueIndex = 0
         }
     }
     
     public func toggleShuffle() {
         if shuffleMode == .off {
             shuffleMode = .on
-            if let current = currentTrack {
-                var remaining = queue.filter { $0.id != current.id }
-                remaining.shuffle()
-                queue = [current] + remaining
-                queueIndex = 0
+            guard !queue.isEmpty else { return }
+            
+            // Snapshot canonical queue
+            if originalQueue.isEmpty || originalQueue.count != queue.count {
+                originalQueue = queue
             }
+            
+            // Keep past history and currently playing track intact, shuffle only unconsumed upcoming tracks
+            let history = Array(queue.prefix(queueIndex))
+            let current = queue[queueIndex]
+            var upcoming = Array(queue.suffix(from: min(queueIndex + 1, queue.count)))
+            upcoming.shuffle()
+            
+            self.queue = history + [current] + upcoming
+            self.queueIndex = history.count
         } else {
             shuffleMode = .off
+            guard !originalQueue.isEmpty else { return }
+            
+            // Restore original canonical order around current track
             if let current = currentTrack, let originalIndex = originalQueue.firstIndex(where: { $0.id == current.id }) {
-                queue = originalQueue
-                queueIndex = originalIndex
+                self.queue = originalQueue
+                self.queueIndex = originalIndex
+            } else {
+                self.queue = originalQueue
+                self.queueIndex = min(self.queueIndex, max(0, self.queue.count - 1))
             }
         }
     }
     
     public func cycleRepeatMode() {
         switch repeatMode {
-        case .off: repeatMode = .all
-        case .all: repeatMode = .one
-        case .one: repeatMode = .off
+        case .off:
+            repeatMode = .all
+        case .all:
+            repeatMode = .one
+        case .one:
+            repeatMode = .off
         }
+    }
+    
+    public func toggleAutoPlay() {
+        isAutoPlayEnabled.toggle()
     }
     
     // MARK: - Playback Control
@@ -151,6 +205,11 @@ public final class AudioPlayerEngine: ObservableObject {
         playerItemObservation?.invalidate()
         playerItemObservation = nil
         
+        if let observer = playerItemEndObserver {
+            NotificationCenter.default.removeObserver(observer)
+            playerItemEndObserver = nil
+        }
+        
         let playerItem = AVPlayerItem(url: url)
         if player == nil {
             player = AVPlayer(playerItem: playerItem)
@@ -181,13 +240,13 @@ public final class AudioPlayerEngine: ObservableObject {
             }
         }
         
-        NotificationCenter.default.addObserver(
+        playerItemEndObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
             object: playerItem,
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.nextTrack()
+                self?.handleTrackFinished()
             }
         }
         
@@ -196,6 +255,69 @@ public final class AudioPlayerEngine: ObservableObject {
         player?.play()
         self.status = .playing
         updateNowPlayingInfo()
+    }
+    
+    private func handleTrackFinished() {
+        switch repeatMode {
+        case .one:
+            // Loop current track seamlessly
+            player?.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.currentTime = 0
+                    self?.player?.play()
+                    self?.status = .playing
+                    self?.updateNowPlayingInfo()
+                }
+            }
+        case .all:
+            // Loop entire queue seamlessly
+            if queueIndex + 1 < queue.count {
+                playTrack(at: queueIndex + 1)
+            } else if !queue.isEmpty {
+                playTrack(at: 0)
+            }
+        case .off:
+            if queueIndex + 1 < queue.count {
+                playTrack(at: queueIndex + 1)
+            } else if isAutoPlayEnabled, let current = currentTrack {
+                fetchAndPlayAutoPlay(for: current)
+            } else {
+                status = .paused
+                currentTime = 0
+                updateNowPlayingInfo()
+            }
+        }
+    }
+    
+    private func fetchAndPlayAutoPlay(for current: Track) {
+        guard isAutoPlayEnabled else {
+            status = .paused
+            currentTime = 0
+            return
+        }
+        
+        Task { @MainActor [weak self] in
+            guard let self = self else { return }
+            let more = await YTMusicClient.shared.fetchRadioTracks(for: current)
+            if !more.isEmpty {
+                let nextIdx = self.queue.count
+                for t in more {
+                    if !self.queue.contains(where: { $0.id == t.id }) {
+                        self.queue.append(t)
+                        self.originalQueue.append(t)
+                    }
+                }
+                if nextIdx < self.queue.count {
+                    self.playTrack(at: nextIdx)
+                } else {
+                    self.status = .paused
+                    self.currentTime = 0
+                }
+            } else {
+                self.status = .paused
+                self.currentTime = 0
+            }
+        }
     }
     
     private func attemptStreamFallback(for track: Track) {
@@ -244,6 +366,10 @@ public final class AudioPlayerEngine: ObservableObject {
     }
     
     public func stop() {
+        if let observer = playerItemEndObserver {
+            NotificationCenter.default.removeObserver(observer)
+            playerItemEndObserver = nil
+        }
         player?.pause()
         player?.replaceCurrentItem(with: nil)
         status = .idle
@@ -253,8 +379,12 @@ public final class AudioPlayerEngine: ObservableObject {
     
     public func nextTrack() {
         if repeatMode == .one {
-            seek(to: 0)
-            resume()
+            // Manual Next skips ahead even if repeat one is on
+            if queueIndex + 1 < queue.count {
+                playTrack(at: queueIndex + 1)
+            } else if !queue.isEmpty {
+                playTrack(at: 0)
+            }
             return
         }
         
@@ -262,30 +392,12 @@ public final class AudioPlayerEngine: ObservableObject {
             playTrack(at: queueIndex + 1)
         } else if repeatMode == .all && !queue.isEmpty {
             playTrack(at: 0)
-        } else if let current = currentTrack {
-            // AutoPlay continuation when reaching end of queue
-            Task { @MainActor [weak self] in
-                guard let self = self else { return }
-                let more = await YTMusicClient.shared.fetchRadioTracks(for: current)
-                if !more.isEmpty {
-                    let nextIdx = self.queue.count
-                    for t in more {
-                        if !self.queue.contains(where: { $0.id == t.id }) {
-                            self.queue.append(t)
-                            self.originalQueue.append(t)
-                        }
-                    }
-                    if nextIdx < self.queue.count {
-                        self.playTrack(at: nextIdx)
-                    }
-                } else {
-                    self.status = .idle
-                    self.currentTime = 0
-                }
-            }
+        } else if isAutoPlayEnabled, let current = currentTrack {
+            fetchAndPlayAutoPlay(for: current)
         } else {
-            status = .idle
+            status = .paused
             currentTime = 0
+            updateNowPlayingInfo()
         }
     }
     
@@ -298,7 +410,7 @@ public final class AudioPlayerEngine: ObservableObject {
         
         if queueIndex - 1 >= 0 {
             playTrack(at: queueIndex - 1)
-        } else if queue.count > 1 {
+        } else if repeatMode == .all && queue.count > 1 {
             playTrack(at: queue.count - 1)
         } else {
             seek(to: 0)

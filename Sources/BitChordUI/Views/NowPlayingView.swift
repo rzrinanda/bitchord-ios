@@ -149,21 +149,12 @@ public struct NowPlayingView: View {
                     .padding(.bottom, 20)
                     
                     // Main Playback Controls
-                    HStack(spacing: 40) {
-                        Button {
-                            engine.toggleShuffle()
-                        } label: {
-                            Image(systemName: "shuffle")
-                                .font(.system(size: 20))
-                                .foregroundColor(engine.shuffleMode == .on ? .red : .white.opacity(0.6))
-                        }
-                        .buttonStyle(.plain)
-                        
+                    HStack(spacing: 44) {
                         Button {
                             engine.previousTrack()
                         } label: {
                             Image(systemName: "backward.fill")
-                                .font(.system(size: 28))
+                                .font(.system(size: 32))
                                 .foregroundColor(.white)
                         }
                         .buttonStyle(.plain)
@@ -172,7 +163,7 @@ public struct NowPlayingView: View {
                             engine.togglePlayPause()
                         } label: {
                             Image(systemName: engine.status == .playing ? "pause.circle.fill" : "play.circle.fill")
-                                .font(.system(size: 64))
+                                .font(.system(size: 68))
                                 .foregroundColor(.white)
                         }
                         .buttonStyle(.plain)
@@ -181,24 +172,79 @@ public struct NowPlayingView: View {
                             engine.nextTrack()
                         } label: {
                             Image(systemName: "forward.fill")
-                                .font(.system(size: 28))
+                                .font(.system(size: 32))
                                 .foregroundColor(.white)
                         }
                         .buttonStyle(.plain)
-                        
-                        Button {
-                            engine.cycleRepeatMode()
-                        } label: {
-                            Image(systemName: engine.repeatMode == .one ? "repeat.1" : "repeat")
-                                .font(.system(size: 20))
-                                .foregroundColor(engine.repeatMode != .off ? .red : .white.opacity(0.6))
-                        }
-                        .buttonStyle(.plain)
                     }
-                    .padding(.bottom, 24)
+                    .padding(.bottom, 20)
+                    
+                    // BitChord 3-Mode Pill: [ Shuffle | Repeat | Loop/AutoPlay ] (Matching Car HU Photo 4)
+                    VStack(spacing: 6) {
+                        HStack(spacing: 0) {
+                            // Shuffle Button
+                            Button {
+                                engine.toggleShuffle()
+                            } label: {
+                                Image(systemName: "shuffle")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(engine.shuffleMode == .on ? .white : .white.opacity(0.45))
+                                    .frame(width: 54, height: 36)
+                                    .background(engine.shuffleMode == .on ? Color.red.opacity(0.85) : Color.clear)
+                                    .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            
+                            Divider()
+                                .frame(height: 18)
+                                .background(Color.white.opacity(0.2))
+                            
+                            // Repeat Button (Off -> All -> One -> Off)
+                            Button {
+                                engine.cycleRepeatMode()
+                            } label: {
+                                Image(systemName: engine.repeatMode == .one ? "repeat.1" : "repeat")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(engine.repeatMode != .off ? .white : .white.opacity(0.45))
+                                    .frame(width: 54, height: 36)
+                                    .background(engine.repeatMode != .off ? Color.red.opacity(0.85) : Color.clear)
+                                    .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            
+                            Divider()
+                                .frame(height: 18)
+                                .background(Color.white.opacity(0.2))
+                            
+                            // Loop / AutoPlay Button (∞)
+                            Button {
+                                engine.toggleAutoPlay()
+                            } label: {
+                                Image(systemName: "infinity")
+                                    .font(.system(size: 16, weight: .bold))
+                                    .foregroundColor(engine.isAutoPlayEnabled ? .white : .white.opacity(0.45))
+                                    .frame(width: 54, height: 36)
+                                    .background(engine.isAutoPlayEnabled ? Color.red.opacity(0.85) : Color.clear)
+                                    .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(3)
+                        .background(Color.white.opacity(0.12))
+                        .clipShape(Capsule())
+                        .overlay(
+                            Capsule()
+                                .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                        )
+                        
+                        Text("This phone")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.white.opacity(0.6))
+                    }
+                    .padding(.bottom, 22)
                     
                     // Bottom Action Row
-                    HStack(spacing: 48) {
+                    HStack(spacing: 52) {
                         Button {
                             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                                 showingLyrics.toggle()
@@ -206,7 +252,7 @@ public struct NowPlayingView: View {
                         } label: {
                             Image(systemName: "quote.bubble")
                                 .font(.system(size: 20))
-                                .foregroundColor(showingLyrics ? .white : .white.opacity(0.5))
+                                .foregroundColor(showingLyrics ? .white : .white.opacity(0.55))
                                 .padding(8)
                                 .background(showingLyrics ? Color.white.opacity(0.2) : Color.clear)
                                 .clipShape(Circle())
@@ -220,7 +266,7 @@ public struct NowPlayingView: View {
                         } label: {
                             Image(systemName: "airplayaudio")
                                 .font(.system(size: 20))
-                                .foregroundColor(.white.opacity(0.7))
+                                .foregroundColor(.white.opacity(0.6))
                         }
                         .buttonStyle(.plain)
                         
@@ -229,11 +275,11 @@ public struct NowPlayingView: View {
                         } label: {
                             Image(systemName: "list.dash")
                                 .font(.system(size: 20))
-                                .foregroundColor(showingQueue ? .white : .white.opacity(0.5))
+                                .foregroundColor(showingQueue ? .white : .white.opacity(0.55))
                         }
                         .buttonStyle(.plain)
                     }
-                    .padding(.bottom, 34)
+                    .padding(.bottom, 30)
                 }
             }
         }
@@ -284,10 +330,53 @@ public struct QueueSheetView: View {
                         .font(.system(size: 20, weight: .bold))
                         .foregroundColor(.primary)
                     Spacer()
-                    Button("Clear") {
-                        if let current = engine.currentTrack {
-                            engine.setQueue([current])
+                    
+                    // BitChord 3-Mode Quick Pill
+                    HStack(spacing: 0) {
+                        Button {
+                            engine.toggleShuffle()
+                        } label: {
+                            Image(systemName: "shuffle")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(engine.shuffleMode == .on ? .white : .secondary)
+                                .frame(width: 36, height: 28)
+                                .background(engine.shuffleMode == .on ? Color.red : Color.clear)
+                                .clipShape(Capsule())
                         }
+                        .buttonStyle(.plain)
+                        
+                        Button {
+                            engine.cycleRepeatMode()
+                        } label: {
+                            Image(systemName: engine.repeatMode == .one ? "repeat.1" : "repeat")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(engine.repeatMode != .off ? .white : .secondary)
+                                .frame(width: 36, height: 28)
+                                .background(engine.repeatMode != .off ? Color.red : Color.clear)
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        
+                        Button {
+                            engine.toggleAutoPlay()
+                        } label: {
+                            Image(systemName: "infinity")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(engine.isAutoPlayEnabled ? .white : .secondary)
+                                .frame(width: 36, height: 28)
+                                .background(engine.isAutoPlayEnabled ? Color.red : Color.clear)
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(2)
+                    .background(Color.secondary.opacity(0.12))
+                    .clipShape(Capsule())
+                    
+                    Spacer()
+                    
+                    Button("Clear") {
+                        engine.clearQueue()
                     }
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(.secondary)
@@ -297,7 +386,7 @@ public struct QueueSheetView: View {
                     }
                     .font(.system(size: 14, weight: .bold))
                     .foregroundColor(.primary)
-                    .padding(.leading, 12)
+                    .padding(.leading, 8)
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 18)
@@ -374,9 +463,7 @@ public struct QueueSheetView: View {
                                     .foregroundColor(.secondary)
                                 Spacer()
                                 Button("Clear") {
-                                    if let current = engine.currentTrack {
-                                        engine.setQueue([current])
-                                    }
+                                    engine.clearUpcomingQueue()
                                 }
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundColor(.secondary)
@@ -447,13 +534,20 @@ public struct QueueSheetView: View {
                         
                         // MARK: - AutoPlay Section (Matching Car HU Photo 4)
                         VStack(alignment: .leading, spacing: 6) {
-                            HStack(spacing: 6) {
+                            HStack(spacing: 8) {
                                 Image(systemName: "infinity")
-                                    .font(.system(size: 14, weight: .bold))
-                                    .foregroundColor(.primary)
+                                    .font(.system(size: 16, weight: .bold))
+                                    .foregroundColor(engine.isAutoPlayEnabled ? .red : .secondary)
                                 Text("AutoPlay")
-                                    .font(.system(size: 14, weight: .bold))
+                                    .font(.system(size: 15, weight: .bold))
                                     .foregroundColor(.primary)
+                                Spacer()
+                                Toggle("", isOn: Binding(
+                                    get: { engine.isAutoPlayEnabled },
+                                    set: { _ in engine.toggleAutoPlay() }
+                                ))
+                                .labelsHidden()
+                                .tint(.red)
                             }
                             .padding(.horizontal, 20)
                             

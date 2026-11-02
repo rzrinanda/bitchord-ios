@@ -363,7 +363,8 @@ public struct TrackListView: View {
             } else {
                 ForEach(tracks) { track in
                     Button {
-                        engine.setQueue([track])
+                        let idx = tracks.firstIndex(where: { $0.id == track.id }) ?? 0
+                        engine.setQueue(tracks, startIndex: idx)
                     } label: {
                         HStack(spacing: 12) {
                             if let art = track.artworkURL {
@@ -466,7 +467,8 @@ public struct DownloadedSongsView: View {
             } else {
                 ForEach(tracks) { track in
                     Button {
-                        engine.setQueue([track])
+                        let idx = tracks.firstIndex(where: { $0.id == track.id }) ?? 0
+                        engine.setQueue(tracks, startIndex: idx)
                     } label: {
                         HStack(spacing: 12) {
                             if let artURL = track.artworkURL {
