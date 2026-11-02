@@ -456,7 +456,7 @@ public struct PlaylistsDetailView: View {
 }
 
 public struct DownloadedSongsView: View {
-    @State private var tracks: [DownloadedTrack] = []
+    @State private var tracks: [Track] = []
     @ObservedObject var engine = AudioPlayerEngine.shared
     
     public var body: some View {
@@ -464,24 +464,38 @@ public struct DownloadedSongsView: View {
             if tracks.isEmpty {
                 ContentUnavailableView("No Downloads", systemImage: "arrow.down.circle", description: Text("Tracks downloaded for offline listening will appear here."))
             } else {
-                ForEach(tracks, id: \.track.id) { item in
+                ForEach(tracks) { track in
                     Button {
-                        engine.setQueue([item.track])
+                        engine.setQueue([track])
                     } label: {
                         HStack(spacing: 12) {
-                            BitChordLogoView(size: 44, cornerRadius: 6)
+                            if let artURL = track.artworkURL {
+                                AsyncImage(url: artURL) { phase in
+                                    if let img = phase.image {
+                                        img.resizable().aspectRatio(contentMode: .fill)
+                                    } else {
+                                        BitChordLogoView(size: 44, cornerRadius: 6)
+                                    }
+                                }
+                                .frame(width: 44, height: 44)
+                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                            } else {
+                                BitChordLogoView(size: 44, cornerRadius: 6)
+                            }
+                            
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(item.track.title)
+                                Text(track.title)
                                     .font(.body)
                                     .foregroundColor(.primary)
-                                Text(item.track.artist)
+                                    .lineLimit(1)
+                                Text(track.artist)
                                     .font(.subheadline)
                                     .foregroundColor(.secondary)
+                                    .lineLimit(1)
                             }
                             Spacer()
-                            Text(ByteCountFormatter.string(fromByteCount: item.fileSizeBytes, countStyle: .file))
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                            Image(systemName: "arrow.down.circle.fill")
+                                .foregroundColor(.green)
                         }
                     }
                 }
@@ -551,16 +565,19 @@ public struct SpotifyImporterSheet: View {
     }
     
     private func importLink() {
-        guard let url = URL(string: linkText.trimmingCharacters(in: .whitespaces)) else { return }
+        let trimmed = linkText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
         isImporting = true
         statusMessage = "Resolving track metadata..."
         
         Task {
             do {
-                let track = try await SpotifyImporter.shared.importSpotifyURL(url: url)
+                let result = try await SpotifyImporter.shared.importFromURL(urlString: trimmed)
                 await MainActor.run {
-                    AudioPlayerEngine.shared.setQueue([track])
-                    LibraryDatabase.shared.toggleLike(track: track)
+                    if let first = result.tracks.first {
+                        AudioPlayerEngine.shared.setQueue(result.tracks)
+                        LibraryDatabase.shared.toggleLike(track: first)
+                    }
                     isImporting = false
                     dismiss()
                 }
