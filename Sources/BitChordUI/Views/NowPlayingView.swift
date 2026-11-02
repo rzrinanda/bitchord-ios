@@ -2,6 +2,7 @@ import SwiftUI
 
 public struct NowPlayingView: View {
     @ObservedObject var engine = AudioPlayerEngine.shared
+    @ObservedObject var library = LibraryDatabase.shared
     @Environment(\.dismiss) private var dismiss
     
     @State private var showingLyrics: Bool = false
@@ -107,10 +108,12 @@ public struct NowPlayingView: View {
                             }
                             Spacer()
                             
-                            Button {} label: {
-                                Image(systemName: "heart")
+                            Button {
+                                library.toggleLike(track: track)
+                            } label: {
+                                Image(systemName: library.isLiked(trackId: track.id) ? "heart.fill" : "heart")
                                     .font(.system(size: 22))
-                                    .foregroundColor(.white.opacity(0.8))
+                                    .foregroundColor(library.isLiked(trackId: track.id) ? .red : .white.opacity(0.8))
                             }
                             .buttonStyle(.plain)
                         }

@@ -57,8 +57,46 @@ public actor LyricsManager {
             
             return lyrics
         } catch {
+            // Step 3 (Fallback): Fetch from KuGou API
+            if let kugouLyrics = await fetchKuGouLyrics(for: track) {
+                await storage.processRetrievedLyrics(lyrics: kugouLyrics, rawLRC: kugouLyrics.plainLyrics)
+                return kugouLyrics
+            }
             return nil
         }
+    }
+    
+    /// KuGou Lyrics API Fallback for Asian / Global tracks
+    private func fetchKuGouLyrics(for track: Track) async -> Lyrics? {
+        guard let query = "\(track.artist) \(track.title)".addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let searchURL = URL(string: "http://lyrics.kugou.com/search?ver=1&man=yes&client=pc&keyword=\(query)") else {
+            return nil
+        }
+        
+        var req = URLRequest(url: searchURL)
+        req.timeoutInterval = 5.0
+        
+        guard let (data, resp) = try? await URLSession.shared.data(for: req),
+              let http = resp as? HTTPURLResponse, http.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let candidates = json["candidates"] as? [[String: Any]],
+              let first = candidates.first,
+              let id = first["id"] as? String ?? (first["id"] as? Int).map(String.init),
+              let accesskey = first["accesskey"] as? String,
+              let downloadURL = URL(string: "http://lyrics.kugou.com/download?ver=1&client=pc&id=\(id)&accesskey=\(accesskey)&fmt=lrc&charset=utf8") else {
+            return nil
+        }
+        
+        guard let (dlData, dlResp) = try? await URLSession.shared.data(from: downloadURL),
+              let dlHttp = dlResp as? HTTPURLResponse, dlHttp.statusCode == 200,
+              let dlJson = try? JSONSerialization.jsonObject(with: dlData) as? [String: Any],
+              let b64 = dlJson["content"] as? String,
+              let decodedData = Data(base64Encoded: b64),
+              let lrcString = String(data: decodedData, encoding: .utf8) else {
+            return nil
+        }
+        
+        return parser.parse(trackId: track.id, lrcContent: lrcString, provider: "KuGou")
     }
     
     /// User switch: enable or disable auto-download to storage

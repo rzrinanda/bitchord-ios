@@ -7,69 +7,75 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		BC000001BLD000000000000 /* Sources/BitChordCore/AudioEngine/AudioPlayerEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000001FILE000000000000 /* Sources/BitChordCore/AudioEngine/AudioPlayerEngine.swift */; };
-		BC000002BLD000000000000 /* Sources/BitChordCore/AudioEngine/CrossfadeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000002FILE000000000000 /* Sources/BitChordCore/AudioEngine/CrossfadeManager.swift */; };
-		BC000003BLD000000000000 /* Sources/BitChordCore/AudioEngine/EqualizerPreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000003FILE000000000000 /* Sources/BitChordCore/AudioEngine/EqualizerPreset.swift */; };
-		BC000004BLD000000000000 /* Sources/BitChordCore/AudioEngine/SleepTimer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000004FILE000000000000 /* Sources/BitChordCore/AudioEngine/SleepTimer.swift */; };
-		BC000005BLD000000000000 /* Sources/BitChordCore/Lyrics/LRCLIBClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000005FILE000000000000 /* Sources/BitChordCore/Lyrics/LRCLIBClient.swift */; };
-		BC000006BLD000000000000 /* Sources/BitChordCore/Lyrics/LRCParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000006FILE000000000000 /* Sources/BitChordCore/Lyrics/LRCParser.swift */; };
-		BC000007BLD000000000000 /* Sources/BitChordCore/Lyrics/LyricsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000007FILE000000000000 /* Sources/BitChordCore/Lyrics/LyricsManager.swift */; };
-		BC000008BLD000000000000 /* Sources/BitChordCore/Lyrics/LyricsStorageManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000008FILE000000000000 /* Sources/BitChordCore/Lyrics/LyricsStorageManager.swift */; };
-		BC000009BLD000000000000 /* Sources/BitChordCore/Models/Album.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000009FILE000000000000 /* Sources/BitChordCore/Models/Album.swift */; };
-		BC000010BLD000000000000 /* Sources/BitChordCore/Models/AudioQuality.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000010FILE000000000000 /* Sources/BitChordCore/Models/AudioQuality.swift */; };
-		BC000011BLD000000000000 /* Sources/BitChordCore/Models/Lyrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000011FILE000000000000 /* Sources/BitChordCore/Models/Lyrics.swift */; };
-		BC000012BLD000000000000 /* Sources/BitChordCore/Models/PlaybackState.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000012FILE000000000000 /* Sources/BitChordCore/Models/PlaybackState.swift */; };
-		BC000013BLD000000000000 /* Sources/BitChordCore/Models/Track.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000013FILE000000000000 /* Sources/BitChordCore/Models/Track.swift */; };
-		BC000014BLD000000000000 /* Sources/BitChordCore/Network/InnertubeEndpoints.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000014FILE000000000000 /* Sources/BitChordCore/Network/InnertubeEndpoints.swift */; };
-		BC000015BLD000000000000 /* Sources/BitChordCore/Network/StreamExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000015FILE000000000000 /* Sources/BitChordCore/Network/StreamExtractor.swift */; };
-		BC000016BLD000000000000 /* Sources/BitChordCore/Network/YTMusicClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000016FILE000000000000 /* Sources/BitChordCore/Network/YTMusicClient.swift */; };
-		BC000017BLD000000000000 /* Sources/BitChordCore/Services/BitChordSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000017FILE000000000000 /* Sources/BitChordCore/Services/BitChordSettings.swift */; };
-		BC000018BLD000000000000 /* Sources/BitChordCore/Services/LastFmScrobbler.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000018FILE000000000000 /* Sources/BitChordCore/Services/LastFmScrobbler.swift */; };
-		BC000019BLD000000000000 /* Sources/BitChordUI/BitChordApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000019FILE000000000000 /* Sources/BitChordUI/BitChordApp.swift */; };
-		BC000020BLD000000000000 /* Sources/BitChordUI/Components/DynamicBackgroundGradient.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000020FILE000000000000 /* Sources/BitChordUI/Components/DynamicBackgroundGradient.swift */; };
-		BC000021BLD000000000000 /* Sources/BitChordUI/Components/FrostedGlass.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000021FILE000000000000 /* Sources/BitChordUI/Components/FrostedGlass.swift */; };
-		BC000022BLD000000000000 /* Sources/BitChordUI/Components/MiniPlayerBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000022FILE000000000000 /* Sources/BitChordUI/Components/MiniPlayerBar.swift */; };
-		BC000023BLD000000000000 /* Sources/BitChordUI/Views/HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000023FILE000000000000 /* Sources/BitChordUI/Views/HomeView.swift */; };
-		BC000024BLD000000000000 /* Sources/BitChordUI/Views/LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000024FILE000000000000 /* Sources/BitChordUI/Views/LibraryView.swift */; };
-		BC000025BLD000000000000 /* Sources/BitChordUI/Views/MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000025FILE000000000000 /* Sources/BitChordUI/Views/MainTabView.swift */; };
-		BC000026BLD000000000000 /* Sources/BitChordUI/Views/NowPlayingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000026FILE000000000000 /* Sources/BitChordUI/Views/NowPlayingView.swift */; };
-		BC000027BLD000000000000 /* Sources/BitChordUI/Views/SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000027FILE000000000000 /* Sources/BitChordUI/Views/SearchView.swift */; };
-		BC000028BLD000000000000 /* Sources/BitChordUI/Views/SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000028FILE000000000000 /* Sources/BitChordUI/Views/SettingsView.swift */; };
-		BC000029BLD000000000000 /* Sources/BitChordUI/Views/SyncedLyricsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000029FILE000000000000 /* Sources/BitChordUI/Views/SyncedLyricsView.swift */; };
+		BC000001BLD000000000000 /* AudioPlayerEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000001FILE000000000000 /* AudioPlayerEngine.swift */; };
+		BC000002BLD000000000000 /* CrossfadeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000002FILE000000000000 /* CrossfadeManager.swift */; };
+		BC000003BLD000000000000 /* EqualizerPreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000003FILE000000000000 /* EqualizerPreset.swift */; };
+		BC000004BLD000000000000 /* SleepTimer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000004FILE000000000000 /* SleepTimer.swift */; };
+		BC000005BLD000000000000 /* LRCLIBClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000005FILE000000000000 /* LRCLIBClient.swift */; };
+		BC000006BLD000000000000 /* LRCParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000006FILE000000000000 /* LRCParser.swift */; };
+		BC000007BLD000000000000 /* LyricsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000007FILE000000000000 /* LyricsManager.swift */; };
+		BC000008BLD000000000000 /* LyricsStorageManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000008FILE000000000000 /* LyricsStorageManager.swift */; };
+		BC000009BLD000000000000 /* Album.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000009FILE000000000000 /* Album.swift */; };
+		BC000010BLD000000000000 /* AudioQuality.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000010FILE000000000000 /* AudioQuality.swift */; };
+		BC000011BLD000000000000 /* Lyrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000011FILE000000000000 /* Lyrics.swift */; };
+		BC000012BLD000000000000 /* PlaybackState.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000012FILE000000000000 /* PlaybackState.swift */; };
+		BC000013BLD000000000000 /* Track.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000013FILE000000000000 /* Track.swift */; };
+		BC000014BLD000000000000 /* InnertubeEndpoints.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000014FILE000000000000 /* InnertubeEndpoints.swift */; };
+		BC000015BLD000000000000 /* StreamExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000015FILE000000000000 /* StreamExtractor.swift */; };
+		BC000016BLD000000000000 /* YTMusicClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000016FILE000000000000 /* YTMusicClient.swift */; };
+		BC000017BLD000000000000 /* BitChordSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000017FILE000000000000 /* BitChordSettings.swift */; };
+		BC000018BLD000000000000 /* DownloadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000018FILE000000000000 /* DownloadManager.swift */; };
+		BC000019BLD000000000000 /* LastFmScrobbler.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000019FILE000000000000 /* LastFmScrobbler.swift */; };
+		BC000020BLD000000000000 /* LibraryDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000020FILE000000000000 /* LibraryDatabase.swift */; };
+		BC000021BLD000000000000 /* SpotifyImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000021FILE000000000000 /* SpotifyImporter.swift */; };
+		BC000022BLD000000000000 /* BitChordApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000022FILE000000000000 /* BitChordApp.swift */; };
+		BC000023BLD000000000000 /* DynamicBackgroundGradient.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000023FILE000000000000 /* DynamicBackgroundGradient.swift */; };
+		BC000024BLD000000000000 /* FrostedGlass.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000024FILE000000000000 /* FrostedGlass.swift */; };
+		BC000025BLD000000000000 /* MiniPlayerBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000025FILE000000000000 /* MiniPlayerBar.swift */; };
+		BC000026BLD000000000000 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000026FILE000000000000 /* HomeView.swift */; };
+		BC000027BLD000000000000 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000027FILE000000000000 /* LibraryView.swift */; };
+		BC000028BLD000000000000 /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000028FILE000000000000 /* MainTabView.swift */; };
+		BC000029BLD000000000000 /* NowPlayingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000029FILE000000000000 /* NowPlayingView.swift */; };
+		BC000030BLD000000000000 /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000030FILE000000000000 /* SearchView.swift */; };
+		BC000031BLD000000000000 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000031FILE000000000000 /* SettingsView.swift */; };
+		BC000032BLD000000000000 /* SyncedLyricsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000032FILE000000000000 /* SyncedLyricsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		BC000000PLIST000000000001 /* BitChord-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "BitChord-Info.plist"; sourceTree = SOURCE_ROOT; };
 		BC000000PROD000000000001 /* BitChord.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BitChord.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		BC000001FILE000000000000 /* Sources/BitChordCore/AudioEngine/AudioPlayerEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordCore/AudioEngine/AudioPlayerEngine.swift; sourceTree = SOURCE_ROOT; };
-		BC000002FILE000000000000 /* Sources/BitChordCore/AudioEngine/CrossfadeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordCore/AudioEngine/CrossfadeManager.swift; sourceTree = SOURCE_ROOT; };
-		BC000003FILE000000000000 /* Sources/BitChordCore/AudioEngine/EqualizerPreset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordCore/AudioEngine/EqualizerPreset.swift; sourceTree = SOURCE_ROOT; };
-		BC000004FILE000000000000 /* Sources/BitChordCore/AudioEngine/SleepTimer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordCore/AudioEngine/SleepTimer.swift; sourceTree = SOURCE_ROOT; };
-		BC000005FILE000000000000 /* Sources/BitChordCore/Lyrics/LRCLIBClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordCore/Lyrics/LRCLIBClient.swift; sourceTree = SOURCE_ROOT; };
-		BC000006FILE000000000000 /* Sources/BitChordCore/Lyrics/LRCParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordCore/Lyrics/LRCParser.swift; sourceTree = SOURCE_ROOT; };
-		BC000007FILE000000000000 /* Sources/BitChordCore/Lyrics/LyricsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordCore/Lyrics/LyricsManager.swift; sourceTree = SOURCE_ROOT; };
-		BC000008FILE000000000000 /* Sources/BitChordCore/Lyrics/LyricsStorageManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordCore/Lyrics/LyricsStorageManager.swift; sourceTree = SOURCE_ROOT; };
-		BC000009FILE000000000000 /* Sources/BitChordCore/Models/Album.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordCore/Models/Album.swift; sourceTree = SOURCE_ROOT; };
-		BC000010FILE000000000000 /* Sources/BitChordCore/Models/AudioQuality.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordCore/Models/AudioQuality.swift; sourceTree = SOURCE_ROOT; };
-		BC000011FILE000000000000 /* Sources/BitChordCore/Models/Lyrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordCore/Models/Lyrics.swift; sourceTree = SOURCE_ROOT; };
-		BC000012FILE000000000000 /* Sources/BitChordCore/Models/PlaybackState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordCore/Models/PlaybackState.swift; sourceTree = SOURCE_ROOT; };
-		BC000013FILE000000000000 /* Sources/BitChordCore/Models/Track.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordCore/Models/Track.swift; sourceTree = SOURCE_ROOT; };
-		BC000014FILE000000000000 /* Sources/BitChordCore/Network/InnertubeEndpoints.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordCore/Network/InnertubeEndpoints.swift; sourceTree = SOURCE_ROOT; };
-		BC000015FILE000000000000 /* Sources/BitChordCore/Network/StreamExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordCore/Network/StreamExtractor.swift; sourceTree = SOURCE_ROOT; };
-		BC000016FILE000000000000 /* Sources/BitChordCore/Network/YTMusicClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordCore/Network/YTMusicClient.swift; sourceTree = SOURCE_ROOT; };
-		BC000017FILE000000000000 /* Sources/BitChordCore/Services/BitChordSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordCore/Services/BitChordSettings.swift; sourceTree = SOURCE_ROOT; };
-		BC000018FILE000000000000 /* Sources/BitChordCore/Services/LastFmScrobbler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordCore/Services/LastFmScrobbler.swift; sourceTree = SOURCE_ROOT; };
-		BC000019FILE000000000000 /* Sources/BitChordUI/BitChordApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordUI/BitChordApp.swift; sourceTree = SOURCE_ROOT; };
-		BC000020FILE000000000000 /* Sources/BitChordUI/Components/DynamicBackgroundGradient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordUI/Components/DynamicBackgroundGradient.swift; sourceTree = SOURCE_ROOT; };
-		BC000021FILE000000000000 /* Sources/BitChordUI/Components/FrostedGlass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordUI/Components/FrostedGlass.swift; sourceTree = SOURCE_ROOT; };
-		BC000022FILE000000000000 /* Sources/BitChordUI/Components/MiniPlayerBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordUI/Components/MiniPlayerBar.swift; sourceTree = SOURCE_ROOT; };
-		BC000023FILE000000000000 /* Sources/BitChordUI/Views/HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordUI/Views/HomeView.swift; sourceTree = SOURCE_ROOT; };
-		BC000024FILE000000000000 /* Sources/BitChordUI/Views/LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordUI/Views/LibraryView.swift; sourceTree = SOURCE_ROOT; };
-		BC000025FILE000000000000 /* Sources/BitChordUI/Views/MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordUI/Views/MainTabView.swift; sourceTree = SOURCE_ROOT; };
-		BC000026FILE000000000000 /* Sources/BitChordUI/Views/NowPlayingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordUI/Views/NowPlayingView.swift; sourceTree = SOURCE_ROOT; };
-		BC000027FILE000000000000 /* Sources/BitChordUI/Views/SearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordUI/Views/SearchView.swift; sourceTree = SOURCE_ROOT; };
-		BC000028FILE000000000000 /* Sources/BitChordUI/Views/SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordUI/Views/SettingsView.swift; sourceTree = SOURCE_ROOT; };
-		BC000029FILE000000000000 /* Sources/BitChordUI/Views/SyncedLyricsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordUI/Views/SyncedLyricsView.swift; sourceTree = SOURCE_ROOT; };
+		BC000001FILE000000000000 /* AudioPlayerEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/BitChordCore/AudioEngine/AudioPlayerEngine.swift"; sourceTree = SOURCE_ROOT; };
+		BC000002FILE000000000000 /* CrossfadeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/BitChordCore/AudioEngine/CrossfadeManager.swift"; sourceTree = SOURCE_ROOT; };
+		BC000003FILE000000000000 /* EqualizerPreset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/BitChordCore/AudioEngine/EqualizerPreset.swift"; sourceTree = SOURCE_ROOT; };
+		BC000004FILE000000000000 /* SleepTimer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/BitChordCore/AudioEngine/SleepTimer.swift"; sourceTree = SOURCE_ROOT; };
+		BC000005FILE000000000000 /* LRCLIBClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/BitChordCore/Lyrics/LRCLIBClient.swift"; sourceTree = SOURCE_ROOT; };
+		BC000006FILE000000000000 /* LRCParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/BitChordCore/Lyrics/LRCParser.swift"; sourceTree = SOURCE_ROOT; };
+		BC000007FILE000000000000 /* LyricsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/BitChordCore/Lyrics/LyricsManager.swift"; sourceTree = SOURCE_ROOT; };
+		BC000008FILE000000000000 /* LyricsStorageManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/BitChordCore/Lyrics/LyricsStorageManager.swift"; sourceTree = SOURCE_ROOT; };
+		BC000009FILE000000000000 /* Album.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/BitChordCore/Models/Album.swift"; sourceTree = SOURCE_ROOT; };
+		BC000010FILE000000000000 /* AudioQuality.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/BitChordCore/Models/AudioQuality.swift"; sourceTree = SOURCE_ROOT; };
+		BC000011FILE000000000000 /* Lyrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/BitChordCore/Models/Lyrics.swift"; sourceTree = SOURCE_ROOT; };
+		BC000012FILE000000000000 /* PlaybackState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/BitChordCore/Models/PlaybackState.swift"; sourceTree = SOURCE_ROOT; };
+		BC000013FILE000000000000 /* Track.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/BitChordCore/Models/Track.swift"; sourceTree = SOURCE_ROOT; };
+		BC000014FILE000000000000 /* InnertubeEndpoints.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/BitChordCore/Network/InnertubeEndpoints.swift"; sourceTree = SOURCE_ROOT; };
+		BC000015FILE000000000000 /* StreamExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/BitChordCore/Network/StreamExtractor.swift"; sourceTree = SOURCE_ROOT; };
+		BC000016FILE000000000000 /* YTMusicClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/BitChordCore/Network/YTMusicClient.swift"; sourceTree = SOURCE_ROOT; };
+		BC000017FILE000000000000 /* BitChordSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/BitChordCore/Services/BitChordSettings.swift"; sourceTree = SOURCE_ROOT; };
+		BC000018FILE000000000000 /* DownloadManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/BitChordCore/Services/DownloadManager.swift"; sourceTree = SOURCE_ROOT; };
+		BC000019FILE000000000000 /* LastFmScrobbler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/BitChordCore/Services/LastFmScrobbler.swift"; sourceTree = SOURCE_ROOT; };
+		BC000020FILE000000000000 /* LibraryDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/BitChordCore/Services/LibraryDatabase.swift"; sourceTree = SOURCE_ROOT; };
+		BC000021FILE000000000000 /* SpotifyImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/BitChordCore/Services/SpotifyImporter.swift"; sourceTree = SOURCE_ROOT; };
+		BC000022FILE000000000000 /* BitChordApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/BitChordUI/BitChordApp.swift"; sourceTree = SOURCE_ROOT; };
+		BC000023FILE000000000000 /* DynamicBackgroundGradient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/BitChordUI/Components/DynamicBackgroundGradient.swift"; sourceTree = SOURCE_ROOT; };
+		BC000024FILE000000000000 /* FrostedGlass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/BitChordUI/Components/FrostedGlass.swift"; sourceTree = SOURCE_ROOT; };
+		BC000025FILE000000000000 /* MiniPlayerBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/BitChordUI/Components/MiniPlayerBar.swift"; sourceTree = SOURCE_ROOT; };
+		BC000026FILE000000000000 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/BitChordUI/Views/HomeView.swift"; sourceTree = SOURCE_ROOT; };
+		BC000027FILE000000000000 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/BitChordUI/Views/LibraryView.swift"; sourceTree = SOURCE_ROOT; };
+		BC000028FILE000000000000 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/BitChordUI/Views/MainTabView.swift"; sourceTree = SOURCE_ROOT; };
+		BC000029FILE000000000000 /* NowPlayingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/BitChordUI/Views/NowPlayingView.swift"; sourceTree = SOURCE_ROOT; };
+		BC000030FILE000000000000 /* SearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/BitChordUI/Views/SearchView.swift"; sourceTree = SOURCE_ROOT; };
+		BC000031FILE000000000000 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/BitChordUI/Views/SettingsView.swift"; sourceTree = SOURCE_ROOT; };
+		BC000032FILE000000000000 /* SyncedLyricsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/BitChordUI/Views/SyncedLyricsView.swift"; sourceTree = SOURCE_ROOT; };
+		BC000000PLIST000000000001 /* BitChord-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "BitChord-Info.plist"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -86,35 +92,38 @@
 		BC000000GRP0000000000001 = {
 			isa = PBXGroup;
 			children = (
-				BC000001FILE000000000000 /* Sources/BitChordCore/AudioEngine/AudioPlayerEngine.swift */,
-				BC000002FILE000000000000 /* Sources/BitChordCore/AudioEngine/CrossfadeManager.swift */,
-				BC000003FILE000000000000 /* Sources/BitChordCore/AudioEngine/EqualizerPreset.swift */,
-				BC000004FILE000000000000 /* Sources/BitChordCore/AudioEngine/SleepTimer.swift */,
-				BC000005FILE000000000000 /* Sources/BitChordCore/Lyrics/LRCLIBClient.swift */,
-				BC000006FILE000000000000 /* Sources/BitChordCore/Lyrics/LRCParser.swift */,
-				BC000007FILE000000000000 /* Sources/BitChordCore/Lyrics/LyricsManager.swift */,
-				BC000008FILE000000000000 /* Sources/BitChordCore/Lyrics/LyricsStorageManager.swift */,
-				BC000009FILE000000000000 /* Sources/BitChordCore/Models/Album.swift */,
-				BC000010FILE000000000000 /* Sources/BitChordCore/Models/AudioQuality.swift */,
-				BC000011FILE000000000000 /* Sources/BitChordCore/Models/Lyrics.swift */,
-				BC000012FILE000000000000 /* Sources/BitChordCore/Models/PlaybackState.swift */,
-				BC000013FILE000000000000 /* Sources/BitChordCore/Models/Track.swift */,
-				BC000014FILE000000000000 /* Sources/BitChordCore/Network/InnertubeEndpoints.swift */,
-				BC000015FILE000000000000 /* Sources/BitChordCore/Network/StreamExtractor.swift */,
-				BC000016FILE000000000000 /* Sources/BitChordCore/Network/YTMusicClient.swift */,
-				BC000017FILE000000000000 /* Sources/BitChordCore/Services/BitChordSettings.swift */,
-				BC000018FILE000000000000 /* Sources/BitChordCore/Services/LastFmScrobbler.swift */,
-				BC000019FILE000000000000 /* Sources/BitChordUI/BitChordApp.swift */,
-				BC000020FILE000000000000 /* Sources/BitChordUI/Components/DynamicBackgroundGradient.swift */,
-				BC000021FILE000000000000 /* Sources/BitChordUI/Components/FrostedGlass.swift */,
-				BC000022FILE000000000000 /* Sources/BitChordUI/Components/MiniPlayerBar.swift */,
-				BC000023FILE000000000000 /* Sources/BitChordUI/Views/HomeView.swift */,
-				BC000024FILE000000000000 /* Sources/BitChordUI/Views/LibraryView.swift */,
-				BC000025FILE000000000000 /* Sources/BitChordUI/Views/MainTabView.swift */,
-				BC000026FILE000000000000 /* Sources/BitChordUI/Views/NowPlayingView.swift */,
-				BC000027FILE000000000000 /* Sources/BitChordUI/Views/SearchView.swift */,
-				BC000028FILE000000000000 /* Sources/BitChordUI/Views/SettingsView.swift */,
-				BC000029FILE000000000000 /* Sources/BitChordUI/Views/SyncedLyricsView.swift */,
+				BC000001FILE000000000000 /* AudioPlayerEngine.swift */,
+				BC000002FILE000000000000 /* CrossfadeManager.swift */,
+				BC000003FILE000000000000 /* EqualizerPreset.swift */,
+				BC000004FILE000000000000 /* SleepTimer.swift */,
+				BC000005FILE000000000000 /* LRCLIBClient.swift */,
+				BC000006FILE000000000000 /* LRCParser.swift */,
+				BC000007FILE000000000000 /* LyricsManager.swift */,
+				BC000008FILE000000000000 /* LyricsStorageManager.swift */,
+				BC000009FILE000000000000 /* Album.swift */,
+				BC000010FILE000000000000 /* AudioQuality.swift */,
+				BC000011FILE000000000000 /* Lyrics.swift */,
+				BC000012FILE000000000000 /* PlaybackState.swift */,
+				BC000013FILE000000000000 /* Track.swift */,
+				BC000014FILE000000000000 /* InnertubeEndpoints.swift */,
+				BC000015FILE000000000000 /* StreamExtractor.swift */,
+				BC000016FILE000000000000 /* YTMusicClient.swift */,
+				BC000017FILE000000000000 /* BitChordSettings.swift */,
+				BC000018FILE000000000000 /* DownloadManager.swift */,
+				BC000019FILE000000000000 /* LastFmScrobbler.swift */,
+				BC000020FILE000000000000 /* LibraryDatabase.swift */,
+				BC000021FILE000000000000 /* SpotifyImporter.swift */,
+				BC000022FILE000000000000 /* BitChordApp.swift */,
+				BC000023FILE000000000000 /* DynamicBackgroundGradient.swift */,
+				BC000024FILE000000000000 /* FrostedGlass.swift */,
+				BC000025FILE000000000000 /* MiniPlayerBar.swift */,
+				BC000026FILE000000000000 /* HomeView.swift */,
+				BC000027FILE000000000000 /* LibraryView.swift */,
+				BC000028FILE000000000000 /* MainTabView.swift */,
+				BC000029FILE000000000000 /* NowPlayingView.swift */,
+				BC000030FILE000000000000 /* SearchView.swift */,
+				BC000031FILE000000000000 /* SettingsView.swift */,
+				BC000032FILE000000000000 /* SyncedLyricsView.swift */,
 				BC000000PLIST000000000001 /* BitChord-Info.plist */,
 				BC000000GRP0000000000002 /* Products */,
 			);
@@ -185,35 +194,38 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				BC000001BLD000000000000 /* Sources/BitChordCore/AudioEngine/AudioPlayerEngine.swift in Sources */,
-				BC000002BLD000000000000 /* Sources/BitChordCore/AudioEngine/CrossfadeManager.swift in Sources */,
-				BC000003BLD000000000000 /* Sources/BitChordCore/AudioEngine/EqualizerPreset.swift in Sources */,
-				BC000004BLD000000000000 /* Sources/BitChordCore/AudioEngine/SleepTimer.swift in Sources */,
-				BC000005BLD000000000000 /* Sources/BitChordCore/Lyrics/LRCLIBClient.swift in Sources */,
-				BC000006BLD000000000000 /* Sources/BitChordCore/Lyrics/LRCParser.swift in Sources */,
-				BC000007BLD000000000000 /* Sources/BitChordCore/Lyrics/LyricsManager.swift in Sources */,
-				BC000008BLD000000000000 /* Sources/BitChordCore/Lyrics/LyricsStorageManager.swift in Sources */,
-				BC000009BLD000000000000 /* Sources/BitChordCore/Models/Album.swift in Sources */,
-				BC000010BLD000000000000 /* Sources/BitChordCore/Models/AudioQuality.swift in Sources */,
-				BC000011BLD000000000000 /* Sources/BitChordCore/Models/Lyrics.swift in Sources */,
-				BC000012BLD000000000000 /* Sources/BitChordCore/Models/PlaybackState.swift in Sources */,
-				BC000013BLD000000000000 /* Sources/BitChordCore/Models/Track.swift in Sources */,
-				BC000014BLD000000000000 /* Sources/BitChordCore/Network/InnertubeEndpoints.swift in Sources */,
-				BC000015BLD000000000000 /* Sources/BitChordCore/Network/StreamExtractor.swift in Sources */,
-				BC000016BLD000000000000 /* Sources/BitChordCore/Network/YTMusicClient.swift in Sources */,
-				BC000017BLD000000000000 /* Sources/BitChordCore/Services/BitChordSettings.swift in Sources */,
-				BC000018BLD000000000000 /* Sources/BitChordCore/Services/LastFmScrobbler.swift in Sources */,
-				BC000019BLD000000000000 /* Sources/BitChordUI/BitChordApp.swift in Sources */,
-				BC000020BLD000000000000 /* Sources/BitChordUI/Components/DynamicBackgroundGradient.swift in Sources */,
-				BC000021BLD000000000000 /* Sources/BitChordUI/Components/FrostedGlass.swift in Sources */,
-				BC000022BLD000000000000 /* Sources/BitChordUI/Components/MiniPlayerBar.swift in Sources */,
-				BC000023BLD000000000000 /* Sources/BitChordUI/Views/HomeView.swift in Sources */,
-				BC000024BLD000000000000 /* Sources/BitChordUI/Views/LibraryView.swift in Sources */,
-				BC000025BLD000000000000 /* Sources/BitChordUI/Views/MainTabView.swift in Sources */,
-				BC000026BLD000000000000 /* Sources/BitChordUI/Views/NowPlayingView.swift in Sources */,
-				BC000027BLD000000000000 /* Sources/BitChordUI/Views/SearchView.swift in Sources */,
-				BC000028BLD000000000000 /* Sources/BitChordUI/Views/SettingsView.swift in Sources */,
-				BC000029BLD000000000000 /* Sources/BitChordUI/Views/SyncedLyricsView.swift in Sources */,
+				BC000001BLD000000000000 /* AudioPlayerEngine.swift in Sources */,
+				BC000002BLD000000000000 /* CrossfadeManager.swift in Sources */,
+				BC000003BLD000000000000 /* EqualizerPreset.swift in Sources */,
+				BC000004BLD000000000000 /* SleepTimer.swift in Sources */,
+				BC000005BLD000000000000 /* LRCLIBClient.swift in Sources */,
+				BC000006BLD000000000000 /* LRCParser.swift in Sources */,
+				BC000007BLD000000000000 /* LyricsManager.swift in Sources */,
+				BC000008BLD000000000000 /* LyricsStorageManager.swift in Sources */,
+				BC000009BLD000000000000 /* Album.swift in Sources */,
+				BC000010BLD000000000000 /* AudioQuality.swift in Sources */,
+				BC000011BLD000000000000 /* Lyrics.swift in Sources */,
+				BC000012BLD000000000000 /* PlaybackState.swift in Sources */,
+				BC000013BLD000000000000 /* Track.swift in Sources */,
+				BC000014BLD000000000000 /* InnertubeEndpoints.swift in Sources */,
+				BC000015BLD000000000000 /* StreamExtractor.swift in Sources */,
+				BC000016BLD000000000000 /* YTMusicClient.swift in Sources */,
+				BC000017BLD000000000000 /* BitChordSettings.swift in Sources */,
+				BC000018BLD000000000000 /* DownloadManager.swift in Sources */,
+				BC000019BLD000000000000 /* LastFmScrobbler.swift in Sources */,
+				BC000020BLD000000000000 /* LibraryDatabase.swift in Sources */,
+				BC000021BLD000000000000 /* SpotifyImporter.swift in Sources */,
+				BC000022BLD000000000000 /* BitChordApp.swift in Sources */,
+				BC000023BLD000000000000 /* DynamicBackgroundGradient.swift in Sources */,
+				BC000024BLD000000000000 /* FrostedGlass.swift in Sources */,
+				BC000025BLD000000000000 /* MiniPlayerBar.swift in Sources */,
+				BC000026BLD000000000000 /* HomeView.swift in Sources */,
+				BC000027BLD000000000000 /* LibraryView.swift in Sources */,
+				BC000028BLD000000000000 /* MainTabView.swift in Sources */,
+				BC000029BLD000000000000 /* NowPlayingView.swift in Sources */,
+				BC000030BLD000000000000 /* SearchView.swift in Sources */,
+				BC000031BLD000000000000 /* SettingsView.swift in Sources */,
+				BC000032BLD000000000000 /* SyncedLyricsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -244,8 +256,8 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
-				COPY_PHASE_STRIP = NO;
-				DEBUG_INFORMATION_FORMAT = "dwarf";
+				COPY_PHASE_STRIP = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -262,7 +274,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = TUWKT75FE8;
+				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "BitChord-Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -283,7 +295,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = TUWKT75FE8;
+				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "BitChord-Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -321,6 +333,7 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
 	};
 	rootObject = BC000000PRJ0000000000001 /* Project object */;
 }
