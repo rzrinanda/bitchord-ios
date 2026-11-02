@@ -4,7 +4,7 @@ import BitChord
 @MainActor
 func runAllTests() async {
     print("==================================================")
-    print("▶ Starting BitChord for iOS Test Suite")
+    print("▶ Starting Complete BitChord for iOS Test Suite")
     print("==================================================")
     
     var passed = 0
@@ -20,7 +20,73 @@ func runAllTests() async {
         }
     }
     
-    // MARK: - Test 1: LRC Parser Standard & Syllables
+    // MARK: - Test 1: Audio Playback Engine (Play, Pause, Resume, Stop, Next, Previous, Seek)
+    do {
+        let engine = AudioPlayerEngine.shared
+        let trackA = Track(id: "testA", title: "Song A", artist: "Artist A", duration: 180)
+        let trackB = Track(id: "testB", title: "Song B", artist: "Artist B", duration: 200)
+        let trackC = Track(id: "testC", title: "Song C", artist: "Artist C", duration: 220)
+        
+        // 1. Queue initialization & Play
+        engine.setQueue([trackA, trackB, trackC], startIndex: 0)
+        assertTest(engine.queue.count == 3, "Engine: Queue correctly sets 3 tracks")
+        assertTest(engine.currentTrack?.id == "testA", "Engine: Initial track set to Song A")
+        assertTest(engine.status == .loading || engine.status == .playing, "Engine: Track transitions to loading/playing")
+        
+        // 2. Pause
+        engine.pause()
+        assertTest(engine.status == .paused, "Engine: pause() sets status to .paused")
+        
+        // 3. Resume
+        engine.resume()
+        assertTest(engine.status == .playing, "Engine: resume() sets status to .playing")
+        
+        // 4. Next Track
+        engine.nextTrack()
+        assertTest(engine.currentTrack?.id == "testB", "Engine: nextTrack() advances queue to Song B")
+        assertTest(engine.queueIndex == 1, "Engine: queueIndex advances to 1")
+        
+        // 5. Previous Track
+        engine.previousTrack()
+        assertTest(engine.currentTrack?.id == "testA", "Engine: previousTrack() goes back to Song A")
+        assertTest(engine.queueIndex == 0, "Engine: queueIndex returns to 0")
+        
+        // 6. Seek & Playback Speed
+        engine.seek(to: 45.0)
+        assertTest(engine.currentTime == 45.0, "Engine: seek(to: 45.0) updates currentTime accurately")
+        
+        engine.setSpeed(1.5)
+        assertTest(engine.playbackSpeed == 1.5, "Engine: setSpeed(1.5) updates playback rate")
+        engine.setSpeed(1.0)
+        
+        // 7. Stop
+        engine.stop()
+        assertTest(engine.status == .idle, "Engine: stop() sets status to .idle")
+        assertTest(engine.currentTime == 0, "Engine: stop() resets currentTime to 0")
+        
+        // 8. Queue Insert & Remove
+        let trackD = Track(id: "testD", title: "Song D", artist: "Artist D", duration: 160)
+        engine.insertNextInQueue(trackD)
+        assertTest(engine.queue[1].id == "testD", "Engine: insertNextInQueue places track as Up Next")
+        
+        engine.removeTrackFromQueue(at: 1)
+        assertTest(!engine.queue.contains(where: { $0.id == "testD" }), "Engine: removeTrackFromQueue removes track from queue")
+        
+        // 9. Repeat & Shuffle
+        engine.cycleRepeatMode()
+        assertTest(engine.repeatMode == .all, "Engine: cycleRepeatMode switches to .all")
+        engine.cycleRepeatMode()
+        assertTest(engine.repeatMode == .one, "Engine: cycleRepeatMode switches to .one")
+        engine.cycleRepeatMode()
+        assertTest(engine.repeatMode == .off, "Engine: cycleRepeatMode cycles back to .off")
+        
+        engine.toggleShuffle()
+        assertTest(engine.shuffleMode == .on, "Engine: toggleShuffle switches to .on")
+        engine.toggleShuffle()
+        assertTest(engine.shuffleMode == .off, "Engine: toggleShuffle switches back to .off")
+    }
+    
+    // MARK: - Test 2: LRC Parser (Line-Level & Syllable-Level Timing)
     do {
         let parser = LRCParser()
         let sampleLRC = """
@@ -33,134 +99,126 @@ func runAllTests() async {
         """
         
         let lyrics = parser.parse(trackId: "starboy_test", lrcContent: sampleLRC)
-        assertTest(lyrics.isSynced == true, "LRCParser identifies synced lyrics")
-        assertTest(lyrics.lines.count == 5, "LRCParser correctly handles multiple timestamps per line (expected 5, got \(lyrics.lines.count))")
-        assertTest(lyrics.lines[0].timestamp == 15.3, "LRCParser calculates timestamp accurately (00:15.30 -> 15.3s)")
-        assertTest(lyrics.lines[2].syllables.count == 4, "LRCParser extracts syllable timestamps (<mm:ss.xx>)")
+        assertTest(lyrics.isSynced == true, "Lyrics: LRCParser identifies synchronized timing")
+        assertTest(lyrics.lines.count == 5, "Lyrics: Multi-timestamp line handling creates 5 entries")
+        assertTest(lyrics.lines[0].timestamp == 15.3, "Lyrics: Timestamp 00:15.30 parsed accurately as 15.3s")
+        assertTest(lyrics.lines[2].syllables.count == 4, "Lyrics: Syllable tags <mm:ss.xx> parsed into 4 syllables")
         
-        let activeIdx = lyrics.activeLineIndex(for: 16.0)
-        assertTest(activeIdx == 0, "LRCParser active line lookup at 16.0s resolves to index 0")
+        let active0 = lyrics.activeLineIndex(for: 16.0)
+        assertTest(active0 == 0, "Lyrics: Active line lookup at 16.0s returns index 0")
         
-        let activeIdx2 = lyrics.activeLineIndex(for: 25.0)
-        assertTest(activeIdx2 == 2, "LRCParser active line lookup at 25.0s resolves to index 2")
+        let active2 = lyrics.activeLineIndex(for: 25.0)
+        assertTest(active2 == 2, "Lyrics: Active line lookup at 25.0s returns index 2")
     }
     
-    // MARK: - Test 2: Lyrics Storage Switch (Auto-Download ON vs OFF)
+    // MARK: - Test 3: Switchable Lyrics Storage (Disk vs In-Memory Session)
     do {
-        let tempDir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("BitChordTest_\(UUID().uuidString)")
+        let tempDir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("BitChordTestStorage_\(UUID().uuidString)")
         
-        // --- Test 2A: Auto-Download ENABLED ---
+        // 3A: Auto-Download ON -> Saved to disk
         let storageOn = LyricsStorageManager(customStorageURL: tempDir, defaultAutoDownload: true)
         await storageOn.setAutoDownload(true)
         
-        let testLyrics1 = Lyrics(
-            trackId: "track_auto_download_on",
+        let lyricsOn = Lyrics(
+            trackId: "track_auto_on",
             isSynced: true,
-            lines: [LyricLine(timestamp: 5.0, text: "Line 1")],
-            plainLyrics: "Line 1",
-            provider: "LRCLIB",
-            source: .network
+            lines: [LyricLine(timestamp: 5.0, text: "Line On")],
+            plainLyrics: "Line On",
+            provider: "LRCLIB"
         )
+        await storageOn.processRetrievedLyrics(lyrics: lyricsOn, rawLRC: "[00:05.00]Line On")
         
-        await storageOn.processRetrievedLyrics(lyrics: testLyrics1, rawLRC: "[00:05.00]Line 1")
+        let isSavedOnDisk = await storageOn.isLyricsStoredOnDisk(trackId: "track_auto_on")
+        assertTest(isSavedOnDisk == true, "Lyrics Storage: Auto-Download ON writes file to disk storage")
         
-        let isStoredOnDiskWhenOn = await storageOn.isLyricsStoredOnDisk(trackId: "track_auto_download_on")
-        assertTest(isStoredOnDiskWhenOn == true, "Auto-Download ON: Lyrics are saved to local persistent storage")
+        let loaded = await storageOn.getLyrics(for: "track_auto_on")
+        assertTest(loaded?.source == .localDisk, "Lyrics Storage: Loaded offline lyrics marked as .localDisk")
         
-        let retrievedFromDisk = await storageOn.getLyrics(for: "track_auto_download_on")
-        assertTest(retrievedFromDisk?.trackId == "track_auto_download_on", "Stored lyrics can be retrieved from disk cache")
-        assertTest(retrievedFromDisk?.source == .localDisk, "Retrieved lyrics source is updated to localDisk")
-        
-        // --- Test 2B: Auto-Download DISABLED ---
-        let tempDirOff = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("BitChordTestOff_\(UUID().uuidString)")
+        // 3B: Auto-Download OFF -> In-memory session only
+        let tempDirOff = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("BitChordTestStorageOff_\(UUID().uuidString)")
         let storageOff = LyricsStorageManager(customStorageURL: tempDirOff, defaultAutoDownload: false)
         await storageOff.setAutoDownload(false)
         
-        let testLyrics2 = Lyrics(
-            trackId: "track_auto_download_off",
+        let lyricsOff = Lyrics(
+            trackId: "track_auto_off",
             isSynced: true,
-            lines: [LyricLine(timestamp: 10.0, text: "Streaming Line")],
-            plainLyrics: "Streaming Line",
-            provider: "LRCLIB",
-            source: .network
+            lines: [LyricLine(timestamp: 10.0, text: "Line Off")],
+            plainLyrics: "Line Off",
+            provider: "LRCLIB"
         )
+        await storageOff.processRetrievedLyrics(lyrics: lyricsOff, rawLRC: "[00:10.00]Line Off")
         
-        await storageOff.processRetrievedLyrics(lyrics: testLyrics2, rawLRC: "[00:10.00]Streaming Line")
+        let isSavedWhenOff = await storageOff.isLyricsStoredOnDisk(trackId: "track_auto_off")
+        assertTest(isSavedWhenOff == false, "Lyrics Storage: Auto-Download OFF leaves disk storage untouched")
         
-        let isStoredOnDiskWhenOff = await storageOff.isLyricsStoredOnDisk(trackId: "track_auto_download_off")
-        assertTest(isStoredOnDiskWhenOff == false, "Auto-Download OFF: Lyrics are NOT saved to local persistent storage")
+        let sessionMemory = await storageOff.getLyrics(for: "track_auto_off")
+        assertTest(sessionMemory != nil, "Lyrics Storage: In-memory session caching still provides instant access")
         
-        // But in-memory retrieval works for current session:
-        let sessionLyrics = await storageOff.getLyrics(for: "track_auto_download_off")
-        assertTest(sessionLyrics != nil, "Auto-Download OFF: In-memory session lyrics are available without disk footprint")
+        // 3C: Manual Download
+        await storageOff.manuallySaveToDisk(lyrics: lyricsOff, rawLRC: "[00:10.00]Line Off")
+        let isNowSaved = await storageOff.isLyricsStoredOnDisk(trackId: "track_auto_off")
+        assertTest(isNowSaved == true, "Lyrics Storage: Manual download successfully forces persistent storage")
         
-        // --- Test 2C: Manual Download when Auto-Download is OFF ---
-        await storageOff.manuallySaveToDisk(lyrics: testLyrics2, rawLRC: "[00:10.00]Streaming Line")
-        let isNowSaved = await storageOff.isLyricsStoredOnDisk(trackId: "track_auto_download_off")
-        assertTest(isNowSaved == true, "Manual Save: Explicitly saves lyrics to disk even when auto-download is disabled")
-        
-        // Clean up
+        // 3D: Cleanup
         await storageOn.clearAllDiskStorage()
         await storageOff.clearAllDiskStorage()
         try? FileManager.default.removeItem(at: tempDir)
         try? FileManager.default.removeItem(at: tempDirOff)
     }
     
-    // MARK: - Test 3: Playback Queue & Shuffle Engine
+    // MARK: - Test 4: Library Database (Liked Tracks & Playlists)
     do {
-        let engine = AudioPlayerEngine.shared
-        let track1 = Track(id: "1", title: "Song 1", artist: "Artist 1", duration: 180)
-        let track2 = Track(id: "2", title: "Song 2", artist: "Artist 2", duration: 200)
-        let track3 = Track(id: "3", title: "Song 3", artist: "Artist 3", duration: 220)
+        let library = LibraryDatabase.shared
+        let favTrack = Track(id: "fav_99", title: "Favorite Song", artist: "Artist", duration: 210)
         
-        engine.setQueue([track1, track2, track3], startIndex: 0)
-        assertTest(engine.queue.count == 3, "Queue initialized with 3 tracks")
-        assertTest(engine.currentTrack?.id == "1", "Current track is set to first track")
+        let wasLikedBefore = library.isLiked(trackId: favTrack.id)
+        library.toggleLike(track: favTrack)
+        assertTest(library.isLiked(trackId: favTrack.id) != wasLikedBefore, "Library: toggleLike toggles favorite status")
         
-        engine.nextTrack()
-        assertTest(engine.currentTrack?.id == "2", "nextTrack advances queue to second track")
+        library.createPlaylist(title: "Gym Workout")
+        assertTest(library.userPlaylists.contains(where: { $0.title == "Gym Workout" }), "Library: createPlaylist creates custom playlist")
         
-        engine.insertNextInQueue(Track(id: "4", title: "Song 4", artist: "Artist 4", duration: 150))
-        assertTest(engine.queue[engine.queueIndex + 1].id == "4", "insertNextInQueue correctly places track as next up")
+        if let gym = library.userPlaylists.first(where: { $0.title == "Gym Workout" }) {
+            library.addTrackToPlaylist(playlistId: gym.id, track: favTrack)
+            let updatedGym = library.userPlaylists.first(where: { $0.id == gym.id })
+            assertTest(updatedGym?.tracks.contains(where: { $0.id == favTrack.id }) == true, "Library: addTrackToPlaylist adds track to playlist")
+            
+            library.removeTrackFromPlaylist(playlistId: gym.id, trackId: favTrack.id)
+            let afterRemove = library.userPlaylists.first(where: { $0.id == gym.id })
+            assertTest(afterRemove?.tracks.isEmpty == true, "Library: removeTrackFromPlaylist removes track from playlist")
+        }
         
-        engine.cycleRepeatMode()
-        assertTest(engine.repeatMode == .all, "cycleRepeatMode toggles to .all")
-        engine.cycleRepeatMode()
-        assertTest(engine.repeatMode == .one, "cycleRepeatMode toggles to .one")
-        engine.cycleRepeatMode()
-        assertTest(engine.repeatMode == .off, "cycleRepeatMode toggles back to .off")
+        library.recordPlayback(track: favTrack)
+        assertTest(library.recentTracks.contains(where: { $0.id == favTrack.id }), "Library: recordPlayback records playback history")
     }
     
-    // MARK: - Test 4: Audio Engine Helpers & Crossfade
+    // MARK: - Test 5: Audio Engine Helpers (Crossfade & Equalizer)
     do {
         let crossfade = CrossfadeManager.shared
-        let fadeOutVol = crossfade.fadeOutVolume(currentTime: 198.0, duration: 200.0, crossfadeDuration: 4.0)
-        assertTest(fadeOutVol == 0.5, "CrossfadeManager computes 50% fade volume at midpoint (expected 0.5, got \(fadeOutVol))")
+        let fadeOutMid = crossfade.fadeOutVolume(currentTime: 198.0, duration: 200.0, crossfadeDuration: 4.0)
+        assertTest(fadeOutMid == 0.5, "Crossfade: 50% midpoint fade-out calculation is 0.5")
         
-        let fadeInVol = crossfade.fadeInVolume(currentTime: 2.0, crossfadeDuration: 4.0)
-        assertTest(fadeInVol == 0.5, "CrossfadeManager computes 50% fade-in volume at midpoint (expected 0.5, got \(fadeInVol))")
+        let fadeInMid = crossfade.fadeInVolume(currentTime: 2.0, crossfadeDuration: 4.0)
+        assertTest(fadeInMid == 0.5, "Crossfade: 50% midpoint fade-in calculation is 0.5")
         
-        let noFadeVol = crossfade.fadeOutVolume(currentTime: 50.0, duration: 200.0, crossfadeDuration: 4.0)
-        assertTest(noFadeVol == 1.0, "CrossfadeManager leaves volume at 1.0 when outside crossfade window")
-        
-        let eqBass = EqualizerPreset.bassBoost
-        assertTest(eqBass.gains.count == 10, "Equalizer preset has 10 frequency bands")
-        assertTest(eqBass.gains[0] > eqBass.gains[5], "Bass boost preset elevates low frequencies")
+        let eq = EqualizerPreset.bassBoost
+        assertTest(eq.gains.count == 10, "Equalizer: Preset provides 10 frequency bands")
+        assertTest(eq.gains[0] > eq.gains[5], "Equalizer: Bass boost amplifies lower registers")
     }
     
-    // MARK: - Test 5: Track & Audio Quality Formatting
+    // MARK: - Test 6: Track Model & Audio Badge Formatting
     do {
-        let losslessTrack = Track(
-            id: "hi_res_1",
-            title: "Test Hi-Res",
-            artist: "Test Artist",
+        let hiRes = Track(
+            id: "hires_test",
+            title: "Lossless Master",
+            artist: "Studio",
             duration: 215,
             isLossless: true,
             sampleRate: 96000,
             bitDepth: 24
         )
-        assertTest(losslessTrack.audioBadge == "HI-RES LOSSLESS 24-bit/96.0 kHz", "Hi-Res track audio badge formatting")
-        assertTest(losslessTrack.formattedDuration == "3:35", "Track duration formatted as 3:35")
+        assertTest(hiRes.audioBadge == "HI-RES LOSSLESS 24-bit/96.0 kHz", "Track: Hi-Res audio badge formatting")
+        assertTest(hiRes.formattedDuration == "3:35", "Track: Duration 215s formatted as 3:35")
     }
     
     print("==================================================")

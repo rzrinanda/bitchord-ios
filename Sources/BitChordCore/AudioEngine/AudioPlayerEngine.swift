@@ -187,6 +187,14 @@ public final class AudioPlayerEngine: ObservableObject {
         updateNowPlayingInfo()
     }
     
+    public func stop() {
+        player?.pause()
+        player?.replaceCurrentItem(with: nil)
+        status = .idle
+        currentTime = 0
+        updateNowPlayingInfo()
+    }
+    
     public func nextTrack() {
         if repeatMode == .one {
             seek(to: 0)
@@ -272,6 +280,10 @@ public final class AudioPlayerEngine: ObservableObject {
         }
         commandCenter.pauseCommand.addTarget { [weak self] _ in
             self?.pause()
+            return .success
+        }
+        commandCenter.stopCommand.addTarget { [weak self] _ in
+            self?.stop()
             return .success
         }
         commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in

@@ -33,14 +33,11 @@ public actor DownloadManager {
             try? fileManager.createDirectory(at: downloadsDirectory, withIntermediateDirectories: true)
         }
         
-        loadIndex()
-    }
-    
-    private func loadIndex() {
-        guard let data = try? Data(contentsOf: indexFileURL),
-              let list = try? JSONDecoder().decode([DownloadedTrack].self, from: data) else { return }
-        for item in list {
-            downloadedTracksMap[item.track.id] = item
+        if let data = try? Data(contentsOf: indexFileURL),
+           let list = try? JSONDecoder().decode([DownloadedTrack].self, from: data) {
+            for item in list {
+                downloadedTracksMap[item.track.id] = item
+            }
         }
     }
     
