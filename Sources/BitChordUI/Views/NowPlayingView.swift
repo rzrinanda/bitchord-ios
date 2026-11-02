@@ -78,14 +78,8 @@ public struct NowPlayingView: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                                 .shadow(color: .black.opacity(0.4), radius: 24, x: 0, y: 12)
                             } else {
-                                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                    .fill(Color.white.opacity(0.1))
-                                    .frame(width: 290, height: 290)
+                                BitChordLogoView(size: 290, cornerRadius: 24)
                                     .shadow(color: .black.opacity(0.35), radius: 24, x: 0, y: 12)
-                                
-                                Image(systemName: "music.note")
-                                    .font(.system(size: 72))
-                                    .foregroundColor(.white.opacity(0.7))
                             }
                         }
                         .scaleEffect(engine.status == .playing ? 1.0 : 0.88)

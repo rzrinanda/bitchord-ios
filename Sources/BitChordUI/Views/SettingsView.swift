@@ -130,7 +130,19 @@ public struct SettingsView: View {
                 }
                 
                 // MARK: - About
-                Section("About BitChord") {
+                Section {
+                    VStack(spacing: 12) {
+                        BitChordLogoView(size: 72)
+                        Text("BitChord for iOS")
+                            .font(.title3.bold())
+                        Text("High-fidelity lossless streaming client inspired by Apple Music.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    
                     HStack {
                         Text("Version")
                         Spacer()
@@ -146,6 +158,8 @@ public struct SettingsView: View {
                                 .foregroundColor(.secondary)
                         }
                     }
+                } header: {
+                    Text("About BitChord")
                 }
             }
             .navigationTitle("Settings")

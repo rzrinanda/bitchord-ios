@@ -112,7 +112,15 @@ public struct HomeView: View {
                 .padding(.vertical)
                 .padding(.bottom, 80) // Spacing for MiniPlayer
             }
-            .navigationTitle("Listen Now")
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    HStack(spacing: 8) {
+                        BitChordLogoView(size: 28)
+                        Text("BitChord")
+                            .font(.system(size: 20, weight: .bold))
+                    }
+                }
+            }
         }
     }
 }

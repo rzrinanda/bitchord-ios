@@ -25,16 +25,8 @@ public struct MiniPlayerBar: View {
                         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                         .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
                     } else {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(Color.gray.opacity(0.3))
-                            Image(systemName: "music.note")
-                                .font(.system(size: 16))
-                                .foregroundColor(.white.opacity(0.7))
-                        }
-                        .frame(width: 44, height: 44)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                        .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
+                        BitChordLogoView(size: 44, cornerRadius: 8)
+                            .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
                     }
                     
                     // Track Information
