@@ -114,17 +114,49 @@ public final class AudioPlayerEngine: ObservableObject {
         self.currentTime = 0
         self.status = .loading
         
-        guard let url = track.streamURL else {
-            // Placeholder: stream URL will be resolved asynchronously by stream extractor
-            self.status = .playing
+        if let directURL = track.streamURL {
+            startPlaying(url: directURL)
             return
         }
         
+        // Resolve stream URL asynchronously from YouTube / Audio sources
+        Task { @MainActor [weak self] in
+            guard let self = self else { return }
+            do {
+                let streamInfo = try await StreamExtractor.shared.extractAudioStream(trackId: track.id)
+                var updatedTrack = track
+                updatedTrack.streamURL = streamInfo.streamURL
+                
+                if self.queueIndex == index {
+                    self.currentTrack = updatedTrack
+                    if index < self.queue.count {
+                        self.queue[index] = updatedTrack
+                    }
+                    self.startPlaying(url: streamInfo.streamURL)
+                }
+            } catch {
+                print("[BitChord AudioEngine] Failed to resolve audio stream: \(error.localizedDescription)")
+                self.status = .error
+            }
+        }
+    }
+    
+    private func startPlaying(url: URL) {
         let playerItem = AVPlayerItem(url: url)
         if player == nil {
             player = AVPlayer(playerItem: playerItem)
         } else {
             player?.replaceCurrentItem(with: playerItem)
+        }
+        
+        NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: playerItem,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.nextTrack()
+            }
         }
         
         attachTimeObserver()

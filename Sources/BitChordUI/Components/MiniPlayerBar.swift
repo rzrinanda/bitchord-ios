@@ -13,16 +13,29 @@ public struct MiniPlayerBar: View {
             Button(action: onExpand) {
                 HStack(spacing: 12) {
                     // Artwork Thumbnail
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Color.gray.opacity(0.3))
-                        Image(systemName: "music.note")
-                            .font(.system(size: 16))
-                            .foregroundColor(.white.opacity(0.7))
+                    if let artURL = track.artworkURL {
+                        AsyncImage(url: artURL) { phase in
+                            if let img = phase.image {
+                                img.resizable().aspectRatio(contentMode: .fill)
+                            } else {
+                                Color.gray.opacity(0.3)
+                            }
+                        }
+                        .frame(width: 44, height: 44)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
+                    } else {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(Color.gray.opacity(0.3))
+                            Image(systemName: "music.note")
+                                .font(.system(size: 16))
+                                .foregroundColor(.white.opacity(0.7))
+                        }
+                        .frame(width: 44, height: 44)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
                     }
-                    .frame(width: 44, height: 44)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
                     
                     // Track Information
                     VStack(alignment: .leading, spacing: 2) {

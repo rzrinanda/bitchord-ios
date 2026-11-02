@@ -3,42 +3,46 @@ import SwiftUI
 public struct HomeView: View {
     @ObservedObject var engine = AudioPlayerEngine.shared
     
-    // Sample featured tracks to showcase initial experience
+    // Featured tracks with verified YouTube video IDs and artworks
     private let featuredTracks: [Track] = [
         Track(
-            id: "sample_1",
+            id: "34Na4j8AVgA",
             title: "Starboy",
             artist: "The Weeknd ft. Daft Punk",
             album: "Starboy",
             duration: 230,
+            artworkURL: URL(string: "https://i.ytimg.com/vi/34Na4j8AVgA/hqdefault.jpg"),
             isLossless: true,
             sampleRate: 96000,
             bitDepth: 24
         ),
         Track(
-            id: "sample_2",
+            id: "4NRXx6U8ABQ",
             title: "Blinding Lights",
             artist: "The Weeknd",
             album: "After Hours",
             duration: 200,
+            artworkURL: URL(string: "https://i.ytimg.com/vi/4NRXx6U8ABQ/hqdefault.jpg"),
             isLossless: true,
             sampleRate: 48000,
             bitDepth: 24
         ),
         Track(
-            id: "sample_3",
+            id: "TUVcZfQe-Kw",
             title: "Levitating",
             artist: "Dua Lipa",
             album: "Future Nostalgia",
             duration: 203,
+            artworkURL: URL(string: "https://i.ytimg.com/vi/TUVcZfQe-Kw/hqdefault.jpg"),
             isLossless: false
         ),
         Track(
-            id: "sample_4",
+            id: "5NV6Rdv1a3I",
             title: "Get Lucky",
             artist: "Daft Punk ft. Pharrell Williams",
             album: "Random Access Memories",
             duration: 248,
+            artworkURL: URL(string: "https://i.ytimg.com/vi/5NV6Rdv1a3I/hqdefault.jpg"),
             isLossless: true,
             sampleRate: 192000,
             bitDepth: 24
@@ -121,14 +125,26 @@ public struct TrackCardView: View {
         Button(action: onPlay) {
             VStack(alignment: .leading, spacing: 8) {
                 ZStack(alignment: .bottomTrailing) {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(LinearGradient(colors: [.indigo, .purple], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    if let artURL = track.artworkURL {
+                        AsyncImage(url: artURL) { phase in
+                            if let img = phase.image {
+                                img.resizable().aspectRatio(contentMode: .fill)
+                            } else {
+                                LinearGradient(colors: [.indigo, .purple], startPoint: .topLeading, endPoint: .bottomTrailing)
+                            }
+                        }
                         .frame(width: 150, height: 150)
-                    
-                    Image(systemName: "music.note")
-                        .font(.system(size: 40))
-                        .foregroundColor(.white.opacity(0.8))
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    } else {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(LinearGradient(colors: [.indigo, .purple], startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .frame(width: 150, height: 150)
+                        
+                        Image(systemName: "music.note")
+                            .font(.system(size: 40))
+                            .foregroundColor(.white.opacity(0.8))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
                     
                     if track.isLossless {
                         Text(track.audioBadge)

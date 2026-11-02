@@ -63,14 +63,29 @@ public struct NowPlayingView: View {
                         Spacer()
                         
                         ZStack {
-                            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                .fill(Color.white.opacity(0.1))
+                            if let artURL = track.artworkURL {
+                                AsyncImage(url: artURL) { phase in
+                                    if let image = phase.image {
+                                        image
+                                            .resizable()
+                                            .aspectRatio(contentMode: .fill)
+                                    } else {
+                                        Color.white.opacity(0.1)
+                                    }
+                                }
                                 .frame(width: 290, height: 290)
-                                .shadow(color: .black.opacity(0.35), radius: 24, x: 0, y: 12)
-                            
-                            Image(systemName: "music.note")
-                                .font(.system(size: 72))
-                                .foregroundColor(.white.opacity(0.7))
+                                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                                .shadow(color: .black.opacity(0.4), radius: 24, x: 0, y: 12)
+                            } else {
+                                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                    .fill(Color.white.opacity(0.1))
+                                    .frame(width: 290, height: 290)
+                                    .shadow(color: .black.opacity(0.35), radius: 24, x: 0, y: 12)
+                                
+                                Image(systemName: "music.note")
+                                    .font(.system(size: 72))
+                                    .foregroundColor(.white.opacity(0.7))
+                            }
                         }
                         .scaleEffect(engine.status == .playing ? 1.0 : 0.88)
                         .animation(.spring(response: 0.4, dampingFraction: 0.7), value: engine.status)

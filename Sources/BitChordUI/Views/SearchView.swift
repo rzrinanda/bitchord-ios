@@ -23,13 +23,25 @@ public struct SearchView: View {
                                 engine.setQueue([track])
                             } label: {
                                 HStack(spacing: 12) {
-                                    ZStack {
-                                        RoundedRectangle(cornerRadius: 6)
-                                            .fill(Color.gray.opacity(0.2))
-                                        Image(systemName: "music.note")
-                                            .foregroundColor(.secondary)
+                                    if let artURL = track.artworkURL {
+                                        AsyncImage(url: artURL) { phase in
+                                            if let img = phase.image {
+                                                img.resizable().aspectRatio(contentMode: .fill)
+                                            } else {
+                                                Color.gray.opacity(0.2)
+                                            }
+                                        }
+                                        .frame(width: 48, height: 48)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    } else {
+                                        ZStack {
+                                            RoundedRectangle(cornerRadius: 8)
+                                                .fill(Color.gray.opacity(0.2))
+                                            Image(systemName: "music.note")
+                                                .foregroundColor(.secondary)
+                                        }
+                                        .frame(width: 48, height: 48)
                                     }
-                                    .frame(width: 44, height: 44)
                                     
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(track.title)
@@ -45,7 +57,7 @@ public struct SearchView: View {
                                     if track.isLossless {
                                         Text("LOSSLESS")
                                             .font(.system(size: 9, weight: .bold))
-                                            .padding(3)
+                                            .padding(4)
                                             .background(Color.secondary.opacity(0.15))
                                             .cornerRadius(4)
                                     }
