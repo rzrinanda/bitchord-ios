@@ -6,19 +6,22 @@ public struct StreamInfo: Sendable {
     public let bitrate: Int
     public let isLossless: Bool
     public let sampleRate: Double?
+    public let bitDepth: Int?
     
     public init(
         streamURL: URL,
         format: String = "audio/mp4",
         bitrate: Int = 256,
         isLossless: Bool = false,
-        sampleRate: Double? = 44100
+        sampleRate: Double? = 44100,
+        bitDepth: Int? = nil
     ) {
         self.streamURL = streamURL
         self.format = format
         self.bitrate = bitrate
         self.isLossless = isLossless
         self.sampleRate = sampleRate
+        self.bitDepth = bitDepth
     }
 }
 
@@ -202,7 +205,7 @@ public actor StreamExtractor {
                     streamURL: streamURL,
                     format: mime,
                     bitrate: bitrate,
-                    isLossless: bitrate >= 256,
+                    isLossless: false,
                     sampleRate: 44100
                 )
             }
@@ -211,7 +214,7 @@ public actor StreamExtractor {
         // Check HLS manifest
         if let hlsManifest = streamingData["hlsManifestUrl"] as? String,
            let hlsURL = URL(string: hlsManifest) {
-            return StreamInfo(streamURL: hlsURL, format: "application/x-mpegURL", bitrate: 256, isLossless: true)
+            return StreamInfo(streamURL: hlsURL, format: "application/x-mpegURL", bitrate: 256, isLossless: false)
         }
         
         // Fallback to combined formats
@@ -269,7 +272,7 @@ public actor StreamExtractor {
                     streamURL: streamURL,
                     format: "audio/mp4",
                     bitrate: bitrate,
-                    isLossless: true
+                    isLossless: false
                 )
             }
         }

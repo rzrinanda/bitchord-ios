@@ -2,17 +2,17 @@ import Foundation
 
 public struct Track: Identifiable, Hashable, Codable, Sendable {
     public var id: String
-    public let title: String
-    public let artist: String
-    public let album: String
-    public let duration: TimeInterval
-    public let artworkURL: URL?
+    public var title: String
+    public var artist: String
+    public var album: String
+    public var duration: TimeInterval
+    public var artworkURL: URL?
     public var streamURL: URL?
-    public let isLossless: Bool
-    public let sampleRate: Double?
-    public let bitDepth: Int?
-    public let lyricsId: String?
-    public let isExplicit: Bool
+    public var isLossless: Bool
+    public var sampleRate: Double?
+    public var bitDepth: Int?
+    public var lyricsId: String?
+    public var isExplicit: Bool
     
     public init(
         id: String,
@@ -56,5 +56,16 @@ public struct Track: Identifiable, Hashable, Codable, Sendable {
             return "LOSSLESS"
         }
         return "AAC"
+    }
+    
+    /// Display badge formatted cleanly for Now Playing UI matching reference screenshots
+    public var displayAudioQualityBadge: String {
+        if isLossless {
+            if (sampleRate ?? 0) > 48000 || (bitDepth ?? 0) > 16 {
+                return "Hi-Res Lossless"
+            }
+            return "Lossless"
+        }
+        return "High Quality"
     }
 }

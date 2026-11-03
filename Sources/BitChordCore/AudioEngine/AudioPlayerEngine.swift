@@ -465,6 +465,9 @@ public final class AudioPlayerEngine: ObservableObject {
                     guard self.currentTrack?.id == targetTrackId else { return }
                     var updated = track
                     updated.streamURL = streamInfo.streamURL
+                    updated.isLossless = streamInfo.isLossless
+                    updated.sampleRate = streamInfo.sampleRate
+                    updated.bitDepth = streamInfo.bitDepth
                     self.currentTrack = updated
                     if self.queueIndex < self.queue.count && self.queue[self.queueIndex].id == targetTrackId {
                         self.queue[self.queueIndex] = updated
@@ -475,7 +478,7 @@ public final class AudioPlayerEngine: ObservableObject {
                     let isBackgrounded = false
                     #endif
                     
-                    if self.status != .playing || isBackgrounded {
+                    if self.status != .playing || isBackgrounded || streamInfo.isLossless {
                         let currentPos = self.currentTime
                         self.startPlaying(url: streamInfo.streamURL, for: updated, initialSeek: currentPos)
                     }
@@ -518,13 +521,16 @@ public final class AudioPlayerEngine: ObservableObject {
                             guard self.currentTrack?.id == targetTrackId else { return }
                             var withStream = updated
                             withStream.streamURL = streamInfo.streamURL
+                            withStream.isLossless = streamInfo.isLossless
+                            withStream.sampleRate = streamInfo.sampleRate
+                            withStream.bitDepth = streamInfo.bitDepth
                             self.currentTrack = withStream
                             if self.queueIndex < self.queue.count && self.queue[self.queueIndex].id == targetTrackId {
                                 self.queue[self.queueIndex] = withStream
                             }
                             
-                            // Only switch to AVPlayer if YouTubeAudioBridge is not actively playing yet
-                            if self.status != .playing {
+                            // Switch to AVPlayer if not playing yet, or if a true Lossless/Hi-Res stream was resolved
+                            if self.status != .playing || streamInfo.isLossless {
                                 let currentPos = self.currentTime
                                 self.startPlaying(url: streamInfo.streamURL, for: withStream, initialSeek: currentPos)
                             }

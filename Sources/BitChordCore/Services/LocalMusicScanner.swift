@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import CoreMedia
 import CryptoKit
 #if canImport(MediaPlayer) && os(iOS)
 import MediaPlayer
@@ -173,6 +174,25 @@ public final class LocalMusicScanner: ObservableObject {
         
         let ext = url.pathExtension.lowercased()
         let lossless = ["flac", "alac", "wav", "aiff", "aif"].contains(ext)
+        var sampleRate: Double? = nil
+        var bitDepth: Int? = nil
+        
+        if let audioTracks = try? await asset.loadTracks(withMediaType: .audio),
+           let audioTrack = audioTracks.first {
+            if let descriptions = try? await audioTrack.load(.formatDescriptions) {
+                for desc in descriptions {
+                    if let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(desc)?.pointee {
+                        if asbd.mSampleRate > 0 {
+                            sampleRate = asbd.mSampleRate
+                        }
+                        if asbd.mBitsPerChannel > 0 {
+                            bitDepth = Int(asbd.mBitsPerChannel)
+                        }
+                    }
+                }
+            }
+        }
+        
         return Track(
             id: id,
             title: title,
@@ -181,7 +201,9 @@ public final class LocalMusicScanner: ObservableObject {
             duration: seconds,
             artworkURL: artworkURL,
             streamURL: url,
-            isLossless: lossless
+            isLossless: lossless,
+            sampleRate: sampleRate,
+            bitDepth: bitDepth
         )
     }
     

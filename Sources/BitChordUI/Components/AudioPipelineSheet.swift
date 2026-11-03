@@ -15,40 +15,40 @@ public struct AudioPipelineSheet: View {
     
     // Dynamic metrics matching user reference screenshots
     private var isLossless: Bool {
-        track.isLossless || track.audioBadge.contains("LOSSLESS") || track.audioBadge.contains("HI-RES") || settings.directSourceStream
+        track.isLossless || settings.directSourceStream
     }
     
     private var isHiRes: Bool {
-        track.audioBadge.contains("HI-RES") || (track.sampleRate != nil && (track.sampleRate ?? 0) > 48000)
+        track.isLossless && ((track.sampleRate ?? 0) > 48000 || (track.bitDepth ?? 0) > 16)
     }
     
     private var sourceName: String {
         if track.id.count > 15 || track.id.contains("-") {
             return track.id
-        } else if track.audioBadge.contains("LOSSLESS") || track.audioBadge.contains("FLAC") {
-            return "24df8ec0-5608-4e50-9d2b-9fffaa9562f3"
+        } else if isLossless {
+            return "Qobuz FLAC · 24df8ec0-5608-4e50-9d2b-9fffaa9562f3"
         } else {
-            return "YouTube"
+            return "YouTube Audio"
         }
     }
     
     private var formatName: String {
-        isLossless ? "FLAC" : "AAC"
+        if isLossless {
+            let ext = track.streamURL?.pathExtension.uppercased() ?? ""
+            return !ext.isEmpty ? ext : "FLAC"
+        }
+        return "AAC"
     }
     
     private var bitDepthString: String {
         if !isLossless {
             return "—"
         }
-        return isHiRes ? "24-bit" : "16-bit"
+        return "\(track.bitDepth ?? (isHiRes ? 24 : 16))-bit"
     }
     
     private var sampleRateHz: Int {
-        if isHiRes {
-            return 96000
-        } else {
-            return 44100
-        }
+        Int(track.sampleRate ?? Double(isHiRes ? 96000 : 44100))
     }
     
     private var bitrateString: String {
@@ -57,7 +57,7 @@ public struct AudioPipelineSheet: View {
         } else if isLossless {
             return "1411 kbps"
         } else {
-            return "128 kbps"
+            return "256 kbps"
         }
     }
     

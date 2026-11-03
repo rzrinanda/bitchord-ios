@@ -423,7 +423,7 @@ public struct NowPlayingView: View {
                                     HStack(spacing: 5) {
                                         Image(systemName: "waveform")
                                             .font(.system(size: 11))
-                                        Text(track.audioBadge.capitalized)
+                                        Text(track.displayAudioQualityBadge)
                                             .font(.system(size: 11, weight: .semibold))
                                     }
                                     .foregroundColor(.white.opacity(0.85))
