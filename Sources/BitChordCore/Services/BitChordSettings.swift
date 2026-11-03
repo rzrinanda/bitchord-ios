@@ -77,6 +77,32 @@ public final class BitChordSettings: ObservableObject {
     
     @AppStorage("BitChord.Discord.Enabled") public var discordRpcEnabled: Bool = true
     
+    // Spotify Integration
+    @AppStorage("BitChord.Spotify.Connected") public var spotifyConnected: Bool = false
+    @AppStorage("BitChord.Spotify.DisplayName") public var spotifyDisplayName: String = ""
+    @AppStorage("BitChord.Spotify.Username") public var spotifyUsername: String = ""
+    @AppStorage("BitChord.Spotify.AvatarURL") public var spotifyAvatarURL: String = ""
+    @AppStorage("BitChord.Spotify.CookieSPDC") public var spotifyCookieSPDC: String = ""
+    @AppStorage("BitChord.Spotify.AccessToken") public var spotifyAccessToken: String = ""
+    
+    public func setSpotifyAccount(displayName: String, username: String, avatarURL: String?, spdc: String, accessToken: String?) {
+        self.spotifyDisplayName = displayName
+        self.spotifyUsername = username
+        self.spotifyAvatarURL = avatarURL ?? ""
+        self.spotifyCookieSPDC = spdc
+        self.spotifyAccessToken = accessToken ?? ""
+        self.spotifyConnected = true
+    }
+    
+    public func disconnectSpotify() {
+        self.spotifyDisplayName = ""
+        self.spotifyUsername = ""
+        self.spotifyAvatarURL = ""
+        self.spotifyCookieSPDC = ""
+        self.spotifyAccessToken = ""
+        self.spotifyConnected = false
+    }
+    
     public var audioQuality: AudioQuality {
         get { AudioQuality(rawValue: audioQualityRaw) ?? .lossless }
         set { audioQualityRaw = newValue.rawValue }

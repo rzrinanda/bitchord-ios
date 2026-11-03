@@ -390,6 +390,41 @@ func runAllTests() async {
         }
     }
     
+    // MARK: - Test 13: Spotify Account & Playlist Importer Integration
+    do {
+        await MainActor.run {
+            BitChordSettings.shared.setSpotifyAccount(
+                displayName: "Test User",
+                username: "test_spotify_id",
+                avatarURL: "https://example.com/avatar.jpg",
+                spdc: "mock_spdc_token_12345",
+                accessToken: "mock_access_token_abcde"
+            )
+            assertTest(BitChordSettings.shared.spotifyConnected == true, "Spotify Settings: Connected status is true")
+            assertTest(BitChordSettings.shared.spotifyDisplayName == "Test User", "Spotify Settings: Display name saved")
+            assertTest(BitChordSettings.shared.spotifyUsername == "test_spotify_id", "Spotify Settings: Username saved")
+            assertTest(BitChordSettings.shared.spotifyCookieSPDC == "mock_spdc_token_12345", "Spotify Settings: sp_dc saved")
+            assertTest(BitChordSettings.shared.spotifyAccessToken == "mock_access_token_abcde", "Spotify Settings: Access token saved")
+            
+            BitChordSettings.shared.disconnectSpotify()
+            assertTest(BitChordSettings.shared.spotifyConnected == false, "Spotify Settings: Disconnect sets connected to false")
+            assertTest(BitChordSettings.shared.spotifyDisplayName.isEmpty, "Spotify Settings: Disconnect clears display name")
+            assertTest(BitChordSettings.shared.spotifyCookieSPDC.isEmpty, "Spotify Settings: Disconnect clears sp_dc cookie")
+        }
+        
+        // Test fallback playlists and track resolution for Spotify importer
+        let playlists = (try? await SpotifyImporter.shared.fetchUserPlaylists(accessToken: "")) ?? []
+        assertTest(!playlists.isEmpty, "Spotify Importer: User playlists returns curated or user lists")
+        assertTest(playlists.first?.title != nil, "Spotify Importer: Playlist has valid title (\(playlists.first?.title ?? ""))")
+        
+        if let firstPlaylist = playlists.first {
+            let tracks = (try? await SpotifyImporter.shared.importPlaylistTracks(playlistId: firstPlaylist.id, accessToken: "")) ?? []
+            assertTest(!tracks.isEmpty, "Spotify Importer: Playlist tracks imported successfully (\(tracks.count) tracks)")
+            assertTest(!tracks[0].title.isEmpty, "Spotify Importer: First track has non-empty title (\(tracks[0].title))")
+            assertTest(!tracks[0].artist.isEmpty, "Spotify Importer: First track has non-empty artist (\(tracks[0].artist))")
+        }
+    }
+    
     print("==================================================")
     print("🏁 Test Results: \(passed) Passed, \(failed) Failed")
     print("==================================================")

@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(WebKit)
+import WebKit
+#endif
 
 public struct SettingsView: View {
     @ObservedObject var settings = BitChordSettings.shared
@@ -318,6 +321,7 @@ private struct AccountIntegrationsDetailView: View {
     @ObservedObject var accountManager = AccountManager.shared
     @ObservedObject var settings = BitChordSettings.shared
     @Binding var showingGoogleLogin: Bool
+    @State private var showingSpotifySheet: Bool = false
     
     var body: some View {
         Form {
@@ -363,7 +367,7 @@ private struct AccountIntegrationsDetailView: View {
             
             Section {
                 Button {
-                    // Spotify link action
+                    showingSpotifySheet = true
                 } label: {
                     HStack {
                         Image(systemName: "music.note.list")
@@ -373,20 +377,34 @@ private struct AccountIntegrationsDetailView: View {
                             Text("Spotify")
                                 .font(.system(size: 15, weight: .medium))
                                 .foregroundColor(.primary)
-                            Text("Tap to connect")
-                                .font(.system(size: 12))
-                                .foregroundColor(.secondary)
+                            if settings.spotifyConnected {
+                                Text("Connected as \(settings.spotifyDisplayName.isEmpty ? settings.spotifyUsername : settings.spotifyDisplayName)")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.green)
+                            } else {
+                                Text("Tap to connect")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                            }
                         }
                         Spacer()
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(.secondary)
+                        if settings.spotifyConnected {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                        } else {
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.secondary)
+                        }
                     }
                 }
             } header: {
                 Text("SPOTIFY")
             } footer: {
                 Text("Sign in to load your playlists. Playback uses YouTube Music.")
+            }
+            .sheet(isPresented: $showingSpotifySheet) {
+                SpotifyConnectSheet()
             }
             
             Section {
@@ -787,6 +805,527 @@ private struct AddAddonSheet: View {
         }
     }
 }
+
+// MARK: - Spotify Connect Sheet
+public struct SpotifyConnectSheet: View {
+    @ObservedObject var settings = BitChordSettings.shared
+    @ObservedObject var library = LibraryDatabase.shared
+    @Environment(\.dismiss) private var dismiss
+    
+    @State private var selectedTab: Int = 0
+    @State private var spdcInput: String = ""
+    @State private var linkInput: String = ""
+    @State private var isProcessing: Bool = false
+    @State private var statusMessage: String? = nil
+    @State private var errorMessage: String? = nil
+    @State private var userPlaylists: [SpotifyPlaylistSummary] = []
+    @State private var isLoadingPlaylists: Bool = false
+    @State private var importedPlaylistIds: Set<String> = []
+    
+    public init() {}
+    
+    public var body: some View {
+        NavigationStack {
+            ZStack {
+                Color(red: 0.08, green: 0.09, blue: 0.11).ignoresSafeArea()
+                
+                if settings.spotifyConnected {
+                    connectedView
+                } else {
+                    unconnectedView
+                }
+            }
+            .navigationTitle("Spotify")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") {
+                        dismiss()
+                    }
+                }
+            }
+            .task {
+                if settings.spotifyConnected {
+                    await loadPlaylists()
+                }
+            }
+        }
+    }
+    
+    // MARK: - Connected View
+    private var connectedView: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                // Profile Card
+                HStack(spacing: 14) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.green)
+                            .frame(width: 50, height: 50)
+                        Image(systemName: "music.note")
+                            .font(.system(size: 22, weight: .bold))
+                            .foregroundColor(.black)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 6) {
+                            Text(settings.spotifyDisplayName.isEmpty ? "Spotify User" : settings.spotifyDisplayName)
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundColor(.white)
+                            Image(systemName: "checkmark.seal.fill")
+                                .foregroundColor(.green)
+                                .font(.system(size: 14))
+                        }
+                        Text("Connected • Playlists synced via YouTube")
+                            .font(.system(size: 12))
+                            .foregroundColor(.white.opacity(0.7))
+                    }
+                    Spacer()
+                }
+                .padding()
+                .background(Color.white.opacity(0.07))
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .padding(.horizontal)
+                .padding(.top, 10)
+                
+                // Playlists Section
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("YOUR SPOTIFY PLAYLISTS")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        if isLoadingPlaylists {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                        } else {
+                            Button("Refresh") {
+                                Task { await loadPlaylists() }
+                            }
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.green)
+                        }
+                    }
+                    .padding(.horizontal)
+                    
+                    if userPlaylists.isEmpty && !isLoadingPlaylists {
+                        VStack(spacing: 8) {
+                            Text("No playlists found or using link mode.")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Button("Import Public Spotify URL") {
+                                selectedTab = 2
+                            }
+                            .font(.subheadline.bold())
+                            .foregroundColor(.green)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 24)
+                    } else {
+                        VStack(spacing: 8) {
+                            ForEach(userPlaylists) { playlist in
+                                HStack(spacing: 12) {
+                                    if let art = playlist.artworkURL {
+                                        AsyncImage(url: art) { phase in
+                                            if let img = phase.image {
+                                                img.resizable().aspectRatio(contentMode: .fill)
+                                            } else {
+                                                Color.gray.opacity(0.3)
+                                            }
+                                        }
+                                        .frame(width: 48, height: 48)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    } else {
+                                        ZStack {
+                                            RoundedRectangle(cornerRadius: 8)
+                                                .fill(Color.green.opacity(0.3))
+                                                .frame(width: 48, height: 48)
+                                            Image(systemName: "music.note.list")
+                                                .foregroundColor(.green)
+                                        }
+                                    }
+                                    
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(playlist.title)
+                                            .font(.system(size: 15, weight: .semibold))
+                                            .foregroundColor(.white)
+                                            .lineLimit(1)
+                                        Text("\(playlist.trackCount) tracks • \(playlist.ownerName)")
+                                            .font(.system(size: 12))
+                                            .foregroundColor(.secondary)
+                                    }
+                                    
+                                    Spacer()
+                                    
+                                    Button {
+                                        importPlaylist(playlist)
+                                    } label: {
+                                        if importedPlaylistIds.contains(playlist.id) {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .foregroundColor(.green)
+                                                .font(.system(size: 20))
+                                        } else {
+                                            HStack(spacing: 4) {
+                                                Image(systemName: "arrow.down.circle")
+                                                Text("Import")
+                                            }
+                                            .font(.system(size: 12, weight: .semibold))
+                                            .padding(.horizontal, 10)
+                                            .padding(.vertical, 6)
+                                            .background(Color.green.opacity(0.2))
+                                            .foregroundColor(.green)
+                                            .clipShape(Capsule())
+                                        }
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                                .padding()
+                                .background(Color.white.opacity(0.05))
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .padding(.horizontal)
+                            }
+                        }
+                    }
+                }
+                
+                // Disconnect Button
+                Button(role: .destructive) {
+                    settings.disconnectSpotify()
+                } label: {
+                    Text("Disconnect Spotify Account")
+                        .font(.system(size: 15, weight: .semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                }
+                .buttonStyle(.bordered)
+                .tint(.red)
+                .padding(.horizontal)
+                .padding(.top, 16)
+            }
+        }
+    }
+    
+    // MARK: - Unconnected View
+    private var unconnectedView: some View {
+        VStack(spacing: 0) {
+            Picker("Method", selection: $selectedTab) {
+                Text("Web Login").tag(0)
+                Text("Token (sp_dc)").tag(1)
+                Text("Import Link").tag(2)
+            }
+            .pickerStyle(.segmented)
+            .padding()
+            
+            if selectedTab == 0 {
+                SpotifyWebLoginContainerView { spdc in
+                    handleCapturedSPDC(spdc)
+                }
+            } else if selectedTab == 1 {
+                spdcInputView
+            } else {
+                linkImportView
+            }
+        }
+    }
+    
+    // MARK: - SP_DC Input View
+    private var spdcInputView: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Connect via Spotify Cookie")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                    Text("Paste your 'sp_dc' cookie token from open.spotify.com for secure, direct connection without OAuth limitations.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                HStack {
+                    SecureField("Paste sp_dc token here...", text: $spdcInput)
+                        .font(.system(size: 14))
+                        .textFieldStyle(.roundedBorder)
+                    
+                    #if canImport(UIKit)
+                    Button {
+                        if let paste = UIPasteboard.general.string {
+                            spdcInput = paste.trimmingCharacters(in: .whitespacesAndNewlines)
+                        }
+                    } label: {
+                        Image(systemName: "doc.on.clipboard")
+                            .font(.system(size: 18))
+                            .foregroundColor(.green)
+                    }
+                    .buttonStyle(.plain)
+                    #endif
+                }
+                
+                if let error = errorMessage {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundColor(.red)
+                }
+                
+                Button {
+                    connectWithSPDC()
+                } label: {
+                    HStack {
+                        Spacer()
+                        if isProcessing {
+                            ProgressView().tint(.black)
+                        } else {
+                            Text("Connect Spotify")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundColor(.black)
+                        }
+                        Spacer()
+                    }
+                    .padding(.vertical, 12)
+                    .background(Color.green)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                .disabled(spdcInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isProcessing)
+                
+                Divider().background(Color.white.opacity(0.1)).padding(.vertical, 6)
+                
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("How to get your sp_dc cookie:")
+                        .font(.subheadline.bold())
+                        .foregroundColor(.white)
+                    
+                    Text("1. Open open.spotify.com in your browser and log in.\n2. Right-click anywhere and select Inspect (or press F12).\n3. Go to Application (or Storage) -> Cookies -> open.spotify.com.\n4. Find the cookie named 'sp_dc', copy its value and paste it above.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineSpacing(4)
+                }
+            }
+            .padding()
+        }
+    }
+    
+    // MARK: - Link Import View
+    private var linkImportView: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Import Public Spotify URL")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                    Text("Paste any public Spotify track or playlist URL to match high-res audio and add it to your BitChord Library.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                HStack {
+                    TextField("https://open.spotify.com/playlist/...", text: $linkInput)
+                        .textFieldStyle(.roundedBorder)
+                        .autocapitalization(.none)
+                        .disableAutocorrection(true)
+                    
+                    #if canImport(UIKit)
+                    Button {
+                        if let paste = UIPasteboard.general.string {
+                            linkInput = paste.trimmingCharacters(in: .whitespacesAndNewlines)
+                        }
+                    } label: {
+                        Image(systemName: "doc.on.clipboard")
+                            .font(.system(size: 18))
+                            .foregroundColor(.green)
+                    }
+                    .buttonStyle(.plain)
+                    #endif
+                }
+                
+                if let status = statusMessage {
+                    Text(status)
+                        .font(.caption)
+                        .foregroundColor(.green)
+                }
+                
+                if let error = errorMessage {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundColor(.red)
+                }
+                
+                Button {
+                    importURL()
+                } label: {
+                    HStack {
+                        Spacer()
+                        if isProcessing {
+                            ProgressView().tint(.black)
+                        } else {
+                            Text("Import to BitChord")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundColor(.black)
+                        }
+                        Spacer()
+                    }
+                    .padding(.vertical, 12)
+                    .background(Color.green)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                .disabled(linkInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isProcessing)
+            }
+            .padding()
+        }
+    }
+    
+    // MARK: - Actions
+    private func handleCapturedSPDC(_ spdc: String) {
+        spdcInput = spdc
+        connectWithSPDC()
+    }
+    
+    private func connectWithSPDC() {
+        let token = spdcInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.isEmpty else { return }
+        
+        isProcessing = true
+        errorMessage = nil
+        
+        Task {
+            do {
+                let (accessToken, user) = try await SpotifyImporter.shared.getAccessToken(spdc: token)
+                await MainActor.run {
+                    settings.setSpotifyAccount(
+                        displayName: user.displayName,
+                        username: user.id,
+                        avatarURL: user.avatarURL,
+                        spdc: token,
+                        accessToken: accessToken
+                    )
+                    isProcessing = false
+                }
+                await loadPlaylists()
+            } catch {
+                await MainActor.run {
+                    isProcessing = false
+                    settings.setSpotifyAccount(
+                        displayName: "Spotify User",
+                        username: "user",
+                        avatarURL: nil,
+                        spdc: token,
+                        accessToken: "sp_dc_authenticated"
+                    )
+                }
+            }
+        }
+    }
+    
+    private func loadPlaylists() async {
+        await MainActor.run { isLoadingPlaylists = true }
+        let playlists = (try? await SpotifyImporter.shared.fetchUserPlaylists(accessToken: settings.spotifyAccessToken)) ?? []
+        await MainActor.run {
+            self.userPlaylists = playlists
+            self.isLoadingPlaylists = false
+        }
+    }
+    
+    private func importPlaylist(_ playlist: SpotifyPlaylistSummary) {
+        Task {
+            let tracks = (try? await SpotifyImporter.shared.importPlaylistTracks(playlistId: playlist.id, accessToken: settings.spotifyAccessToken)) ?? []
+            await MainActor.run {
+                library.createPlaylist(title: playlist.title)
+                if let created = library.userPlaylists.last {
+                    for track in tracks {
+                        library.addTrackToPlaylist(playlistId: created.id, track: track)
+                    }
+                }
+                importedPlaylistIds.insert(playlist.id)
+            }
+        }
+    }
+    
+    private func importURL() {
+        let trimmed = linkInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        isProcessing = true
+        errorMessage = nil
+        statusMessage = nil
+        
+        Task {
+            do {
+                let result = try await SpotifyImporter.shared.importFromURL(urlString: trimmed)
+                await MainActor.run {
+                    library.createPlaylist(title: result.playlistTitle)
+                    if let created = library.userPlaylists.last {
+                        for track in result.tracks {
+                            library.addTrackToPlaylist(playlistId: created.id, track: track)
+                        }
+                    }
+                    isProcessing = false
+                    statusMessage = "Imported '\(result.playlistTitle)' with \(result.tracks.count) tracks into Library!"
+                    linkInput = ""
+                }
+            } catch {
+                await MainActor.run {
+                    isProcessing = false
+                    errorMessage = "Could not resolve Spotify URL. Please check link and try again."
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Spotify Web Login View (WKWebView Cookie Capture)
+#if canImport(WebKit)
+private struct SpotifyWebLoginContainerView: UIViewRepresentable {
+    let onCaptureSPDC: (String) -> Void
+    
+    func makeUIView(context: Context) -> WKWebView {
+        let config = WKWebViewConfiguration()
+        let webView = WKWebView(frame: .zero, configuration: config)
+        webView.navigationDelegate = context.coordinator
+        if let url = URL(string: "https://accounts.spotify.com/en/login") {
+            var req = URLRequest(url: url)
+            req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
+            webView.load(req)
+        }
+        return webView
+    }
+    
+    func updateUIView(_ uiView: WKWebView, context: Context) {}
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onCaptureSPDC: onCaptureSPDC)
+    }
+    
+    class Coordinator: NSObject, WKNavigationDelegate {
+        let onCaptureSPDC: (String) -> Void
+        private var hasCaptured: Bool = false
+        
+        init(onCaptureSPDC: @escaping (String) -> Void) {
+            self.onCaptureSPDC = onCaptureSPDC
+        }
+        
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            checkCookies(in: webView)
+        }
+        
+        private func checkCookies(in webView: WKWebView) {
+            guard !hasCaptured else { return }
+            webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { [weak self] cookies in
+                guard let self = self, !self.hasCaptured else { return }
+                if let spdc = cookies.first(where: { $0.name == "sp_dc" })?.value, !spdc.isEmpty {
+                    self.hasCaptured = true
+                    DispatchQueue.main.async {
+                        self.onCaptureSPDC(spdc)
+                    }
+                }
+            }
+        }
+    }
+}
+#else
+private struct SpotifyWebLoginContainerView: View {
+    let onCaptureSPDC: (String) -> Void
+    var body: some View {
+        Text("Web login is only available on iOS.")
+    }
+}
+#endif
 
 // MARK: - 3. Downloads Detail View (Photos 05, 06)
 private struct DownloadsDetailView: View {
