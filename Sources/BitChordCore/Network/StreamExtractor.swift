@@ -78,6 +78,11 @@ public actor StreamExtractor {
             return invidious
         }
         
+        // Strategy 5: High-Fidelity Audio Catalog (Instant Audio Fallback)
+        if let title = title, let catalog = await extractViaAudioCatalog(title: title, artist: artist) {
+            return catalog
+        }
+        
         throw URLError(.cannotFindHost)
     }
     

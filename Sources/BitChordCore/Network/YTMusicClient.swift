@@ -399,7 +399,11 @@ public actor YTMusicClient {
                     artworkURL = URL(string: highRes)
                 }
                 
-                // Keep streamURL nil so full length audio is extracted from YouTube
+                var streamURL: URL? = nil
+                if let preview = item["previewUrl"] as? String {
+                    streamURL = URL(string: preview)
+                }
+                
                 tracks.append(
                     Track(
                         id: trackId,
@@ -408,7 +412,7 @@ public actor YTMusicClient {
                         album: album,
                         duration: duration,
                         artworkURL: artworkURL,
-                        streamURL: nil,
+                        streamURL: streamURL,
                         isLossless: true
                     )
                 )

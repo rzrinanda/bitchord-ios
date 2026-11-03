@@ -2,6 +2,10 @@ import Foundation
 #if canImport(WebKit)
 import WebKit
 #endif
+#if canImport(AVFoundation)
+import AVFoundation
+#endif
+import SwiftUI
 
 @MainActor
 public final class YouTubeAudioBridge: NSObject {
@@ -18,15 +22,28 @@ public final class YouTubeAudioBridge: NSObject {
     public var onPlaybackEnded: (@MainActor () -> Void)?
     public var onPlaybackStateChanged: (@MainActor (PlaybackStatus) -> Void)?
     public var onTimeUpdated: (@MainActor (TimeInterval, TimeInterval) -> Void)?
+    public var onPlaybackError: (@MainActor (Int) -> Void)?
     
     private override init() {
         super.init()
+        #if os(iOS)
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.allowBluetooth, .allowBluetoothA2DP, .allowAirPlay])
+        try? AVAudioSession.sharedInstance().setActive(true)
+        #endif
         #if canImport(WebKit)
         setupWebView()
         #endif
     }
     
     #if canImport(WebKit)
+    public func getWebView() -> WKWebView {
+        if let wv = self.webView {
+            return wv
+        }
+        setupWebView()
+        return self.webView!
+    }
+    
     private func setupWebView() {
         let config = WKWebViewConfiguration()
         #if os(iOS)
@@ -38,7 +55,7 @@ public final class YouTubeAudioBridge: NSObject {
         contentController.add(self, name: "bridge")
         config.userContentController = contentController
         
-        // Custom user agent to prevent YouTube embed restrictions
+        // Mobile Safari UA
         let wv = WKWebView(frame: .init(x: 0, y: 0, width: 2, height: 2), configuration: config)
         wv.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
         self.webView = wv
@@ -77,7 +94,7 @@ public final class YouTubeAudioBridge: NSObject {
               'fs': 0,
               'disablekb': 1,
               'enablejsapi': 1,
-              'origin': 'https://music.youtube.com'
+              'origin': 'https://www.youtube.com'
             },
             events: {
               'onReady': onPlayerReady,
@@ -97,11 +114,11 @@ public final class YouTubeAudioBridge: NSObject {
         }
 
         function playVideoId(vId) {
-          if (!isReady || !player) {
+          if (!isReady || !player || !player.loadVideoById) {
             pendingId = vId;
             return;
           }
-          player.loadVideoById({ videoId: vId, suggestedQuality: 'highres' });
+          player.loadVideoById({ videoId: vId, suggestedQuality: 'default' });
           player.playVideo();
         }
 
@@ -144,7 +161,7 @@ public final class YouTubeAudioBridge: NSObject {
         </html>
         """
         
-        webView?.loadHTMLString(html, baseURL: URL(string: "https://music.youtube.com"))
+        webView?.loadHTMLString(html, baseURL: URL(string: "https://www.youtube.com"))
     }
     #endif
     
@@ -221,12 +238,24 @@ extension YouTubeAudioBridge: WKScriptMessageHandler {
             self.onTimeUpdated?(current, duration)
             
         case "error":
-            print("[YouTubeAudioBridge] Player Error: \(dict["code"] ?? "unknown")")
-            self.onPlaybackStateChanged?(.error)
+            let code = dict["code"] as? Int ?? -1
+            print("[YouTubeAudioBridge] Player Error: \(code)")
+            self.onPlaybackError?(code)
             
         default:
             break
         }
     }
 }
+
+#if os(iOS)
+public struct YouTubeBridgeView: UIViewRepresentable {
+    public init() {}
+    public func makeUIView(context: Context) -> WKWebView {
+        return YouTubeAudioBridge.shared.getWebView()
+    }
+    public func updateUIView(_ uiView: WKWebView, context: Context) {}
+}
+#endif
+
 #endif

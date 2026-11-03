@@ -61,6 +61,13 @@ public final class AudioPlayerEngine: ObservableObject {
                 }
             }
         }
+        YouTubeAudioBridge.shared.onPlaybackError = { [weak self] code in
+            Task { @MainActor [weak self] in
+                guard let self = self, let track = self.currentTrack else { return }
+                print("[AudioEngine] YouTube Audio Bridge error (\(code)) - fallback to direct audio stream")
+                self.attemptStreamFallback(for: track)
+            }
+        }
     }
     
     private func setupAudioSession() {
@@ -200,12 +207,23 @@ public final class AudioPlayerEngine: ObservableObject {
             return
         }
         
-        // 2. If track already has a valid 11-char YouTube ID, play via YouTubeAudioBridge immediately
+        // 2. If track already has a valid 11-char YouTube ID, play via YouTubeAudioBridge with auto-fallback
         if track.id.count == 11 && !track.id.hasPrefix("yt_") {
             self.stopAVPlayer()
             YouTubeAudioBridge.shared.play(videoId: track.id)
-            self.status = .playing
+            self.status = .loading
             self.updateNowPlayingInfo()
+            
+            // Watchdog fallback: if YouTubeAudioBridge doesn't start producing time/audio within 2.5s, fall back to AVPlayer!
+            let targetTrackId = track.id
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                guard let self = self, self.currentTrack?.id == targetTrackId else { return }
+                if self.status != .playing || self.currentTime == 0 {
+                    print("[AudioEngine] YouTube Audio Bridge startup timed out for \(targetTrackId), switching to AVPlayer stream fallback")
+                    self.attemptStreamFallback(for: track)
+                }
+            }
             return
         }
         
@@ -357,7 +375,14 @@ public final class AudioPlayerEngine: ObservableObject {
             guard let self = self else { return }
             guard self.currentTrack?.id == track.id else { return }
             
-            // Search audio catalog for reliable stream fallback
+            // 1. Direct streamURL on track if already present
+            if let streamURL = track.streamURL {
+                print("[BitChord AudioEngine] Using track's existing streamURL: \(streamURL)")
+                self.startPlaying(url: streamURL, for: track)
+                return
+            }
+            
+            // 2. Search audio catalog for reliable direct stream
             let query = "\(track.title) \(track.artist)"
             if let results = await YTMusicClient.shared.searchViaITunesDirect(query: query),
                let firstWithStream = results.first(where: { $0.streamURL != nil }),
@@ -370,9 +395,23 @@ public final class AudioPlayerEngine: ObservableObject {
                     self.queue[self.queueIndex] = recoveredTrack
                 }
                 self.startPlaying(url: fallbackURL, for: recoveredTrack)
-            } else {
-                self.status = .error
+                return
             }
+            
+            // 3. Fallback via multi-source StreamExtractor
+            if let streamInfo = try? await StreamExtractor.shared.extractAudioStream(trackId: track.id, title: track.title, artist: track.artist) {
+                print("[BitChord AudioEngine] StreamExtractor recovered stream: \(streamInfo.streamURL)")
+                var recoveredTrack = track
+                recoveredTrack.streamURL = streamInfo.streamURL
+                self.currentTrack = recoveredTrack
+                if self.queueIndex < self.queue.count {
+                    self.queue[self.queueIndex] = recoveredTrack
+                }
+                self.startPlaying(url: streamInfo.streamURL, for: recoveredTrack)
+                return
+            }
+            
+            self.status = .error
         }
     }
     
