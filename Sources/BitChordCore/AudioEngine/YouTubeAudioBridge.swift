@@ -27,7 +27,7 @@ public final class YouTubeAudioBridge: NSObject {
     private override init() {
         super.init()
         #if os(iOS)
-        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.allowBluetooth, .allowBluetoothA2DP, .allowAirPlay])
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.allowBluetooth, .allowBluetoothA2DP, .allowAirPlay, .mixWithOthers])
         try? AVAudioSession.sharedInstance().setActive(true)
         #endif
         #if canImport(WebKit)
@@ -48,7 +48,7 @@ public final class YouTubeAudioBridge: NSObject {
         let config = WKWebViewConfiguration()
         #if os(iOS)
         config.allowsInlineMediaPlayback = true
-        config.allowsPictureInPictureMediaPlayback = false
+        config.allowsPictureInPictureMediaPlayback = true
         #endif
         config.mediaTypesRequiringUserActionForPlayback = []
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
@@ -81,6 +81,11 @@ public final class YouTubeAudioBridge: NSObject {
           body, html { margin:0; padding:0; width:100%; height:100%; background-color:#000; overflow:hidden; }
           #player { width:100%; height:100%; }
         </style>
+        <script>
+        if (window.navigator && window.navigator.audioSession) {
+          try { window.navigator.audioSession.type = 'playback'; } catch(e) {}
+        }
+        </script>
         <script src="https://www.youtube.com/iframe_api"></script>
         </head>
         <body>

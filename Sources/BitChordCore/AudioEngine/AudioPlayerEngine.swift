@@ -3,6 +3,9 @@ import AVFoundation
 #if canImport(MediaPlayer)
 import MediaPlayer
 #endif
+#if canImport(UIKit)
+import UIKit
+#endif
 
 public enum PlaybackBackend: String, Sendable {
     case none
@@ -40,6 +43,12 @@ public final class AudioPlayerEngine: ObservableObject {
     private var timeObserverToken: Any?
     private var playerItemObservation: NSKeyValueObservation?
     private var playerItemEndObserver: NSObjectProtocol?
+    
+    #if os(iOS)
+    private var silencePlayer: AVAudioPlayer?
+    private var cachedArtworkImage: UIImage?
+    private var cachedTrackId: String?
+    #endif
     
     public init() {
         setupAudioSession()
@@ -97,13 +106,74 @@ public final class AudioPlayerEngine: ObservableObject {
         #if os(iOS)
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .default, options: [.allowAirPlay, .allowBluetoothA2DP])
+            try session.setCategory(.playback, mode: .default, options: [.allowAirPlay, .allowBluetoothA2DP, .mixWithOthers])
             try session.setActive(true)
         } catch {
             print("[BitChord AudioEngine] Failed to activate AVAudioSession: \(error.localizedDescription)")
         }
         #endif
     }
+    
+    #if os(iOS)
+    private func setupKeepAlive() {
+        guard silencePlayer == nil else { return }
+        let url = makeSilentWAV()
+        if let player = try? AVAudioPlayer(contentsOf: url) {
+            player.numberOfLoops = -1
+            player.volume = 0.001
+            player.prepareToPlay()
+            self.silencePlayer = player
+        }
+    }
+    
+    private func startKeepAlive() {
+        setupKeepAlive()
+        silencePlayer?.play()
+    }
+    
+    private func pauseKeepAlive() {
+        silencePlayer?.pause()
+    }
+    
+    private func makeSilentWAV() -> URL {
+        let tempDir = FileManager.default.temporaryDirectory
+        let fileURL = tempDir.appendingPathComponent("bitchord_silence.wav")
+        if FileManager.default.fileExists(atPath: fileURL.path) {
+            return fileURL
+        }
+        
+        let sampleRate: Int32 = 44100
+        let numChannels: Int16 = 2
+        let bitsPerSample: Int16 = 16
+        let durationSeconds: Int32 = 1
+        let numSamples: Int32 = sampleRate * durationSeconds
+        let subChunk2Size: Int32 = numSamples * Int32(numChannels) * Int32(bitsPerSample / 8)
+        let chunkSize: Int32 = 36 + subChunk2Size
+        let byteRate: Int32 = sampleRate * Int32(numChannels) * Int32(bitsPerSample / 8)
+        let blockAlign: Int16 = numChannels * (bitsPerSample / 8)
+        
+        var data = Data()
+        data.append(contentsOf: "RIFF".utf8)
+        data.append(contentsOf: withUnsafeBytes(of: chunkSize.littleEndian) { Array($0) })
+        data.append(contentsOf: "WAVE".utf8)
+        data.append(contentsOf: "fmt ".utf8)
+        let subChunk1Size: Int32 = 16
+        let audioFormat: Int16 = 1
+        data.append(contentsOf: withUnsafeBytes(of: subChunk1Size.littleEndian) { Array($0) })
+        data.append(contentsOf: withUnsafeBytes(of: audioFormat.littleEndian) { Array($0) })
+        data.append(contentsOf: withUnsafeBytes(of: numChannels.littleEndian) { Array($0) })
+        data.append(contentsOf: withUnsafeBytes(of: sampleRate.littleEndian) { Array($0) })
+        data.append(contentsOf: withUnsafeBytes(of: byteRate.littleEndian) { Array($0) })
+        data.append(contentsOf: withUnsafeBytes(of: blockAlign.littleEndian) { Array($0) })
+        data.append(contentsOf: withUnsafeBytes(of: bitsPerSample.littleEndian) { Array($0) })
+        data.append(contentsOf: "data".utf8)
+        data.append(contentsOf: withUnsafeBytes(of: subChunk2Size.littleEndian) { Array($0) })
+        data.append(Data(count: Int(subChunk2Size)))
+        
+        try? data.write(to: fileURL)
+        return fileURL
+    }
+    #endif
     
     // MARK: - Queue Management
     
@@ -222,6 +292,10 @@ public final class AudioPlayerEngine: ObservableObject {
         self.duration = track.duration
         self.currentTime = 0
         self.status = .loading
+        
+        #if os(iOS)
+        startKeepAlive()
+        #endif
         
         // 1. If direct offline or file URL is present, use AVPlayer
         if let directURL = track.streamURL, directURL.isFileURL {
@@ -489,10 +563,16 @@ public final class AudioPlayerEngine: ObservableObject {
             }
         }
         status = .playing
+        #if os(iOS)
+        startKeepAlive()
+        #endif
         updateNowPlayingInfo()
     }
     
     public func pause() {
+        #if os(iOS)
+        pauseKeepAlive()
+        #endif
         YouTubeAudioBridge.shared.pause()
         player?.pause()
         status = .paused
@@ -500,6 +580,9 @@ public final class AudioPlayerEngine: ObservableObject {
     }
     
     public func stop() {
+        #if os(iOS)
+        pauseKeepAlive()
+        #endif
         YouTubeAudioBridge.shared.pause()
         stopAVPlayer()
         activeBackend = .none
@@ -631,30 +714,37 @@ public final class AudioPlayerEngine: ObservableObject {
     private func setupRemoteCommands() {
         #if canImport(MediaPlayer)
         let commandCenter = MPRemoteCommandCenter.shared()
+        commandCenter.playCommand.isEnabled = true
         commandCenter.playCommand.addTarget { [weak self] _ in
             self?.resume()
             return .success
         }
+        commandCenter.pauseCommand.isEnabled = true
         commandCenter.pauseCommand.addTarget { [weak self] _ in
             self?.pause()
             return .success
         }
+        commandCenter.stopCommand.isEnabled = true
         commandCenter.stopCommand.addTarget { [weak self] _ in
             self?.stop()
             return .success
         }
+        commandCenter.togglePlayPauseCommand.isEnabled = true
         commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
             self?.togglePlayPause()
             return .success
         }
+        commandCenter.nextTrackCommand.isEnabled = true
         commandCenter.nextTrackCommand.addTarget { [weak self] _ in
             self?.nextTrack()
             return .success
         }
+        commandCenter.previousTrackCommand.isEnabled = true
         commandCenter.previousTrackCommand.addTarget { [weak self] _ in
             self?.previousTrack()
             return .success
         }
+        commandCenter.changePlaybackPositionCommand.isEnabled = true
         commandCenter.changePlaybackPositionCommand.addTarget { [weak self] event in
             guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
             self?.seek(to: event.positionTime)
@@ -670,16 +760,40 @@ public final class AudioPlayerEngine: ObservableObject {
             return
         }
         
-        let info: [String: Any] = [
+        var info: [String: Any] = [
             MPMediaItemPropertyTitle: track.title,
             MPMediaItemPropertyArtist: track.artist,
             MPMediaItemPropertyAlbumTitle: track.album,
-            MPMediaItemPropertyPlaybackDuration: track.duration,
+            MPMediaItemPropertyPlaybackDuration: duration > 0 ? duration : track.duration,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: currentTime,
-            MPNowPlayingInfoPropertyPlaybackRate: status == .playing ? playbackSpeed : 0.0
+            MPNowPlayingInfoPropertyPlaybackRate: status == .playing ? playbackSpeed : 0.0,
+            MPNowPlayingInfoPropertyDefaultPlaybackRate: 1.0
         ]
+        
+        #if os(iOS)
+        if let cached = cachedArtworkImage, cachedTrackId == track.id {
+            info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: cached.size) { _ in cached }
+        } else if let artworkURL = track.artworkURL {
+            loadArtwork(from: artworkURL, for: track.id)
+        }
+        #endif
         
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         #endif
     }
+    
+    #if os(iOS)
+    private func loadArtwork(from url: URL, for trackId: String) {
+        Task { [weak self] in
+            guard let (data, _) = try? await URLSession.shared.data(from: url),
+                  let image = UIImage(data: data) else { return }
+            await MainActor.run {
+                guard let self = self, self.currentTrack?.id == trackId else { return }
+                self.cachedArtworkImage = image
+                self.cachedTrackId = trackId
+                self.updateNowPlayingInfo()
+            }
+        }
+    }
+    #endif
 }
