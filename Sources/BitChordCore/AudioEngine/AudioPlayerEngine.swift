@@ -106,10 +106,34 @@ public final class AudioPlayerEngine: ObservableObject {
         #if os(iOS)
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .default, options: [.allowAirPlay, .allowBluetoothA2DP, .mixWithOthers])
+            try session.setCategory(.playback, mode: .default, options: [.allowAirPlay, .allowBluetoothA2DP])
             try session.setActive(true)
         } catch {
             print("[BitChord AudioEngine] Failed to activate AVAudioSession: \(error.localizedDescription)")
+        }
+        
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self = self else { return }
+            if self.status == .playing {
+                self.startKeepAlive()
+                YouTubeAudioBridge.shared.resume()
+                self.updateNowPlayingInfo()
+            }
+        }
+        
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self = self else { return }
+            if self.status == .playing {
+                self.updateNowPlayingInfo()
+            }
         }
         #endif
     }
@@ -120,7 +144,7 @@ public final class AudioPlayerEngine: ObservableObject {
         let url = makeSilentWAV()
         if let player = try? AVAudioPlayer(contentsOf: url) {
             player.numberOfLoops = -1
-            player.volume = 0.001
+            player.volume = 0.05
             player.prepareToPlay()
             self.silencePlayer = player
         }
@@ -128,7 +152,9 @@ public final class AudioPlayerEngine: ObservableObject {
     
     private func startKeepAlive() {
         setupKeepAlive()
-        silencePlayer?.play()
+        if silencePlayer?.isPlaying != true {
+            silencePlayer?.play()
+        }
     }
     
     private func pauseKeepAlive() {
@@ -750,6 +776,12 @@ public final class AudioPlayerEngine: ObservableObject {
             self?.seek(to: event.positionTime)
             return .success
         }
+        
+        #if os(iOS)
+        DispatchQueue.main.async {
+            UIApplication.shared.beginReceivingRemoteControlEvents()
+        }
+        #endif
         #endif
     }
     
@@ -757,6 +789,9 @@ public final class AudioPlayerEngine: ObservableObject {
         #if canImport(MediaPlayer)
         guard let track = currentTrack else {
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+            #if os(iOS)
+            MPNowPlayingInfoCenter.default().playbackState = .stopped
+            #endif
             return
         }
         
@@ -771,6 +806,17 @@ public final class AudioPlayerEngine: ObservableObject {
         ]
         
         #if os(iOS)
+        switch status {
+        case .playing:
+            MPNowPlayingInfoCenter.default().playbackState = .playing
+        case .paused:
+            MPNowPlayingInfoCenter.default().playbackState = .paused
+        case .loading:
+            MPNowPlayingInfoCenter.default().playbackState = .playing
+        case .idle, .error:
+            MPNowPlayingInfoCenter.default().playbackState = .stopped
+        }
+        
         if let cached = cachedArtworkImage, cachedTrackId == track.id {
             info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: cached.size) { _ in cached }
         } else if let artworkURL = track.artworkURL {

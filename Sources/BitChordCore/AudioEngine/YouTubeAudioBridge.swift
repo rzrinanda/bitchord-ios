@@ -27,7 +27,7 @@ public final class YouTubeAudioBridge: NSObject {
     private override init() {
         super.init()
         #if os(iOS)
-        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.allowBluetooth, .allowBluetoothA2DP, .allowAirPlay, .mixWithOthers])
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.allowBluetooth, .allowBluetoothA2DP, .allowAirPlay])
         try? AVAudioSession.sharedInstance().setActive(true)
         #endif
         #if canImport(WebKit)
@@ -82,9 +82,34 @@ public final class YouTubeAudioBridge: NSObject {
           #player { width:100%; height:100%; }
         </style>
         <script>
+        // 1. Spoof visibility so YouTube player never detects background / minimization
+        try {
+          Object.defineProperty(document, 'hidden', { get: function() { return false; }, configurable: false });
+          Object.defineProperty(document, 'visibilityState', { get: function() { return 'visible'; }, configurable: false });
+          Object.defineProperty(document, 'webkitVisibilityState', { get: function() { return 'visible'; }, configurable: false });
+        } catch(e) {}
+
+        window.addEventListener('visibilitychange', function(e) { e.stopImmediatePropagation(); }, true);
+        document.addEventListener('visibilitychange', function(e) { e.stopImmediatePropagation(); }, true);
+        window.addEventListener('pagehide', function(e) { e.stopImmediatePropagation(); }, true);
+
         if (window.navigator && window.navigator.audioSession) {
           try { window.navigator.audioSession.type = 'playback'; } catch(e) {}
         }
+        
+        // 2. Active WebAudio keepalive to hold WebKit audio thread open
+        try {
+          var AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (AudioCtx) {
+            var aCtx = new AudioCtx();
+            var osc = aCtx.createOscillator();
+            var g = aCtx.createGain();
+            g.gain.value = 0.00001;
+            osc.connect(g);
+            g.connect(aCtx.destination);
+            osc.start(0);
+          }
+        } catch(e) {}
         </script>
         <script src="https://www.youtube.com/iframe_api"></script>
         </head>
@@ -94,6 +119,7 @@ public final class YouTubeAudioBridge: NSObject {
         var player = null;
         var isReady = false;
         var pendingId = null;
+        var isUserPlaying = false;
 
         function onYouTubeIframeAPIReady() {
           player = new YT.Player('player', {
@@ -130,6 +156,7 @@ public final class YouTubeAudioBridge: NSObject {
         }
 
         function playVideoId(vId) {
+          isUserPlaying = true;
           if (!isReady || !player || !player.loadVideoById) {
             pendingId = vId;
             return;
@@ -143,10 +170,12 @@ public final class YouTubeAudioBridge: NSObject {
         }
 
         function pauseVideo() {
+          isUserPlaying = false;
           if (player && player.pauseVideo) player.pauseVideo();
         }
 
         function resumeVideo() {
+          isUserPlaying = true;
           if (player && player.playVideo) player.playVideo();
         }
 
@@ -159,7 +188,14 @@ public final class YouTubeAudioBridge: NSObject {
         }
 
         function onPlayerStateChange(event) {
-          // -1: unstarted, 0: ended, 1: playing, 2: paused, 3: buffering, 5: cued
+          // If paused automatically by OS backgrounding/minimization while user intended playback, force resume!
+          if (event.data === 2 && isUserPlaying) {
+            if (player && player.playVideo) {
+              player.playVideo();
+            }
+            return;
+          }
+          
           window.webkit.messageHandlers.bridge.postMessage({ type: 'state', state: event.data });
           if (event.data === 5 && player && player.playVideo) {
             player.playVideo();
@@ -178,7 +214,7 @@ public final class YouTubeAudioBridge: NSObject {
               window.webkit.messageHandlers.bridge.postMessage({ type: 'time', current: cur, duration: dur });
             }
           }
-        }, 200);
+        }, 250);
         </script>
         </body>
         </html>
