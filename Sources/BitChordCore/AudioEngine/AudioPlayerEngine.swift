@@ -37,6 +37,30 @@ public final class AudioPlayerEngine: ObservableObject {
     public init() {
         setupAudioSession()
         setupRemoteCommands()
+        setupYouTubeBridge()
+    }
+    
+    private func setupYouTubeBridge() {
+        YouTubeAudioBridge.shared.onPlaybackEnded = { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.handleTrackFinished()
+            }
+        }
+        YouTubeAudioBridge.shared.onPlaybackStateChanged = { [weak self] newStatus in
+            Task { @MainActor [weak self] in
+                self?.status = newStatus
+                self?.updateNowPlayingInfo()
+            }
+        }
+        YouTubeAudioBridge.shared.onTimeUpdated = { [weak self] cur, dur in
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                self.currentTime = cur
+                if dur > 0 && abs(self.duration - dur) > 1.0 {
+                    self.duration = dur
+                }
+            }
+        }
     }
     
     private func setupAudioSession() {
@@ -169,33 +193,41 @@ public final class AudioPlayerEngine: ObservableObject {
         self.currentTime = 0
         self.status = .loading
         
-        if let directURL = track.streamURL {
+        // 1. If direct offline or file URL is present, use AVPlayer
+        if let directURL = track.streamURL, directURL.isFileURL {
+            YouTubeAudioBridge.shared.pause()
             startPlaying(url: directURL, for: track)
             return
         }
         
-        // Resolve stream URL asynchronously from YouTube / Audio sources with multi-source fallback
+        // 2. If track already has a valid 11-char YouTube ID, play via YouTubeAudioBridge immediately
+        if track.id.count == 11 && !track.id.hasPrefix("yt_") {
+            self.stopAVPlayer()
+            YouTubeAudioBridge.shared.play(videoId: track.id)
+            self.status = .playing
+            self.updateNowPlayingInfo()
+            return
+        }
+        
+        // 3. Resolve real 11-char YouTube videoId for titles / search metadata
         Task { @MainActor [weak self] in
             guard let self = self else { return }
-            do {
-                let streamInfo = try await StreamExtractor.shared.extractAudioStream(
-                    trackId: track.id,
-                    title: track.title,
-                    artist: track.artist,
-                    preferredQuality: .high
-                )
-                var updatedTrack = track
-                updatedTrack.streamURL = streamInfo.streamURL
-                
+            if let vId = await YTMusicClient.shared.resolveYouTubeVideoId(title: track.title, artist: track.artist) {
+                var updated = track
+                updated.id = vId
                 if self.queueIndex == index {
-                    self.currentTrack = updatedTrack
+                    self.currentTrack = updated
                     if index < self.queue.count {
-                        self.queue[index] = updatedTrack
+                        self.queue[index] = updated
                     }
-                    self.startPlaying(url: streamInfo.streamURL, for: updatedTrack)
+                    self.stopAVPlayer()
+                    YouTubeAudioBridge.shared.play(videoId: vId)
+                    self.status = .playing
+                    self.updateNowPlayingInfo()
                 }
-            } catch {
-                print("[BitChord AudioEngine] Failed to resolve audio stream: \(error.localizedDescription)")
+            } else if let directURL = track.streamURL {
+                self.startPlaying(url: directURL, for: track)
+            } else {
                 self.attemptStreamFallback(for: track)
             }
         }
@@ -353,28 +385,38 @@ public final class AudioPlayerEngine: ObservableObject {
     }
     
     public func resume() {
-        player?.rate = playbackSpeed
-        player?.play()
+        if let current = currentTrack, current.id.count == 11 && !current.id.hasPrefix("yt_") {
+            YouTubeAudioBridge.shared.resume()
+        } else {
+            player?.rate = playbackSpeed
+            player?.play()
+        }
         status = .playing
         updateNowPlayingInfo()
     }
     
     public func pause() {
+        YouTubeAudioBridge.shared.pause()
         player?.pause()
         status = .paused
         updateNowPlayingInfo()
     }
     
     public func stop() {
+        YouTubeAudioBridge.shared.pause()
+        stopAVPlayer()
+        status = .idle
+        currentTime = 0
+        updateNowPlayingInfo()
+    }
+    
+    public func stopAVPlayer() {
         if let observer = playerItemEndObserver {
             NotificationCenter.default.removeObserver(observer)
             playerItemEndObserver = nil
         }
         player?.pause()
         player?.replaceCurrentItem(with: nil)
-        status = .idle
-        currentTime = 0
-        updateNowPlayingInfo()
     }
     
     public func nextTrack() {
@@ -420,15 +462,13 @@ public final class AudioPlayerEngine: ObservableObject {
     
     public func startRadio(for track: Track) {
         setQueue([track], startIndex: 0)
-        Task { [weak self] in
+        Task { @MainActor [weak self] in
             guard let self = self else { return }
             let radioTracks = await YTMusicClient.shared.fetchRadioTracks(for: track)
-            await MainActor.run {
-                for t in radioTracks {
-                    if !self.queue.contains(where: { $0.id == t.id }) {
-                        self.queue.append(t)
-                        self.originalQueue.append(t)
-                    }
+            for t in radioTracks {
+                if !self.queue.contains(where: { $0.id == t.id }) {
+                    self.queue.append(t)
+                    self.originalQueue.append(t)
                 }
             }
         }
@@ -436,8 +476,12 @@ public final class AudioPlayerEngine: ObservableObject {
     
     public func seek(to time: TimeInterval) {
         currentTime = time
-        let cmTime = CMTime(seconds: time, preferredTimescale: 600)
-        player?.seek(to: cmTime, toleranceBefore: .zero, toleranceAfter: .zero)
+        if let current = currentTrack, current.id.count == 11 && !current.id.hasPrefix("yt_") {
+            YouTubeAudioBridge.shared.seek(to: time)
+        } else {
+            let cmTime = CMTime(seconds: time, preferredTimescale: 600)
+            player?.seek(to: cmTime, toleranceBefore: .zero, toleranceAfter: .zero)
+        }
         updateNowPlayingInfo()
     }
     

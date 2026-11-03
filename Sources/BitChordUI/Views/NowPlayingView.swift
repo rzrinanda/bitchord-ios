@@ -299,27 +299,39 @@ public struct QueueSheetView: View {
     @ObservedObject var engine = AudioPlayerEngine.shared
     @Environment(\.dismiss) private var dismiss
     
-    // AutoPlay suggested tracks
-    private let autoPlaySuggestions: [Track] = [
+    @State private var dynamicAutoPlayTracks: [Track] = []
+    
+    // Default fallback if offline
+    private let defaultFallbackSuggestions: [Track] = [
         Track(
-            id: "yt_intheend",
-            title: "In the End",
-            artist: "Linkin Park",
-            album: "Hybrid Theory",
-            duration: 216,
-            artworkURL: URL(string: "https://i.ytimg.com/vi/eVTXPUF4Oz4/hqdefault.jpg")
+            id: "R6f_7G71p_w",
+            title: "Starlight",
+            artist: "Muse",
+            album: "Black Holes and Revelations",
+            duration: 240,
+            artworkURL: URL(string: "https://i.ytimg.com/vi/R6f_7G71p_w/hqdefault.jpg")
         ),
         Track(
-            id: "yt_numb",
-            title: "Numb",
-            artist: "Linkin Park",
-            album: "Meteora",
-            duration: 187,
-            artworkURL: URL(string: "https://i.ytimg.com/vi/kXYiU_JCYtU/hqdefault.jpg")
+            id: "KwhjlNvF-4Q",
+            title: "Hysteria",
+            artist: "Muse",
+            album: "Absolution",
+            duration: 227,
+            artworkURL: URL(string: "https://i.ytimg.com/vi/KwhjlNvF-4Q/hqdefault.jpg")
         )
     ]
     
     public init() {}
+    
+    private func loadAutoPlayRecommendations() {
+        guard let current = engine.currentTrack else { return }
+        Task {
+            let tracks = await YTMusicClient.shared.fetchRadioTracks(for: current)
+            await MainActor.run {
+                self.dynamicAutoPlayTracks = tracks
+            }
+        }
+    }
     
     public var body: some View {
         NavigationStack {
@@ -557,7 +569,8 @@ public struct QueueSheetView: View {
                                 .padding(.horizontal, 20)
                             
                             VStack(spacing: 4) {
-                                ForEach(autoPlaySuggestions) { track in
+                                let displaySuggestions = dynamicAutoPlayTracks.isEmpty ? defaultFallbackSuggestions : dynamicAutoPlayTracks
+                                ForEach(displaySuggestions) { track in
                                     HStack(spacing: 12) {
                                         Image(systemName: "line.3.horizontal")
                                             .font(.system(size: 14))
@@ -612,6 +625,9 @@ public struct QueueSheetView: View {
                         Spacer(minLength: 40)
                     }
                 }
+            }
+            .onAppear {
+                loadAutoPlayRecommendations()
             }
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)

@@ -52,7 +52,7 @@ public actor StreamExtractor {
         var effectiveVideoId = trackId
         
         // If trackId is an alias or placeholder, resolve real YouTube 11-char videoId first
-        if effectiveVideoId.count != 11 || effectiveVideoId.contains("_") {
+        if effectiveVideoId.count != 11 || effectiveVideoId.hasPrefix("yt_") {
             if let title = title, let resolvedId = await resolveYouTubeVideoId(title: title, artist: artist) {
                 effectiveVideoId = resolvedId
             }

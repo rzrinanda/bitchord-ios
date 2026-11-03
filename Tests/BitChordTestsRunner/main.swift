@@ -251,6 +251,23 @@ func runAllTests() async {
         assertTest(hiRes.formattedDuration == "3:35", "Track: Duration 215s formatted as 3:35")
     }
     
+    // MARK: - Test 7: YouTube Music Automix & Radio Recommendations (Same Frequency & Vibe)
+    do {
+        let museSeed = Track(
+            id: "R6f_7G71p_w",
+            title: "Starlight",
+            artist: "Muse",
+            duration: 240
+        )
+        let radioTracks = await YTMusicClient.shared.fetchRadioTracks(for: museSeed)
+        assertTest(!radioTracks.isEmpty, "Automix Radio: Generates curated similar tracks from YouTube Music")
+        assertTest(!radioTracks.contains(where: { $0.id == museSeed.id }), "Automix Radio: Filters out seed track from recommendations")
+        if let first = radioTracks.first {
+            assertTest(!first.title.isEmpty, "Automix Radio: Returned track has non-empty title (\(first.title))")
+            assertTest(!first.artist.isEmpty, "Automix Radio: Returned track has non-empty artist (\(first.artist))")
+        }
+    }
+    
     print("==================================================")
     print("🏁 Test Results: \(passed) Passed, \(failed) Failed")
     print("==================================================")

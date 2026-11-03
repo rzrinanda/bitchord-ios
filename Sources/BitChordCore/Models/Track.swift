@@ -1,7 +1,7 @@
 import Foundation
 
 public struct Track: Identifiable, Hashable, Codable, Sendable {
-    public let id: String
+    public var id: String
     public let title: String
     public let artist: String
     public let album: String

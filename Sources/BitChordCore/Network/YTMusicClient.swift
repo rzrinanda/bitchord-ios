@@ -69,24 +69,183 @@ public actor YTMusicClient {
         return []
     }
     
-    /// Generates radio / autoplay recommendations of similar full-length tracks
-    public func fetchRadioTracks(for track: Track) async -> [Track] {
-        let cleanArtist = track.artist
-            .components(separatedBy: " ft.")[0]
-            .components(separatedBy: " feat.")[0]
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            
-        let radioQuery = "\(cleanArtist) top songs"
-        if let results = try? await search(query: radioQuery), !results.isEmpty {
-            return results.filter { $0.id != track.id }
+    /// Resolves direct YouTube 11-character videoId from track title and artist
+    public func resolveYouTubeVideoId(title: String, artist: String?) async -> String? {
+        let query = "\(title) \(artist ?? "")".trimmingCharacters(in: .whitespacesAndNewlines)
+        let body: [String: Any] = [
+            "context": [
+                "client": [
+                    "clientName": "WEB_REMIX",
+                    "clientVersion": "1.20250101.01.00",
+                    "hl": "id",
+                    "gl": "ID"
+                ]
+            ],
+            "query": query
+        ]
+        
+        guard let url = URL(string: "https://music.youtube.com/youtubei/v1/search") else { return nil }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
+        req.setValue("https://music.youtube.com", forHTTPHeaderField: "Origin")
+        req.setValue("https://music.youtube.com", forHTTPHeaderField: "Referer")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        req.timeoutInterval = 4.0
+        
+        guard let (data, resp) = try? await session.data(for: req),
+              let http = resp as? HTTPURLResponse, http.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
         }
         
-        // Fallback to related search
-        if let related = try? await search(query: "\(track.title) similar songs"), !related.isEmpty {
-            return related.filter { $0.id != track.id }
+        return extractFirstVideoId(from: json)
+    }
+    
+    private func extractFirstVideoId(from json: Any) -> String? {
+        if let dict = json as? [String: Any] {
+            if let vId = dict["videoId"] as? String, vId.count == 11, !vId.hasPrefix("yt_") {
+                return vId
+            }
+            if let watchEndpoint = dict["watchEndpoint"] as? [String: Any],
+               let vId = watchEndpoint["videoId"] as? String, vId.count == 11 {
+                return vId
+            }
+            for (_, val) in dict {
+                if let found = extractFirstVideoId(from: val) {
+                    return found
+                }
+            }
+        } else if let arr = json as? [Any] {
+            for item in arr {
+                if let found = extractFirstVideoId(from: item) {
+                    return found
+                }
+            }
+        }
+        return nil
+    }
+    
+    /// Generates radio / autoplay recommendations of similar full-length tracks (Same Vibe & Frequency)
+    public func fetchRadioTracks(for track: Track) async -> [Track] {
+        let videoId: String
+        if track.id.count == 11 && !track.id.hasPrefix("yt_") {
+            videoId = track.id
+        } else if let resolved = await resolveYouTubeVideoId(title: track.title, artist: track.artist) {
+            videoId = resolved
+        } else {
+            videoId = "R6f_7G71p_w" // Default seed
+        }
+        
+        let body: [String: Any] = [
+            "context": [
+                "client": [
+                    "clientName": "WEB_REMIX",
+                    "clientVersion": "1.20250101.01.00",
+                    "hl": "id",
+                    "gl": "ID"
+                ]
+            ],
+            "videoId": videoId,
+            "playlistId": "RDAMVM\(videoId)",
+            "isAudioOnly": true
+        ]
+        
+        guard let url = URL(string: "https://music.youtube.com/youtubei/v1/next") else { return [] }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
+        req.setValue("https://music.youtube.com", forHTTPHeaderField: "Origin")
+        req.setValue("https://music.youtube.com", forHTTPHeaderField: "Referer")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        req.timeoutInterval = 6.0
+        
+        guard let (data, resp) = try? await session.data(for: req),
+              let http = resp as? HTTPURLResponse, http.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return []
+        }
+        
+        let radioItems = parsePlaylistPanelVideos(json: json, seedVideoId: videoId)
+        if !radioItems.isEmpty {
+            return radioItems
+        }
+        
+        // Fallback: search for top tracks by the artist if next endpoint returns empty
+        let cleanArtist = track.artist.components(separatedBy: " ft.")[0].components(separatedBy: " feat.")[0]
+        if let fallbackTracks = try? await search(query: "\(cleanArtist) popular") {
+            return fallbackTracks.filter { $0.id != track.id }
         }
         
         return []
+    }
+    
+    private func parsePlaylistPanelVideos(json: Any, seedVideoId: String) -> [Track] {
+        var results: [Track] = []
+        
+        func extract(from obj: Any) {
+            if let dict = obj as? [String: Any] {
+                if let r = dict["playlistPanelVideoRenderer"] as? [String: Any],
+                   let vId = r["videoId"] as? String, vId != seedVideoId {
+                    
+                    let title = (r["title"] as? [String: Any])?["runs"] as? [[String: Any]]
+                    let songTitle = title?.first?["text"] as? String ?? "Unknown Title"
+                    
+                    var artistName = "YouTube Music"
+                    if let runs = (r["longBylineText"] as? [String: Any])?["runs"] as? [[String: Any]] {
+                        var artistRuns: [String] = []
+                        for run in runs {
+                            let t = run["text"] as? String ?? ""
+                            if t.contains("•") { break }
+                            artistRuns.append(t)
+                        }
+                        let joined = artistRuns.joined().trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !joined.isEmpty { artistName = joined }
+                    }
+                    
+                    var artworkURL: URL? = nil
+                    if let thumb = r["thumbnail"] as? [String: Any],
+                       let thumbs = thumb["thumbnails"] as? [[String: Any]],
+                       let last = thumbs.last,
+                       let u = last["url"] as? String {
+                        artworkURL = URL(string: u)
+                    }
+                    
+                    var duration: TimeInterval = 210
+                    if let lengthRuns = (r["lengthText"] as? [String: Any])?["runs"] as? [[String: Any]],
+                       let text = lengthRuns.first?["text"] as? String {
+                        let parts = text.split(separator: ":")
+                        if parts.count == 2, let m = Double(parts[0]), let s = Double(parts[1]) {
+                            duration = m * 60 + s
+                        }
+                    }
+                    
+                    results.append(
+                        Track(
+                            id: vId,
+                            title: songTitle,
+                            artist: artistName,
+                            album: "YouTube Music",
+                            duration: duration,
+                            artworkURL: artworkURL,
+                            isLossless: true
+                        )
+                    )
+                }
+                for (_, val) in dict {
+                    extract(from: val)
+                }
+            } else if let arr = obj as? [Any] {
+                for it in arr {
+                    extract(from: it)
+                }
+            }
+        }
+        
+        extract(from: json)
+        return results
     }
     
     /// Public access for stream fallback resolution
@@ -252,87 +411,113 @@ public actor YTMusicClient {
         }
     }
     
-    // MARK: - 4. Innertube Web/iOS Search
+    // MARK: - 4. YouTube Music Web Search
     private func searchViaInnertube(query: String) async -> [Track] {
         let body: [String: Any] = [
             "context": [
                 "client": [
-                    "clientName": "IOS",
-                    "clientVersion": "19.29.1",
-                    "deviceModel": "iPhone16,2",
-                    "hl": "en",
-                    "gl": "US"
+                    "clientName": "WEB_REMIX",
+                    "clientVersion": "1.20250101.01.00",
+                    "hl": "id",
+                    "gl": "ID"
                 ]
             ],
             "query": query
         ]
         
-        guard let url = URL(string: "https://www.youtube.com/youtubei/v1/search?key=\(innertubeKey)") else { return [] }
+        guard let url = URL(string: "https://music.youtube.com/youtubei/v1/search") else { return [] }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("com.google.ios.youtube/19.29.1", forHTTPHeaderField: "User-Agent")
+        request.setValue("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
+        request.setValue("https://music.youtube.com", forHTTPHeaderField: "Origin")
+        request.setValue("https://music.youtube.com", forHTTPHeaderField: "Referer")
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        request.timeoutInterval = 4.0
+        request.timeoutInterval = 5.0
         
         guard let (data, resp) = try? await session.data(for: request),
-              let http = resp as? HTTPURLResponse, http.statusCode == 200 else {
+              let http = resp as? HTTPURLResponse, http.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return []
         }
         
-        return parseSearchResults(data: data)
+        return parseMusicSearchResults(json: json)
     }
     
-    private func parseSearchResults(data: Data) -> [Track] {
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return []
-        }
-        
+    private func parseMusicSearchResults(json: Any) -> [Track] {
         var results: [Track] = []
-        if let contents = json["contents"] as? [String: Any],
-           let sectionList = contents["sectionListRenderer"] as? [String: Any],
-           let sections = sectionList["contents"] as? [[String: Any]] {
-            for section in sections {
-                if let itemSection = section["itemSectionRenderer"] as? [String: Any],
-                   let contentsArray = itemSection["contents"] as? [[String: Any]] {
-                    for item in contentsArray {
-                        if let videoRenderer = item["videoRenderer"] as? [String: Any],
-                           let videoId = videoRenderer["videoId"] as? String,
-                           let titleObj = videoRenderer["title"] as? [String: Any],
-                           let runs = titleObj["runs"] as? [[String: Any]],
-                           let title = runs.first?["text"] as? String {
-                            
-                            var artist = "YouTube Music"
-                            if let ownerText = videoRenderer["ownerText"] as? [String: Any],
-                               let ownerRuns = ownerText["runs"] as? [[String: Any]],
-                               let aName = ownerRuns.first?["text"] as? String {
-                                artist = aName
+        
+        func extract(from obj: Any) {
+            if let dict = obj as? [String: Any] {
+                if let r = dict["musicResponsiveListItemRenderer"] as? [String: Any] {
+                    var videoId: String? = nil
+                    var songTitle = "Unknown"
+                    var artistName = "YouTube Music"
+                    
+                    if let flexColumns = r["flexColumns"] as? [[String: Any]] {
+                        for (idx, flex) in flexColumns.enumerated() {
+                            if let flexRenderer = flex["musicResponsiveListItemFlexColumnRenderer"] as? [String: Any],
+                               let textObj = flexRenderer["text"] as? [String: Any],
+                               let runs = textObj["runs"] as? [[String: Any]],
+                               let firstRun = runs.first,
+                               let t = firstRun["text"] as? String {
+                                
+                                if idx == 0 {
+                                    songTitle = t
+                                    if let nav = firstRun["navigationEndpoint"] as? [String: Any],
+                                       let watch = nav["watchEndpoint"] as? [String: Any],
+                                       let vId = watch["videoId"] as? String {
+                                        videoId = vId
+                                    }
+                                } else if idx == 1 {
+                                    artistName = t
+                                }
                             }
-                            
-                            var artworkURL: URL? = nil
-                            if let thumb = videoRenderer["thumbnail"] as? [String: Any],
-                               let thumbs = thumb["thumbnails"] as? [[String: Any]],
-                               let last = thumbs.last,
-                               let uString = last["url"] as? String {
-                                artworkURL = URL(string: uString)
-                            }
-                            
-                            results.append(
-                                Track(
-                                    id: videoId,
-                                    title: title,
-                                    artist: artist,
-                                    album: "YouTube Music",
-                                    duration: 210,
-                                    artworkURL: artworkURL,
-                                    isLossless: true
-                                )
-                            )
                         }
                     }
+                    
+                    if videoId == nil {
+                        if let playlistItemData = r["playlistItemData"] as? [String: Any],
+                           let vId = playlistItemData["videoId"] as? String {
+                            videoId = vId
+                        }
+                    }
+                    
+                    var artworkURL: URL? = nil
+                    if let thumb = r["thumbnail"] as? [String: Any],
+                       let musicThumb = thumb["musicThumbnailRenderer"] as? [String: Any],
+                       let thumbObj = musicThumb["thumbnail"] as? [String: Any],
+                       let thumbs = thumbObj["thumbnails"] as? [[String: Any]],
+                       let last = thumbs.last,
+                       let u = last["url"] as? String {
+                        artworkURL = URL(string: u)
+                    }
+                    
+                    if let vId = videoId, vId.count == 11, !results.contains(where: { $0.id == vId }) {
+                        results.append(
+                            Track(
+                                id: vId,
+                                title: songTitle,
+                                artist: artistName,
+                                album: "YouTube Music",
+                                duration: 210,
+                                artworkURL: artworkURL,
+                                isLossless: true
+                            )
+                        )
+                    }
+                }
+                for (_, val) in dict {
+                    extract(from: val)
+                }
+            } else if let arr = obj as? [Any] {
+                for it in arr {
+                    extract(from: it)
                 }
             }
         }
+        
+        extract(from: json)
         return results
     }
 }
