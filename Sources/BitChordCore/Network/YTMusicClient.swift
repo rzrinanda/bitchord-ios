@@ -25,45 +25,25 @@ public actor YTMusicClient {
     }
     
     /// Multi-source resilient high-speed music search:
-    /// Queries YouTube Music catalog first for full-length tracks, enriched with Apple Music metadata
+    /// Queries YouTube Music catalog with official BitChord filter parameters
     public func search(query: String, filter: String? = nil) async throws -> [Track] {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty else { return [] }
         
-        // 1. Parallel query: YouTube Innertube + iTunes metadata
-        async let innertubeFetch = searchViaInnertube(query: trimmedQuery)
-        async let itunesFetch = searchViaITunes(query: trimmedQuery)
-        
-        let (innertubeResults, itunesResults) = await (innertubeFetch, itunesFetch)
-        
-        var combinedTracks: [Track] = []
-        
-        // Prioritize full YouTube Music tracks (with real 11-char videoId)
-        if !innertubeResults.isEmpty {
-            combinedTracks.append(contentsOf: innertubeResults)
+        // Query official YouTube Music catalog with exact BitChord filter params
+        let ytMusicResults = await searchViaInnertube(query: trimmedQuery, filter: filter)
+        if !ytMusicResults.isEmpty {
+            return ytMusicResults
         }
         
-        // Append additional tracks from iTunes metadata (guaranteed full streaming via StreamExtractor)
-        if let itunes = itunesResults {
-            for itTrack in itunes {
-                if !combinedTracks.contains(where: { $0.title.lowercased() == itTrack.title.lowercased() }) {
-                    combinedTracks.append(itTrack)
-                }
-            }
+        // Fallback to iTunes metadata if needed
+        if let itunesResults = await searchViaITunes(query: trimmedQuery), !itunesResults.isEmpty {
+            return itunesResults
         }
         
-        if !combinedTracks.isEmpty {
-            return combinedTracks
-        }
-        
-        // Strategy 2: Fallback to Piped
+        // Fallback to Piped
         if let pipedResults = await searchViaPiped(query: trimmedQuery), !pipedResults.isEmpty {
             return pipedResults
-        }
-        
-        // Strategy 3: Fallback to Invidious
-        if let invidiousResults = await searchViaInvidious(query: trimmedQuery), !invidiousResults.isEmpty {
-            return invidiousResults
         }
         
         return []
@@ -412,8 +392,8 @@ public actor YTMusicClient {
     }
     
     // MARK: - 4. YouTube Music Web Search
-    private func searchViaInnertube(query: String) async -> [Track] {
-        let body: [String: Any] = [
+    private func searchViaInnertube(query: String, filter: String? = nil) async -> [Track] {
+        var body: [String: Any] = [
             "context": [
                 "client": [
                     "clientName": "WEB_REMIX",
@@ -424,6 +404,20 @@ public actor YTMusicClient {
             ],
             "query": query
         ]
+        
+        // Exact filter params matching BitChord Android SearchFilter:
+        let filterParam: String? = switch filter?.lowercased() {
+        case "songs": "EgWKAQIIAWoKEAkQChAFEAMQBA=="
+        case "videos": "EgWKAQIQAWoKEAkQChAFEAMQBA=="
+        case "albums": "EgWKAQIYAWoKEAkQChAFEAMQBA=="
+        case "artists": "EgWKAQIgAWoKEAkQChAFEAMQBA=="
+        case "playlists": "EgWKAQIoAWoKEAkQChAFEAMQBA=="
+        default: "EgWKAQIIAWoKEAkQChAFEAMQBA==" // Default to Songs for official tracks
+        }
+        
+        if let param = filterParam {
+            body["params"] = param
+        }
         
         guard let url = URL(string: "https://music.youtube.com/youtubei/v1/search") else { return [] }
         var request = URLRequest(url: url)
