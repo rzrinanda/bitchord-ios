@@ -22,6 +22,10 @@ public final class BitChordSettings: ObservableObject {
     @AppStorage("BitChord.Audio.CellularQuality") public var cellularAudioQuality: String = "Lossless"
     @AppStorage("BitChord.Audio.DolbyAtmos") public var dolbyAtmosEnabled: Bool = false
     @AppStorage("BitChord.Audio.BitPerfect") public var bitPerfectEnabled: Bool = false
+    @AppStorage("BitChord.Audio.OutputPrecision") public var outputPrecision: String = "16-bit PCM"
+    @AppStorage("BitChord.Audio.PreferUSBDAC") public var preferUSBDAC: Bool = false
+    @AppStorage("BitChord.Audio.LoudnessNormalization") public var loudnessNormalization: Bool = true
+    @AppStorage("BitChord.Audio.DisableOnPhoneSpeaker") public var disableOnPhoneSpeaker: Bool = true
     @AppStorage("BitChord.Audio.Crossfade") public var crossfadeSeconds: Double = 3.0
     @AppStorage("BitChord.Audio.Automix") public var automixBetaEnabled: Bool = false
     @AppStorage("BitChord.Audio.AutomixPerf") public var automixPerformance: String = "Balanced"
@@ -37,18 +41,45 @@ public final class BitChordSettings: ObservableObject {
     
     // Visuals & Appearance
     @AppStorage("BitChord.Appearance.Theme") public var themeMode: String = "Dark"
+    @AppStorage("BitChord.Appearance.Font") public var selectedFont: String = "Default"
     @AppStorage("BitChord.Appearance.ReduceAnimation") public var reduceAnimation: Bool = false
     @AppStorage("BitChord.Appearance.ReduceDynamicBlur") public var reduceDynamicBlur: Bool = false
     @AppStorage("BitChord.Appearance.LiquidGlass") public var liquidGlassEnabled: Bool = false
     @AppStorage("BitChord.Appearance.LegacyMesh") public var legacyMeshGradient: Bool = false
     @AppStorage("BitChord.Appearance.AnimatedCover") public var animatedCoverArt: Bool = true
     @AppStorage("BitChord.Appearance.AnimatedCoverCellular") public var animatedCoverCellular: Bool = false
+    @AppStorage("BitChord.Appearance.SpotifyCanvas") public var spotifyCanvasEnabled: Bool = true
     @AppStorage("BitChord.Appearance.AppIcon") public var selectedAppIcon: String = "Default"
+    
+    // Performance
+    @AppStorage("BitChord.Performance.HighPerformanceMode") public var highPerformanceMode: Bool = true
+    @AppStorage("BitChord.Performance.RefreshRate") public var targetRefreshRate: String = "60 Hz"
+    @AppStorage("BitChord.Performance.RenderQuality") public var renderQuality: String = "Balanced"
     
     // Lyrics Options
     @AppStorage("BitChord.Lyrics.Synced") public var syncedLyricsEnabled: Bool = true
     @AppStorage("BitChord.Lyrics.BlurUnfocused") public var blurUnfocusedLyrics: Bool = true
     @AppStorage("BitChord.Lyrics.ArtistSignatures") public var artistSignaturesEnabled: Bool = false
+    @AppStorage("BitChord.Lyrics.TranslationLanguage") public var translationLanguage: String = "Follows the app language"
+    @AppStorage("BitChord.Lyrics.SourcesJSON") public var lyricSourcesJSON: String = ""
+    
+    // Local Music
+    @AppStorage("BitChord.LocalMusic.FilterNonMusic") public var filterNonMusicAudio: Bool = true
+    @AppStorage("BitChord.LocalMusic.SelectedFolder") public var localMusicFolder: String = "All audio folders"
+    @AppStorage("BitChord.LocalMusic.IncludeAppleMusic") public var includeAppleMusicLibrary: Bool = true
+    
+    // Miscellaneous & Player Options
+    @AppStorage("BitChord.Misc.ShowListenTogetherButton") public var showListenTogetherButton: Bool = false
+    @AppStorage("BitChord.Misc.HideStatusBarInPlayer") public var hideStatusBarInPlayer: Bool = false
+    @AppStorage("BitChord.Misc.ShowQueueHistory") public var showQueueHistory: Bool = false
+    @AppStorage("BitChord.Misc.HideSongStatus") public var hideSongStatus: Bool = false
+    @AppStorage("BitChord.Misc.PlayNextOnSwipe") public var playNextOnSwipe: Bool = false
+    @AppStorage("BitChord.Misc.DontRepeatInSession") public var dontRepeatInCurrentSession: Bool = false
+    @AppStorage("BitChord.Misc.StopOnCloseRecents") public var stopMusicOnCloseFromRecents: Bool = true
+    @AppStorage("BitChord.Misc.HideVolumeSlider") public var hideVolumeSlider: Bool = false
+    @AppStorage("BitChord.Misc.SmartAudioAlignment") public var smartAudioAlignment: Bool = true
+    @AppStorage("BitChord.Misc.WorkOutGenres") public var workOutGenresLastFm: Bool = true
+    @AppStorage("BitChord.Misc.AppLanguage") public var appLanguage: String = "System Default"
     
     // Sources & Streaming
     @AppStorage("BitChord.Source.JioSaavn") public var jiosaavnSourceEnabled: Bool = false
@@ -103,6 +134,38 @@ public final class BitChordSettings: ObservableObject {
         self.spotifyConnected = false
     }
     
+    public static let defaultLyricSources: [LyricSourceItem] = [
+        LyricSourceItem(id: "betterlyrics_portato", name: "BetterLyrics Portato", subtitle: "QQ Music karaoke timings through Portato", isEnabled: true),
+        LyricSourceItem(id: "paxsenix", name: "PaxSenix", subtitle: "Apple Music timings through the original PaxSenix API", isEnabled: true),
+        LyricSourceItem(id: "paxsenix_spotify", name: "PaxSenix: Spotify", subtitle: "Spotify lyrics with PaxSenix fallback; synced timestamps", isEnabled: true),
+        LyricSourceItem(id: "paxsenix_musixmatch", name: "PaxSenix: Musixmatch", subtitle: "Musixmatch timings with PaxSenix fallback", isEnabled: true),
+        LyricSourceItem(id: "lyricsplus", name: "LyricsPlus", subtitle: "Syllable by syllable, on community database", isEnabled: true),
+        LyricSourceItem(id: "unison", name: "Unison", subtitle: "Contributed by listeners, so it has what's new", isEnabled: true),
+        LyricSourceItem(id: "yt_captions", name: "YouTube captions", subtitle: "Timed captions matched to the exact video", isEnabled: true),
+        LyricSourceItem(id: "yt_music", name: "YouTube Music", subtitle: "Plain lyrics from the playing video's description", isEnabled: true),
+        LyricSourceItem(id: "kugou", name: "KuGou", subtitle: "Whole lines, strong outside the English repertoire", isEnabled: true),
+        LyricSourceItem(id: "lrclib", name: "LRCLIB", subtitle: "Whole lines only, and always up", isEnabled: true),
+        LyricSourceItem(id: "musixmatch", name: "Musixmatch", subtitle: "Whole lines, from the biggest lyrics catalog", isEnabled: true),
+        LyricSourceItem(id: "genius", name: "Genius", subtitle: "Plain text fallback, massive web catalog & crowd notes", isEnabled: true)
+    ]
+    
+    public func getLyricSources() -> [LyricSourceItem] {
+        guard !lyricSourcesJSON.isEmpty,
+              let data = lyricSourcesJSON.data(using: .utf8),
+              let list = try? JSONDecoder().decode([LyricSourceItem].self, from: data),
+              !list.isEmpty else {
+            return Self.defaultLyricSources
+        }
+        return list
+    }
+    
+    public func saveLyricSources(_ sources: [LyricSourceItem]) {
+        if let data = try? JSONEncoder().encode(sources),
+           let str = String(data: data, encoding: .utf8) {
+            self.lyricSourcesJSON = str
+        }
+    }
+    
     public var audioQuality: AudioQuality {
         get { AudioQuality(rawValue: audioQualityRaw) ?? .lossless }
         set { audioQualityRaw = newValue.rawValue }
@@ -146,6 +209,21 @@ public final class BitChordSettings: ObservableObject {
            let sources = try? JSONDecoder().decode([AddonSource].self, from: data) {
             self.addonSources = sources
         }
+    }
+}
+
+// MARK: - Lyric Source Item Model
+public struct LyricSourceItem: Identifiable, Codable, Hashable, Sendable {
+    public var id: String
+    public var name: String
+    public var subtitle: String
+    public var isEnabled: Bool
+    
+    public init(id: String, name: String, subtitle: String, isEnabled: Bool = true) {
+        self.id = id
+        self.name = name
+        self.subtitle = subtitle
+        self.isEnabled = isEnabled
     }
 }
 

@@ -146,6 +146,13 @@ public final class AudioPlayerEngine: ObservableObject {
             
             if reason == .oldDeviceUnavailable {
                 self.pause()
+            } else if BitChordSettings.shared.disableOnPhoneSpeaker {
+                let outputs = AVAudioSession.sharedInstance().currentRoute.outputs
+                if !outputs.isEmpty && outputs.allSatisfy({ $0.portType == .builtInSpeaker || $0.portType == .builtInReceiver }) {
+                    if reason != .categoryChange && self.status == .playing {
+                        self.pause()
+                    }
+                }
             }
         }
         

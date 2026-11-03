@@ -425,6 +425,80 @@ func runAllTests() async {
         }
     }
     
+    // MARK: - Test 14: Comprehensive Settings Integration (Playback, Lyrics, Appearance, Performance, Local Music, Misc)
+    do {
+        await MainActor.run {
+            let s = BitChordSettings.shared
+            
+            // 1. Playback
+            s.outputPrecision = "32-bit float"
+            assertTest(s.outputPrecision == "32-bit float", "Playback Settings: outputPrecision updated to 32-bit float")
+            s.outputPrecision = "16-bit PCM"
+            assertTest(s.outputPrecision == "16-bit PCM", "Playback Settings: outputPrecision updated to 16-bit PCM")
+            s.loudnessNormalization = true
+            assertTest(s.loudnessNormalization == true, "Playback Settings: loudnessNormalization is true")
+            s.disableOnPhoneSpeaker = true
+            assertTest(s.disableOnPhoneSpeaker == true, "Playback Settings: disableOnPhoneSpeaker is true")
+            s.preferUSBDAC = true
+            assertTest(s.preferUSBDAC == true, "Playback Settings: preferUSBDAC is true")
+            s.skipSilenceEnabled = true
+            assertTest(s.skipSilenceEnabled == true, "Playback Settings: skipSilenceEnabled is true")
+            s.spatialAudioEnabled = true
+            assertTest(s.spatialAudioEnabled == true, "Playback Settings: spatialAudioEnabled is true")
+            
+            // 2. Lyrics
+            let sources = s.getLyricSources()
+            assertTest(sources.count == 12, "Lyrics Settings: Contains all 12 lyric sources (found \(sources.count))")
+            assertTest(sources.contains(where: { $0.name == "BetterLyrics Portato" }), "Lyrics Settings: Contains BetterLyrics Portato")
+            assertTest(sources.contains(where: { $0.name == "PaxSenix" }), "Lyrics Settings: Contains PaxSenix")
+            assertTest(sources.contains(where: { $0.name == "LyricsPlus" }), "Lyrics Settings: Contains LyricsPlus")
+            assertTest(sources.contains(where: { $0.name == "Unison" }), "Lyrics Settings: Contains Unison")
+            assertTest(sources.contains(where: { $0.name == "KuGou" }), "Lyrics Settings: Contains KuGou")
+            assertTest(sources.contains(where: { $0.name == "LRCLIB" }), "Lyrics Settings: Contains LRCLIB")
+            assertTest(sources.contains(where: { $0.name == "Musixmatch" }), "Lyrics Settings: Contains Musixmatch")
+            assertTest(sources.contains(where: { $0.name == "Genius" }), "Lyrics Settings: Contains Genius")
+            
+            // Reorder & persist
+            var modifiedSources = sources
+            modifiedSources.swapAt(0, 1)
+            s.saveLyricSources(modifiedSources)
+            let reloadedSources = s.getLyricSources()
+            assertTest(reloadedSources[0].name == sources[1].name, "Lyrics Settings: Custom source reordering persists successfully")
+            
+            // 3. Performance
+            s.highPerformanceMode = true
+            assertTest(s.highPerformanceMode == true, "Performance Settings: highPerformanceMode is true")
+            s.targetRefreshRate = "120 Hz"
+            assertTest(s.targetRefreshRate == "120 Hz", "Performance Settings: targetRefreshRate is 120 Hz")
+            
+            // 4. Local Music
+            s.filterNonMusicAudio = true
+            assertTest(s.filterNonMusicAudio == true, "Local Music Settings: filterNonMusicAudio is true")
+            s.includeAppleMusicLibrary = true
+            assertTest(s.includeAppleMusicLibrary == true, "Local Music Settings: includeAppleMusicLibrary is true")
+            
+            // 5. Miscellaneous
+            s.showListenTogetherButton = true
+            assertTest(s.showListenTogetherButton == true, "Misc Settings: showListenTogetherButton is true")
+            s.hideStatusBarInPlayer = true
+            assertTest(s.hideStatusBarInPlayer == true, "Misc Settings: hideStatusBarInPlayer is true")
+            s.showQueueHistory = true
+            assertTest(s.showQueueHistory == true, "Misc Settings: showQueueHistory is true")
+            s.hideSongStatus = true
+            assertTest(s.hideSongStatus == true, "Misc Settings: hideSongStatus is true")
+            s.playNextOnSwipe = true
+            assertTest(s.playNextOnSwipe == true, "Misc Settings: playNextOnSwipe is true")
+            s.dontRepeatInCurrentSession = true
+            assertTest(s.dontRepeatInCurrentSession == true, "Misc Settings: dontRepeatInCurrentSession is true")
+            s.stopMusicOnCloseFromRecents = true
+            assertTest(s.stopMusicOnCloseFromRecents == true, "Misc Settings: stopMusicOnCloseFromRecents is true")
+            s.hideVolumeSlider = true
+            assertTest(s.hideVolumeSlider == true, "Misc Settings: hideVolumeSlider is true")
+            s.smartAudioAlignment = true
+            assertTest(s.smartAudioAlignment == true, "Misc Settings: smartAudioAlignment is true")
+        }
+    }
+    
     print("==================================================")
     print("🏁 Test Results: \(passed) Passed, \(failed) Failed")
     print("==================================================")
