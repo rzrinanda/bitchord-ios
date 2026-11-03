@@ -117,11 +117,13 @@ public final class AudioPlayerEngine: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            guard let self = self else { return }
-            if self.status == .playing {
-                self.startKeepAlive()
-                YouTubeAudioBridge.shared.resume()
-                self.updateNowPlayingInfo()
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                if self.status == .playing {
+                    self.startKeepAlive()
+                    YouTubeAudioBridge.shared.resume()
+                    self.updateNowPlayingInfo()
+                }
             }
         }
         
@@ -130,9 +132,39 @@ public final class AudioPlayerEngine: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            guard let self = self else { return }
-            if self.status == .playing {
-                self.updateNowPlayingInfo()
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                if self.status == .playing {
+                    self.updateNowPlayingInfo()
+                }
+            }
+        }
+        
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.protectedDataWillBecomeUnavailableNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                if self.status == .playing {
+                    self.startKeepAlive()
+                    YouTubeAudioBridge.shared.resume()
+                    self.updateNowPlayingInfo()
+                }
+            }
+        }
+        
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.protectedDataDidBecomeAvailableNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                if self.status == .playing {
+                    self.updateNowPlayingInfo()
+                }
             }
         }
         #endif
@@ -821,6 +853,11 @@ public final class AudioPlayerEngine: ObservableObject {
             info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: cached.size) { _ in cached }
         } else if let artworkURL = track.artworkURL {
             loadArtwork(from: artworkURL, for: track.id)
+            if let fallback = UIImage(systemName: "music.note") {
+                info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: CGSize(width: 512, height: 512)) { _ in fallback }
+            }
+        } else if let fallback = UIImage(systemName: "music.note") {
+            info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: CGSize(width: 512, height: 512)) { _ in fallback }
         }
         #endif
         

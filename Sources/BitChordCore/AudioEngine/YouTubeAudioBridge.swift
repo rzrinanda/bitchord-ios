@@ -102,6 +102,7 @@ public final class YouTubeAudioBridge: NSObject {
           var AudioCtx = window.AudioContext || window.webkitAudioContext;
           if (AudioCtx) {
             var aCtx = new AudioCtx();
+            window._aCtx = aCtx;
             var osc = aCtx.createOscillator();
             var g = aCtx.createGain();
             g.gain.value = 0.00001;
@@ -157,6 +158,14 @@ public final class YouTubeAudioBridge: NSObject {
 
         function playVideoId(vId) {
           isUserPlaying = true;
+          try {
+            if (window._aCtx && window._aCtx.state === 'suspended') {
+              window._aCtx.resume();
+            }
+          } catch(e) {}
+          if ('mediaSession' in navigator) {
+            try { navigator.mediaSession.playbackState = 'playing'; } catch(e) {}
+          }
           if (!isReady || !player || !player.loadVideoById) {
             pendingId = vId;
             return;
@@ -171,11 +180,22 @@ public final class YouTubeAudioBridge: NSObject {
 
         function pauseVideo() {
           isUserPlaying = false;
+          if ('mediaSession' in navigator) {
+            try { navigator.mediaSession.playbackState = 'paused'; } catch(e) {}
+          }
           if (player && player.pauseVideo) player.pauseVideo();
         }
 
         function resumeVideo() {
           isUserPlaying = true;
+          try {
+            if (window._aCtx && window._aCtx.state === 'suspended') {
+              window._aCtx.resume();
+            }
+          } catch(e) {}
+          if ('mediaSession' in navigator) {
+            try { navigator.mediaSession.playbackState = 'playing'; } catch(e) {}
+          }
           if (player && player.playVideo) player.playVideo();
         }
 
