@@ -195,6 +195,12 @@ public final class YouTubeAudioBridge: NSObject {
         #endif
     }
     
+    public func refreshSession() {
+        #if canImport(WebKit)
+        loadPlayerHTML()
+        #endif
+    }
+    
     public func pause() {
         #if canImport(WebKit)
         webView?.evaluateJavaScript("pauseVideo();", completionHandler: nil)

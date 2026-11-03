@@ -3,16 +3,58 @@ import SwiftUI
 public struct SettingsView: View {
     @ObservedObject var settings = BitChordSettings.shared
     @ObservedObject var sleepTimer = SleepTimer.shared
+    @ObservedObject var accountManager = AccountManager.shared
     
     @State private var storageUsage: String = "Calculating..."
     @State private var storedCount: Int = 0
     @State private var showClearAlert: Bool = false
+    @State private var showingGoogleLogin: Bool = false
     
     public init() {}
     
     public var body: some View {
         NavigationStack {
             Form {
+                // MARK: - Google & YouTube Music Account
+                Section {
+                    HStack(spacing: 12) {
+                        Circle()
+                            .fill(Color.cyan.opacity(0.8))
+                            .frame(width: 36, height: 36)
+                            .overlay(
+                                Text(accountManager.activeAccount.avatarLetter)
+                                    .font(.system(size: 16, weight: .bold))
+                                    .foregroundColor(.white)
+                            )
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(accountManager.activeAccount.displayName)
+                                .font(.system(size: 15, weight: .semibold))
+                            Text(accountManager.activeAccount.isGoogleAccount ? "Terhubung ke Google Music" : accountManager.activeAccount.handle)
+                                .font(.system(size: 12))
+                                .foregroundColor(accountManager.activeAccount.isGoogleAccount ? .cyan : .secondary)
+                        }
+                        
+                        Spacer()
+                        
+                        if accountManager.activeAccount.isGoogleAccount {
+                            Image(systemName: "checkmark.seal.fill")
+                                .foregroundColor(.cyan)
+                        }
+                    }
+                    
+                    Button {
+                        showingGoogleLogin = true
+                    } label: {
+                        Label(accountManager.activeAccount.isGoogleAccount ? "Ganti Akun Google" : "Hubungkan Akun Google", systemImage: "globe")
+                            .foregroundColor(.cyan)
+                    }
+                } header: {
+                    Label("Akun YouTube Music", systemImage: "person.crop.circle")
+                } footer: {
+                    Text("Menghubungkan akun Google memungkinkan pemutaran audio full-length tanpa batasan bot, serta sinkronisasi playlist & riwayat.")
+                }
+                
                 // MARK: - Lyrics Storage Section (Switchable Auto-Download)
                 Section {
                     Toggle("Auto-Download to Storage", isOn: $settings.autoDownloadLyricsToStorage)
@@ -176,6 +218,9 @@ public struct SettingsView: View {
                 }
             } message: {
                 Text("This will delete all permanently cached lyrics files from your device. You can re-download them anytime.")
+            }
+            .sheet(isPresented: $showingGoogleLogin) {
+                GoogleLoginSheet()
             }
         }
     }

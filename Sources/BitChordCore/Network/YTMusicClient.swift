@@ -1,8 +1,35 @@
 import Foundation
+import CryptoKit
 
 public actor YTMusicClient {
     public static let shared = YTMusicClient()
     private let session: URLSession
+    private var sessionCookies: String? = nil
+    
+    public func setSessionCookies(_ cookies: String?) {
+        self.sessionCookies = cookies
+    }
+    
+    private func applyAuthHeaders(to request: inout URLRequest) {
+        guard let cookies = sessionCookies, !cookies.isEmpty else { return }
+        request.setValue(cookies, forHTTPHeaderField: "Cookie")
+        
+        let entries = cookies.components(separatedBy: ";")
+        for entry in entries {
+            let parts = entry.components(separatedBy: "=")
+            guard parts.count >= 2 else { continue }
+            let name = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
+            let val = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
+            if (name == "SAPISID" || name == "__Secure-3PAPISID" || name == "__Secure-1PAPISID") && !val.isEmpty {
+                let timestamp = Int(Date().timeIntervalSince1970)
+                let payload = "\(timestamp) \(val) https://music.youtube.com"
+                let hash = Insecure.SHA1.hash(data: Data(payload.utf8))
+                let hex = hash.map { String(format: "%02x", $0) }.joined()
+                request.setValue("SAPISIDHASH \(timestamp)_\(hex)", forHTTPHeaderField: "Authorization")
+                break
+            }
+        }
+    }
     
     // Innertube Public API key
     private let innertubeKey = "AIzaSyDyT5W0Jh49F30Pqqtyfdf7pDLFKLJoAnw"
@@ -99,6 +126,7 @@ public actor YTMusicClient {
         req.setValue("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
         req.setValue("https://music.youtube.com", forHTTPHeaderField: "Origin")
         req.setValue("https://music.youtube.com", forHTTPHeaderField: "Referer")
+        applyAuthHeaders(to: &req)
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
         req.timeoutInterval = 4.0
         
@@ -134,6 +162,7 @@ public actor YTMusicClient {
         req.setValue("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
         req.setValue("https://music.youtube.com", forHTTPHeaderField: "Origin")
         req.setValue("https://music.youtube.com", forHTTPHeaderField: "Referer")
+        applyAuthHeaders(to: &req)
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
         req.timeoutInterval = 4.0
         
@@ -529,6 +558,7 @@ public actor YTMusicClient {
         request.setValue("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
         request.setValue("https://music.youtube.com", forHTTPHeaderField: "Origin")
         request.setValue("https://music.youtube.com", forHTTPHeaderField: "Referer")
+        applyAuthHeaders(to: &request)
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         request.timeoutInterval = 7.0
         

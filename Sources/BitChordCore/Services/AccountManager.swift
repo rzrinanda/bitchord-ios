@@ -5,20 +5,29 @@ public struct UserAccount: Identifiable, Codable, Equatable, Sendable {
     public let displayName: String
     public let handle: String
     public let avatarLetter: String
+    public let avatarURL: URL?
     public let memberSince: String
+    public let cookie: String?
+    public let isGoogleAccount: Bool
     
     public init(
         id: String = UUID().uuidString,
         displayName: String,
         handle: String,
         avatarLetter: String,
-        memberSince: String = "11/26"
+        avatarURL: URL? = nil,
+        memberSince: String = "11/26",
+        cookie: String? = nil,
+        isGoogleAccount: Bool = false
     ) {
         self.id = id
         self.displayName = displayName
         self.handle = handle
         self.avatarLetter = avatarLetter
+        self.avatarURL = avatarURL
         self.memberSince = memberSince
+        self.cookie = cookie
+        self.isGoogleAccount = isGoogleAccount
     }
 }
 
@@ -58,6 +67,54 @@ public final class AccountManager: ObservableObject {
     public func switchAccount(to account: UserAccount) {
         self.activeAccount = account
         UserDefaults.standard.set(account.id, forKey: activeAccountIdKey)
+        
+        // Propagate cookies to YTMusicClient and YouTubeAudioBridge
+        Task {
+            await YTMusicClient.shared.setSessionCookies(account.cookie)
+            await MainActor.run {
+                YouTubeAudioBridge.shared.refreshSession()
+            }
+        }
+    }
+    
+    public func addGoogleAccount(
+        displayName: String,
+        handle: String,
+        avatarURL: URL? = nil,
+        cookie: String
+    ) {
+        let cleanHandle = handle.hasPrefix("@") ? handle : "@\(handle)"
+        let letter = String(displayName.prefix(1)).uppercased()
+        let newAcc = UserAccount(
+            displayName: displayName,
+            handle: cleanHandle,
+            avatarLetter: letter.isEmpty ? "G" : letter,
+            avatarURL: avatarURL,
+            cookie: cookie,
+            isGoogleAccount: true
+        )
+        if let idx = accounts.firstIndex(where: { $0.handle == cleanHandle }) {
+            accounts[idx] = newAcc
+        } else {
+            accounts.append(newAcc)
+        }
+        activeAccount = newAcc
+        save()
+        
+        Task {
+            await YTMusicClient.shared.setSessionCookies(cookie)
+            await MainActor.run {
+                YouTubeAudioBridge.shared.refreshSession()
+            }
+        }
+    }
+    
+    public func removeAccount(_ account: UserAccount) {
+        accounts.removeAll { $0.id == account.id }
+        if activeAccount.id == account.id, let first = accounts.first {
+            switchAccount(to: first)
+        }
+        save()
     }
     
     public func addAccount(displayName: String, handle: String) {
