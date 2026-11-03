@@ -18,9 +18,8 @@ public struct BitChordApp: App {
                 
                 #if os(iOS)
                 YouTubeBridgeView()
-                    .frame(width: 32, height: 32)
-                    .opacity(1.0)
-                    .offset(x: -9999, y: -9999)
+                    .frame(width: 2, height: 2)
+                    .opacity(0.01)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
                 #endif

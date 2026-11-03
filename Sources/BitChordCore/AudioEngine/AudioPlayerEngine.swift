@@ -104,13 +104,48 @@ public final class AudioPlayerEngine: ObservableObject {
     
     private func setupAudioSession() {
         #if os(iOS)
-        DispatchQueue.global(qos: .userInitiated).async {
-            do {
-                let session = AVAudioSession.sharedInstance()
-                try session.setCategory(.playback, mode: .default, policy: .longFormAudio, options: [])
-                try session.setActive(true)
-            } catch {
-                print("[BitChord AudioEngine] Failed to activate AVAudioSession: \(error.localizedDescription)")
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .default, options: [.allowBluetooth, .allowBluetoothA2DP, .allowAirPlay])
+            try session.setActive(true, options: .notifyOthersOnDeactivation)
+        } catch {
+            print("[BitChord AudioEngine] Failed to activate AVAudioSession: \(error.localizedDescription)")
+        }
+        
+        // Listen to interruption notifications (phone calls, Siri, alarms)
+        NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] notif in
+            guard let self = self,
+                  let userInfo = notif.userInfo,
+                  let typeVal = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  let type = AVAudioSession.InterruptionType(rawValue: typeVal) else { return }
+            
+            if type == .began {
+                self.pause()
+            } else if type == .ended {
+                if let optVal = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt,
+                   AVAudioSession.InterruptionOptions(rawValue: optVal).contains(.shouldResume) {
+                    self.resume()
+                }
+            }
+        }
+        
+        // Listen to route change notifications (unplugging headphones, Bluetooth disconnect)
+        NotificationCenter.default.addObserver(
+            forName: AVAudioSession.routeChangeNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] notif in
+            guard let self = self,
+                  let userInfo = notif.userInfo,
+                  let reasonVal = userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt,
+                  let reason = AVAudioSession.RouteChangeReason(rawValue: reasonVal) else { return }
+            
+            if reason == .oldDeviceUnavailable {
+                self.pause()
             }
         }
         
@@ -119,14 +154,12 @@ public final class AudioPlayerEngine: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self = self else { return }
-                if self.status == .playing && !YouTubeAudioBridge.shared.isPausedByUser {
-                    self.beginBackgroundTask()
-                    self.startKeepAlive()
-                    YouTubeAudioBridge.shared.resume()
-                    self.updateNowPlayingInfo()
-                }
+            guard let self = self else { return }
+            if self.status == .playing {
+                self.beginBackgroundTask()
+                self.startKeepAlive()
+                YouTubeAudioBridge.shared.resume()
+                self.updateNowPlayingInfo()
             }
         }
         
@@ -135,12 +168,10 @@ public final class AudioPlayerEngine: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self = self else { return }
-                self.endBackgroundTask()
-                if self.status == .playing {
-                    self.updateNowPlayingInfo()
-                }
+            guard let self = self else { return }
+            self.endBackgroundTask()
+            if self.status == .playing {
+                self.updateNowPlayingInfo()
             }
         }
         
@@ -149,14 +180,12 @@ public final class AudioPlayerEngine: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self = self else { return }
-                if self.status == .playing && !YouTubeAudioBridge.shared.isPausedByUser {
-                    self.beginBackgroundTask()
-                    self.startKeepAlive()
-                    YouTubeAudioBridge.shared.resume()
-                    self.updateNowPlayingInfo()
-                }
+            guard let self = self else { return }
+            if self.status == .playing {
+                self.beginBackgroundTask()
+                self.startKeepAlive()
+                YouTubeAudioBridge.shared.resume()
+                self.updateNowPlayingInfo()
             }
         }
         
@@ -165,11 +194,9 @@ public final class AudioPlayerEngine: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self = self else { return }
-                if self.status == .playing {
-                    self.updateNowPlayingInfo()
-                }
+            guard let self = self else { return }
+            if self.status == .playing {
+                self.updateNowPlayingInfo()
             }
         }
         #endif
@@ -178,7 +205,7 @@ public final class AudioPlayerEngine: ObservableObject {
     #if os(iOS)
     private var backgroundTaskId: UIBackgroundTaskIdentifier = .invalid
     
-    private func beginBackgroundTask() {
+    public func beginBackgroundTask() {
         endBackgroundTask()
         backgroundTaskId = UIApplication.shared.beginBackgroundTask(withName: "BitChordPlaybackKeepAlive") { [weak self] in
             Task { @MainActor [weak self] in
@@ -187,7 +214,7 @@ public final class AudioPlayerEngine: ObservableObject {
         }
     }
     
-    private func endBackgroundTask() {
+    public func endBackgroundTask() {
         if backgroundTaskId != .invalid {
             UIApplication.shared.endBackgroundTask(backgroundTaskId)
             backgroundTaskId = .invalid
@@ -199,26 +226,26 @@ public final class AudioPlayerEngine: ObservableObject {
         let url = makeSilentWAV()
         if let player = try? AVAudioPlayer(contentsOf: url) {
             player.numberOfLoops = -1
-            player.volume = 0.0001
+            player.volume = 0.05 // Active hardware frame energy keeps mediaserverd alive
             player.prepareToPlay()
             self.silencePlayer = player
         }
     }
     
-    private func startKeepAlive() {
+    public func startKeepAlive() {
         setupKeepAlive()
         if silencePlayer?.isPlaying != true {
             silencePlayer?.play()
         }
     }
     
-    private func pauseKeepAlive() {
+    public func pauseKeepAlive() {
         silencePlayer?.pause()
     }
     
     private func makeSilentWAV() -> URL {
         let tempDir = FileManager.default.temporaryDirectory
-        let fileURL = tempDir.appendingPathComponent("bitchord_silence.wav")
+        let fileURL = tempDir.appendingPathComponent("bitchord_keepalive.wav")
         if FileManager.default.fileExists(atPath: fileURL.path) {
             return fileURL
         }
@@ -249,7 +276,17 @@ public final class AudioPlayerEngine: ObservableObject {
         data.append(contentsOf: withUnsafeBytes(of: bitsPerSample.littleEndian) { Array($0) })
         data.append(contentsOf: "data".utf8)
         data.append(contentsOf: withUnsafeBytes(of: subChunk2Size.littleEndian) { Array($0) })
-        data.append(Data(count: Int(subChunk2Size)))
+        
+        // Generate inaudible 1-bit dither (±2 amplitude in 16-bit range) so mediaserverd never marks session as zero-energy
+        var pcm = Data(capacity: Int(subChunk2Size))
+        for i in 0..<numSamples {
+            let sampleVal: Int16 = (i % 2 == 0) ? 2 : -2
+            withUnsafeBytes(of: sampleVal.littleEndian) { bytes in
+                pcm.append(contentsOf: bytes)
+                pcm.append(contentsOf: bytes)
+            }
+        }
+        data.append(pcm)
         
         try? data.write(to: fileURL)
         return fileURL
@@ -835,42 +872,54 @@ public final class AudioPlayerEngine: ObservableObject {
         let commandCenter = MPRemoteCommandCenter.shared()
         commandCenter.playCommand.isEnabled = true
         commandCenter.playCommand.addTarget { [weak self] _ in
-            Task { @MainActor [weak self] in
+            DispatchQueue.main.async {
+                #if os(iOS)
+                self?.beginBackgroundTask()
+                #endif
                 self?.resume()
             }
             return .success
         }
         commandCenter.pauseCommand.isEnabled = true
         commandCenter.pauseCommand.addTarget { [weak self] _ in
-            Task { @MainActor [weak self] in
+            DispatchQueue.main.async {
                 self?.pause()
             }
             return .success
         }
         commandCenter.stopCommand.isEnabled = true
         commandCenter.stopCommand.addTarget { [weak self] _ in
-            Task { @MainActor [weak self] in
+            DispatchQueue.main.async {
                 self?.stop()
             }
             return .success
         }
         commandCenter.togglePlayPauseCommand.isEnabled = true
         commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
-            Task { @MainActor [weak self] in
+            DispatchQueue.main.async {
+                #if os(iOS)
+                self?.beginBackgroundTask()
+                #endif
                 self?.togglePlayPause()
             }
             return .success
         }
         commandCenter.nextTrackCommand.isEnabled = true
         commandCenter.nextTrackCommand.addTarget { [weak self] _ in
-            Task { @MainActor [weak self] in
+            DispatchQueue.main.async {
+                #if os(iOS)
+                self?.beginBackgroundTask()
+                #endif
                 self?.nextTrack()
             }
             return .success
         }
         commandCenter.previousTrackCommand.isEnabled = true
         commandCenter.previousTrackCommand.addTarget { [weak self] _ in
-            Task { @MainActor [weak self] in
+            DispatchQueue.main.async {
+                #if os(iOS)
+                self?.beginBackgroundTask()
+                #endif
                 self?.previousTrack()
             }
             return .success
@@ -879,7 +928,7 @@ public final class AudioPlayerEngine: ObservableObject {
         commandCenter.changePlaybackPositionCommand.addTarget { [weak self] event in
             guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
             let pos = event.positionTime
-            Task { @MainActor [weak self] in
+            DispatchQueue.main.async {
                 self?.seek(to: pos)
             }
             return .success
