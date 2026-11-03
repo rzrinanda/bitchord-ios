@@ -4,6 +4,7 @@ public struct SettingsView: View {
     @ObservedObject var settings = BitChordSettings.shared
     @ObservedObject var accountManager = AccountManager.shared
     @ObservedObject var sleepTimer = SleepTimer.shared
+    @ObservedObject var networkMonitor = NetworkMonitor.shared
     
     @State private var searchText: String = ""
     @State private var showingGoogleLogin: Bool = false
@@ -81,9 +82,9 @@ public struct SettingsView: View {
                 AccountIntegrationsDetailView(showingGoogleLogin: $showingGoogleLogin)
             } label: {
                 HStack(spacing: 14) {
-                    Image(systemName: "person.crop.circle")
-                        .font(.system(size: 20))
-                        .foregroundColor(.cyan)
+                    Image(systemName: "person.fill")
+                        .font(.system(size: 18))
+                        .foregroundColor(.white)
                         .frame(width: 28)
                     
                     VStack(alignment: .leading, spacing: 2) {
@@ -102,9 +103,9 @@ public struct SettingsView: View {
                 ListenTogetherDetailView()
             } label: {
                 HStack(spacing: 14) {
-                    Image(systemName: "person.2")
+                    Image(systemName: "person.2.fill")
                         .font(.system(size: 18))
-                        .foregroundColor(.purple)
+                        .foregroundColor(.white)
                         .frame(width: 28)
                     
                     VStack(alignment: .leading, spacing: 2) {
@@ -129,9 +130,9 @@ public struct SettingsView: View {
                 AudioSourcesDetailView()
             } label: {
                 HStack(spacing: 14) {
-                    Image(systemName: "puzzlepiece.extension")
-                        .font(.system(size: 18))
-                        .foregroundColor(.orange)
+                    Image(systemName: "puzzlepiece.extension.fill")
+                        .font(.system(size: 16))
+                        .foregroundColor(.white)
                         .frame(width: 28)
                     
                     VStack(alignment: .leading, spacing: 2) {
@@ -144,58 +145,66 @@ public struct SettingsView: View {
                 }
             }
             
-            Toggle(isOn: $settings.directSourceStream) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Direct Source Stream")
-                        .font(.system(size: 15, weight: .medium))
-                    Text("Bypass transcoder and play native stream directly")
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
-                }
-            }
-            .tint(.cyan)
-            
             Picker(selection: $settings.wifiAudioQuality) {
-                Text("Lossless (24-bit/48kHz)").tag("Lossless")
-                Text("High (320 kbps)").tag("High")
-                Text("Normal (160 kbps)").tag("Normal")
+                Text("Lossless").tag("Lossless")
+                Text("High").tag("High")
+                Text("Normal").tag("Normal")
             } label: {
                 HStack(spacing: 14) {
                     Image(systemName: "wifi")
                         .font(.system(size: 16))
-                        .foregroundColor(.blue)
+                        .foregroundColor(.white)
                         .frame(width: 28)
-                    Text("On Wi-Fi")
-                        .font(.system(size: 15, weight: .medium))
+                    HStack(spacing: 8) {
+                        Text("On Wi-Fi")
+                            .font(.system(size: 15, weight: .regular))
+                            .foregroundColor(.primary)
+                        if networkMonitor.isWifi {
+                            InUseBadge()
+                        }
+                    }
                 }
             }
             
             Picker(selection: $settings.cellularAudioQuality) {
-                Text("Lossless (24-bit/48kHz)").tag("Lossless")
-                Text("High (320 kbps)").tag("High")
-                Text("Normal (160 kbps)").tag("Normal")
-                Text("Data Saver (96 kbps)").tag("Data Saver")
+                Text("Lossless").tag("Lossless")
+                Text("High").tag("High")
+                Text("Normal").tag("Normal")
+                Text("Data Saver").tag("Data Saver")
             } label: {
                 HStack(spacing: 14) {
                     Image(systemName: "antenna.radiowaves.left.and.right")
                         .font(.system(size: 16))
-                        .foregroundColor(.green)
+                        .foregroundColor(.white)
                         .frame(width: 28)
-                    Text("On mobile data")
-                        .font(.system(size: 15, weight: .medium))
+                    HStack(spacing: 8) {
+                        Text("On mobile data")
+                            .font(.system(size: 15, weight: .regular))
+                            .foregroundColor(.primary)
+                        if networkMonitor.isCellular {
+                            InUseBadge()
+                        }
+                    }
                 }
             }
             
             Toggle(isOn: $settings.dolbyAtmosEnabled) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Dolby Atmos")
-                        .font(.system(size: 15, weight: .medium))
-                    Text("Spatial binaural render when available")
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                HStack(spacing: 14) {
+                    Image(systemName: "hifispeaker.2.fill")
+                        .font(.system(size: 16))
+                        .foregroundColor(.white)
+                        .frame(width: 28)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Dolby Atmos")
+                            .font(.system(size: 15, weight: .regular))
+                            .foregroundColor(.primary)
+                        Text("Play the more immersive, surround version of a song when there is one.")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
-            .tint(.cyan)
+            .tint(Color(red: 0.95, green: 0.20, blue: 0.35))
         } header: {
             Text("AUDIO QUALITY")
                 .font(.system(size: 12, weight: .bold))
@@ -269,6 +278,19 @@ public struct SettingsView: View {
     private func calculateStorage() {
         storageUsage = LyricsStorageManager.shared.formattedStorageSize()
         storedCount = LyricsStorageManager.shared.countStoredTracks()
+    }
+}
+
+// MARK: - In Use Badge Component (Matching User Reference)
+private struct InUseBadge: View {
+    var body: some View {
+        Text("IN USE")
+            .font(.system(size: 10, weight: .bold))
+            .foregroundColor(Color(red: 0.96, green: 0.35, blue: 0.48))
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2.5)
+            .background(Color(red: 0.38, green: 0.10, blue: 0.17))
+            .clipShape(Capsule())
     }
 }
 

@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import Network
 
 @MainActor
 public final class BitChordSettings: ObservableObject {
@@ -283,5 +284,30 @@ public actor AddonService {
             isLossless: isLossless,
             sampleRate: sampleRate
         )
+    }
+}
+
+// MARK: - Network Monitor (Detects Wi-Fi vs Cellular for Audio Quality Settings)
+@MainActor
+public final class NetworkMonitor: ObservableObject {
+    public static let shared = NetworkMonitor()
+    
+    @Published public var isWifi: Bool = true
+    @Published public var isCellular: Bool = false
+    
+    private let monitor = NWPathMonitor()
+    private let queue = DispatchQueue(label: "BitChord.NetworkMonitor")
+    
+    private init() {
+        monitor.pathUpdateHandler = { [weak self] path in
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                let onCellular = path.usesInterfaceType(.cellular)
+                let onWifi = path.usesInterfaceType(.wifi) || (!onCellular && path.status == .satisfied)
+                self.isCellular = onCellular
+                self.isWifi = onWifi
+            }
+        }
+        monitor.start(queue: queue)
     }
 }
