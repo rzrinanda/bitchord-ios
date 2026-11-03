@@ -11,6 +11,7 @@ public struct TrackContextMenuSheet: View {
     @Environment(\.dismiss) private var dismiss
     
     @State private var showingSongInfo: Bool = false
+    @State private var showingDownloadSheet: Bool = false
     @State private var showingPlaylistPicker: Bool = false
     @State private var showingCreatePlaylistAlert: Bool = false
     @State private var newPlaylistName: String = ""
@@ -200,14 +201,7 @@ public struct TrackContextMenuSheet: View {
                             }
                             
                             menuRow(icon: "arrow.down.circle", label: "Download") {
-                                Task {
-                                    let success = (try? await DownloadManager.shared.downloadTrack(track: track)) ?? false
-                                    await MainActor.run {
-                                        withAnimation {
-                                            actionMessage = success ? "Downloaded for offline playback" : "Starting download..."
-                                        }
-                                    }
-                                }
+                                showingDownloadSheet = true
                             }
                             
                             menuRow(icon: "trash", label: "Remove from cache") {
@@ -415,6 +409,9 @@ public struct TrackContextMenuSheet: View {
                         }
                     }
                 }
+            }
+            .sheet(isPresented: $showingDownloadSheet) {
+                DownloadSheetView(track: track)
             }
         }
         .presentationDetents([.medium, .fraction(0.85)])

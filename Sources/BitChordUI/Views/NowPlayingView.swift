@@ -8,6 +8,7 @@ public struct NowPlayingView: View {
     @State private var showingLyrics: Bool = false
     @State private var showingQueue: Bool = false
     @State private var showingAudioPipeline: Bool = false
+    @State private var showingDownloadSheet: Bool = false
     @State private var isDraggingSlider: Bool = false
     @State private var dragSliderValue: Double = 0
     @State private var selectedTrackForMenu: Track? = nil
@@ -338,7 +339,7 @@ public struct NowPlayingView: View {
                     .padding(.bottom, 22)
                     
                     // Bottom Action Row
-                    HStack(spacing: 52) {
+                    HStack(spacing: 38) {
                         Button {
                             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                                 showingLyrics.toggle()
@@ -350,6 +351,16 @@ public struct NowPlayingView: View {
                                 .padding(8)
                                 .background(showingLyrics ? Color.white.opacity(0.2) : Color.clear)
                                 .clipShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        
+                        Button {
+                            showingDownloadSheet = true
+                        } label: {
+                            Image(systemName: "arrow.down.circle")
+                                .font(.system(size: 20))
+                                .foregroundColor(.white.opacity(0.7))
+                                .padding(8)
                         }
                         .buttonStyle(.plain)
                         
@@ -379,6 +390,11 @@ public struct NowPlayingView: View {
         }
         .sheet(isPresented: $showingQueue) {
             QueueSheetView()
+        }
+        .sheet(isPresented: $showingDownloadSheet) {
+            if let track = engine.currentTrack {
+                DownloadSheetView(track: track)
+            }
         }
         .sheet(item: $selectedTrackForMenu) { track in
             TrackContextMenuSheet(track: track)
