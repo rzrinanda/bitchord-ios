@@ -104,12 +104,14 @@ public final class AudioPlayerEngine: ObservableObject {
     
     private func setupAudioSession() {
         #if os(iOS)
-        do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .default, policy: .longFormAudio, options: [])
-            try session.setActive(true)
-        } catch {
-            print("[BitChord AudioEngine] Failed to activate AVAudioSession: \(error.localizedDescription)")
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let session = AVAudioSession.sharedInstance()
+                try session.setCategory(.playback, mode: .default, policy: .longFormAudio, options: [])
+                try session.setActive(true)
+            } catch {
+                print("[BitChord AudioEngine] Failed to activate AVAudioSession: \(error.localizedDescription)")
+            }
         }
         
         NotificationCenter.default.addObserver(

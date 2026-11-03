@@ -26,10 +26,6 @@ public final class YouTubeAudioBridge: NSObject {
     
     private override init() {
         super.init()
-        #if os(iOS)
-        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.allowBluetooth, .allowBluetoothA2DP, .allowAirPlay])
-        try? AVAudioSession.sharedInstance().setActive(true)
-        #endif
         #if canImport(WebKit)
         setupWebView()
         #endif
