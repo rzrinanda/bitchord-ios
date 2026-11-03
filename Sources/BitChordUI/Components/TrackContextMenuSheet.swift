@@ -205,9 +205,13 @@ public struct TrackContextMenuSheet: View {
                             }
                             
                             menuRow(icon: "trash", label: "Remove from cache") {
-                                DownloadManager.shared.removeDownload(trackId: track.id)
-                                withAnimation {
-                                    actionMessage = "Removed from offline cache"
+                                Task {
+                                    await DownloadManager.shared.removeDownload(trackId: track.id)
+                                    await MainActor.run {
+                                        withAnimation {
+                                            actionMessage = "Removed from offline cache"
+                                        }
+                                    }
                                 }
                             }
                         }
