@@ -5,6 +5,7 @@ public struct ExploreView: View {
     @ObservedObject var library = LibraryDatabase.shared
     @State private var showingAccountMenu: Bool = false
     @State private var selectedTrackForMenu: Track? = nil
+    @State private var loadingChartTitle: String? = nil
     
     // Curated Indonesian & Global charts
     private let charts: [(title: String, subtitle: String, image: String, color: Color)] = [
@@ -78,26 +79,38 @@ public struct ExploreView: View {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 14) {
                                 ForEach(charts, id: \.title) { chart in
-                                    VStack(alignment: .leading, spacing: 8) {
-                                        ZStack {
-                                            RoundedRectangle(cornerRadius: 14)
-                                                .fill(chart.color.gradient)
-                                            Image(systemName: chart.image)
-                                                .font(.system(size: 32, weight: .bold))
-                                                .foregroundColor(.white.opacity(0.85))
+                                    Button {
+                                        playChart(chart.title)
+                                    } label: {
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            ZStack {
+                                                RoundedRectangle(cornerRadius: 14)
+                                                    .fill(chart.color.gradient)
+                                                
+                                                if loadingChartTitle == chart.title {
+                                                    ProgressView()
+                                                        .scaleEffect(1.2)
+                                                        .tint(.white)
+                                                } else {
+                                                    Image(systemName: chart.image)
+                                                        .font(.system(size: 32, weight: .bold))
+                                                        .foregroundColor(.white.opacity(0.85))
+                                                }
+                                            }
+                                            .frame(width: 140, height: 140)
+                                            
+                                            Text(chart.title)
+                                                .font(.system(size: 14, weight: .semibold))
+                                                .foregroundColor(.primary)
+                                                .lineLimit(1)
+                                            Text(chart.subtitle)
+                                                .font(.system(size: 11))
+                                                .foregroundColor(.secondary)
+                                                .lineLimit(1)
                                         }
-                                        .frame(width: 140, height: 140)
-                                        
-                                        Text(chart.title)
-                                            .font(.system(size: 14, weight: .semibold))
-                                            .foregroundColor(.primary)
-                                            .lineLimit(1)
-                                        Text(chart.subtitle)
-                                            .font(.system(size: 11))
-                                            .foregroundColor(.secondary)
-                                            .lineLimit(1)
+                                        .frame(width: 140)
                                     }
-                                    .frame(width: 140)
+                                    .buttonStyle(.plain)
                                 }
                             }
                             .padding(.horizontal, 16)
@@ -217,6 +230,23 @@ public struct ExploreView: View {
             }
             .sheet(item: $selectedTrackForMenu) { track in
                 TrackContextMenuSheet(track: track)
+            }
+        }
+    }
+    
+    private func playChart(_ title: String) {
+        loadingChartTitle = title
+        Task {
+            let results = (try? await YTMusicClient.shared.search(query: title)) ?? []
+            await MainActor.run {
+                self.loadingChartTitle = nil
+                if !results.isEmpty {
+                    engine.setQueue(results, startIndex: 0)
+                    library.recordPlayback(track: results[0])
+                } else {
+                    engine.setQueue(exploreSongs, startIndex: 0)
+                    library.recordPlayback(track: exploreSongs[0])
+                }
             }
         }
     }

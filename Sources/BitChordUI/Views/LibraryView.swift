@@ -70,50 +70,65 @@ public struct LibraryView: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                                 
                                 // Card 2: Top Song (Kangen / Dewa 19)
-                                VStack(alignment: .leading, spacing: 8) {
-                                    HStack {
-                                        Text("YOUR LISTENING EXPERIENCE")
-                                            .font(.system(size: 10, weight: .bold))
-                                            .foregroundColor(.secondary)
-                                        Spacer()
-                                        BitChordLogoView(size: 18, cornerRadius: 4)
-                                    }
-                                    
-                                    Spacer()
-                                    
-                                    Text("Kangen")
-                                        .font(.system(size: 26, weight: .bold))
-                                        .foregroundColor(.primary)
-                                    Text("TOP SONG")
-                                        .font(.system(size: 12, weight: .bold))
-                                        .foregroundColor(.secondary)
-                                    
-                                    Spacer()
-                                    
-                                    HStack {
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(accountManager.activeAccount.displayName.uppercased())
-                                                .font(.system(size: 11, weight: .bold))
-                                                .foregroundColor(.primary)
-                                            Text("Dewa 19 • 1 plays")
-                                                .font(.system(size: 10))
-                                                .foregroundColor(.secondary)
-                                        }
-                                        Spacer()
-                                        VStack(alignment: .trailing, spacing: 2) {
-                                            Text("MEMBER SINCE")
-                                                .font(.system(size: 9, weight: .semibold))
-                                                .foregroundColor(.secondary)
-                                            Text(accountManager.activeAccount.memberSince)
+                                Button {
+                                    let kangen = Track(
+                                        id: "q_k8g6X2jls",
+                                        title: "Kangen",
+                                        artist: "Dewa 19",
+                                        album: "19",
+                                        duration: 312,
+                                        artworkURL: URL(string: "https://i.ytimg.com/vi/q_k8g6X2jls/hqdefault.jpg"),
+                                        isLossless: true
+                                    )
+                                    engine.setQueue([kangen], startIndex: 0)
+                                    library.recordPlayback(track: kangen)
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        HStack {
+                                            Text("YOUR LISTENING EXPERIENCE")
                                                 .font(.system(size: 10, weight: .bold))
-                                                .foregroundColor(.primary)
+                                                .foregroundColor(.secondary)
+                                            Spacer()
+                                            BitChordLogoView(size: 18, cornerRadius: 4)
+                                        }
+                                        
+                                        Spacer()
+                                        
+                                        Text("Kangen")
+                                            .font(.system(size: 26, weight: .bold))
+                                            .foregroundColor(.primary)
+                                        Text("TOP SONG")
+                                            .font(.system(size: 12, weight: .bold))
+                                            .foregroundColor(.secondary)
+                                        
+                                        Spacer()
+                                        
+                                        HStack {
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(accountManager.activeAccount.displayName.uppercased())
+                                                    .font(.system(size: 11, weight: .bold))
+                                                    .foregroundColor(.primary)
+                                                Text("Dewa 19 • 1 plays")
+                                                    .font(.system(size: 10))
+                                                    .foregroundColor(.secondary)
+                                            }
+                                            Spacer()
+                                            VStack(alignment: .trailing, spacing: 2) {
+                                                Text("MEMBER SINCE")
+                                                    .font(.system(size: 9, weight: .semibold))
+                                                    .foregroundColor(.secondary)
+                                                Text(accountManager.activeAccount.memberSince)
+                                                    .font(.system(size: 10, weight: .bold))
+                                                    .foregroundColor(.primary)
+                                            }
                                         }
                                     }
+                                    .padding(16)
+                                    .frame(width: 260, height: 160)
+                                    .background(Color.secondary.opacity(0.12))
+                                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                                 }
-                                .padding(16)
-                                .frame(width: 260, height: 160)
-                                .background(Color.secondary.opacity(0.12))
-                                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                .buttonStyle(.plain)
                             }
                             .padding(.horizontal, 16)
                         }
