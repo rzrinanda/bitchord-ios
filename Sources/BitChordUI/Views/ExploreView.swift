@@ -167,6 +167,11 @@ public struct ExploreView: View {
                                         }
                                     }
                                     .buttonStyle(.plain)
+                                    .simultaneousGesture(
+                                        LongPressGesture(minimumDuration: 0.45).onEnded { _ in
+                                            selectedTrackForMenu = track
+                                        }
+                                    )
                                     
                                     // 3-dots menu button (Matching Car HU Photo 2 & 3)
                                     Button {

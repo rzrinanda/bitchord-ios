@@ -300,6 +300,7 @@ public struct QueueSheetView: View {
     @Environment(\.dismiss) private var dismiss
     
     @State private var dynamicAutoPlayTracks: [Track] = []
+    @State private var selectedTrackForMenu: Track? = nil
     
     // Default fallback if offline
     private let defaultFallbackSuggestions: [Track] = [
@@ -539,6 +540,11 @@ public struct QueueSheetView: View {
                                         .onTapGesture {
                                             engine.playTrack(at: index)
                                         }
+                                        .simultaneousGesture(
+                                            LongPressGesture(minimumDuration: 0.45).onEnded { _ in
+                                                selectedTrackForMenu = track
+                                            }
+                                        )
                                     }
                                 }
                             }
@@ -631,6 +637,9 @@ public struct QueueSheetView: View {
             }
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
+            .sheet(item: $selectedTrackForMenu) { track in
+                TrackContextMenuSheet(track: track)
+            }
         }
     }
 }

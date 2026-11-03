@@ -48,16 +48,24 @@ public final class YouTubeAudioBridge: NSObject {
         let config = WKWebViewConfiguration()
         #if os(iOS)
         config.allowsInlineMediaPlayback = true
+        config.allowsPictureInPictureMediaPlayback = false
         #endif
         config.mediaTypesRequiringUserActionForPlayback = []
+        config.preferences.javaScriptCanOpenWindowsAutomatically = true
         
         let contentController = WKUserContentController()
         contentController.add(self, name: "bridge")
         config.userContentController = contentController
         
-        // Mobile Safari UA
-        let wv = WKWebView(frame: .init(x: 0, y: 0, width: 2, height: 2), configuration: config)
+        // Active viewport dimensions so iOS WebKit never throttles media or timers
+        let wv = WKWebView(frame: .init(x: 0, y: 0, width: 100, height: 100), configuration: config)
         wv.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
+        #if os(iOS)
+        wv.isOpaque = false
+        wv.backgroundColor = .clear
+        wv.scrollView.isScrollEnabled = false
+        wv.scrollView.backgroundColor = .clear
+        #endif
         self.webView = wv
         
         loadPlayerHTML()
@@ -141,6 +149,9 @@ public final class YouTubeAudioBridge: NSObject {
         function onPlayerStateChange(event) {
           // -1: unstarted, 0: ended, 1: playing, 2: paused, 3: buffering, 5: cued
           window.webkit.messageHandlers.bridge.postMessage({ type: 'state', state: event.data });
+          if (event.data === 5 && player && player.playVideo) {
+            player.playVideo();
+          }
         }
 
         function onPlayerError(event) {

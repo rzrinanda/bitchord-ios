@@ -137,54 +137,95 @@ public actor YTMusicClient {
     
     /// Generates radio / autoplay recommendations of similar full-length tracks (Same Vibe & Frequency)
     public func fetchRadioTracks(for track: Track) async -> [Track] {
-        let videoId: String
+        let cleanArtist: String
+        if !track.artist.isEmpty && track.artist != "YouTube Music" && !track.artist.contains("Unknown") {
+            cleanArtist = track.artist.components(separatedBy: " ft.")[0].components(separatedBy: " feat.")[0].components(separatedBy: ",")[0].trimmingCharacters(in: .whitespacesAndNewlines)
+        } else {
+            cleanArtist = ""
+        }
+        
+        var videoId: String? = nil
         if track.id.count == 11 && !track.id.hasPrefix("yt_") {
             videoId = track.id
-        } else if let resolved = await resolveYouTubeVideoId(title: track.title, artist: track.artist) {
+        } else if let resolved = await resolveYouTubeVideoId(title: track.title, artist: cleanArtist) {
             videoId = resolved
-        } else {
-            videoId = "R6f_7G71p_w" // Default seed
         }
         
-        let body: [String: Any] = [
-            "context": [
-                "client": [
-                    "clientName": "WEB_REMIX",
-                    "clientVersion": "1.20250101.01.00",
-                    "hl": "id",
-                    "gl": "ID"
-                ]
-            ],
-            "videoId": videoId,
-            "playlistId": "RDAMVM\(videoId)",
-            "isAudioOnly": true
+        // 1. Try official YouTube Music Radio endpoint (RDAMVM)
+        if let vId = videoId {
+            let body: [String: Any] = [
+                "context": [
+                    "client": [
+                        "clientName": "WEB_REMIX",
+                        "clientVersion": "1.20250101.01.00",
+                        "hl": "id",
+                        "gl": "ID"
+                    ]
+                ],
+                "videoId": vId,
+                "playlistId": "RDAMVM\(vId)",
+                "isAudioOnly": true
+            ]
+            
+            if let url = URL(string: "https://music.youtube.com/youtubei/v1/next") {
+                var req = URLRequest(url: url)
+                req.httpMethod = "POST"
+                req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                req.setValue("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
+                req.setValue("https://music.youtube.com", forHTTPHeaderField: "Origin")
+                req.setValue("https://music.youtube.com", forHTTPHeaderField: "Referer")
+                req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+                req.timeoutInterval = 6.0
+                
+                if let (data, resp) = try? await session.data(for: req),
+                   let http = resp as? HTTPURLResponse, http.statusCode == 200,
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    let radioItems = parsePlaylistPanelVideos(json: json, seedVideoId: vId)
+                    if !radioItems.isEmpty {
+                        return radioItems
+                    }
+                }
+            }
+        }
+        
+        // 2. Intelligent Genre / Artist Affinity Fallback (Ensures recommendations are always "sefrekuensi")
+        let relatedArtistsMap: [String: [String]] = [
+            "muse": ["Radiohead", "The Killers", "Arctic Monkeys", "Placebo", "Franz Ferdinand", "Coldplay", "Oasis"],
+            "noah": ["Peterpan", "Dewa 19", "Sheila On 7", "Ungu", "D'Masiv", "Samson", "Kerispatih", "Ada Band"],
+            "peterpan": ["NOAH", "Dewa 19", "Sheila On 7", "Ungu", "D'Masiv", "Samson", "Padi", "Gigi"],
+            "dewa 19": ["Padi", "Sheila On 7", "Gigi", "Slank", "NOAH", "Peterpan", "Jamrud", "Ari Lasso", "Ada Band"],
+            "sheila on 7": ["Padi", "Dewa 19", "NOAH", "Peterpan", "Gigi", "Ungu", "Jikustik", "The Rain"],
+            "linkin park": ["Evanescence", "Limp Bizkit", "Papa Roach", "System of a Down", "Green Day", "Three Days Grace"],
+            "coldplay": ["Keane", "OneRepublic", "The Fray", "Snow Patrol", "Imagine Dragons", "The Script"],
+            "queen": ["Led Zeppelin", "The Beatles", "Pink Floyd", "Elton John", "David Bowie", "Aerosmith"]
         ]
         
-        guard let url = URL(string: "https://music.youtube.com/youtubei/v1/next") else { return [] }
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
-        req.setValue("https://music.youtube.com", forHTTPHeaderField: "Origin")
-        req.setValue("https://music.youtube.com", forHTTPHeaderField: "Referer")
-        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        req.timeoutInterval = 6.0
-        
-        guard let (data, resp) = try? await session.data(for: req),
-              let http = resp as? HTTPURLResponse, http.statusCode == 200,
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return []
+        let artistKey = cleanArtist.lowercased()
+        var targetQueries: [String] = []
+        if let relatedList = relatedArtistsMap[artistKey] ?? relatedArtistsMap.first(where: { artistKey.contains($0.key) })?.value {
+            let sample = relatedList.shuffled().prefix(2)
+            for rel in sample {
+                targetQueries.append("\(rel) lagu populer")
+            }
+        } else if !cleanArtist.isEmpty {
+            targetQueries.append("\(cleanArtist) lagu populer")
+            targetQueries.append("\(cleanArtist) radio")
+        } else {
+            targetQueries.append("\(track.title) radio mix")
         }
         
-        let radioItems = parsePlaylistPanelVideos(json: json, seedVideoId: videoId)
-        if !radioItems.isEmpty {
-            return radioItems
+        var harmonized: [Track] = []
+        for q in targetQueries {
+            if let searchTracks = try? await search(query: q) {
+                let filtered = searchTracks.filter { s in
+                    s.id != track.id && !harmonized.contains(where: { h in h.id == s.id })
+                }
+                harmonized.append(contentsOf: filtered.prefix(5))
+            }
         }
         
-        // Fallback: search for top tracks by the artist if next endpoint returns empty
-        let cleanArtist = track.artist.components(separatedBy: " ft.")[0].components(separatedBy: " feat.")[0]
-        if let fallbackTracks = try? await search(query: "\(cleanArtist) popular") {
-            return fallbackTracks.filter { $0.id != track.id }
+        if !harmonized.isEmpty {
+            return harmonized
         }
         
         return []
@@ -399,11 +440,6 @@ public actor YTMusicClient {
                     artworkURL = URL(string: highRes)
                 }
                 
-                var streamURL: URL? = nil
-                if let preview = item["previewUrl"] as? String {
-                    streamURL = URL(string: preview)
-                }
-                
                 tracks.append(
                     Track(
                         id: trackId,
@@ -412,7 +448,7 @@ public actor YTMusicClient {
                         album: album,
                         duration: duration,
                         artworkURL: artworkURL,
-                        streamURL: streamURL,
+                        streamURL: nil, // Full length only - never 30s preview snippet!
                         isLossless: true
                     )
                 )

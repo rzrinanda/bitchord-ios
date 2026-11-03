@@ -195,6 +195,11 @@ public struct SearchView: View {
                                                 }
                                             }
                                             .buttonStyle(.plain)
+                                            .simultaneousGesture(
+                                                LongPressGesture(minimumDuration: 0.45).onEnded { _ in
+                                                    selectedTrackForMenu = track
+                                                }
+                                            )
                                             
                                             // Delete search item button 'x'
                                             Button {
@@ -255,8 +260,8 @@ public struct SearchView: View {
                                                     
                                                     if loadingItemId == item.id {
                                                         Color.black.opacity(0.55)
-                                                            .frame(width: 48, height: 48)
-                                                            .clipShape(item.type == .artist ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: 8)))
+                                                             .frame(width: 48, height: 48)
+                                                             .clipShape(item.type == .artist ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: 8)))
                                                         ProgressView()
                                                             .scaleEffect(0.8)
                                                             .tint(.white)
@@ -291,6 +296,11 @@ public struct SearchView: View {
                                             }
                                         }
                                         .buttonStyle(.plain)
+                                        .simultaneousGesture(
+                                            LongPressGesture(minimumDuration: 0.45).onEnded { _ in
+                                                selectedTrackForMenu = item.asTrack
+                                            }
+                                        )
                                         
                                         // 3-dots Menu Button (Matching Car HU Photo 2 & 3)
                                         Button {
@@ -380,7 +390,12 @@ public struct SearchView: View {
             let idToLoad = item.playlistId ?? item.browseId ?? item.id
             loadingItemId = item.id
             Task {
-                let tracks = await YTMusicClient.shared.fetchPlaylistOrAlbumTracks(identifier: idToLoad)
+                var tracks = await YTMusicClient.shared.fetchPlaylistOrAlbumTracks(identifier: idToLoad)
+                if tracks.isEmpty {
+                    if let searched = try? await YTMusicClient.shared.search(query: "\(item.title) \(item.subtitle)") {
+                        tracks = searched
+                    }
+                }
                 await MainActor.run {
                     self.loadingItemId = nil
                     if !tracks.isEmpty {
@@ -399,7 +414,12 @@ public struct SearchView: View {
             let browseId = item.browseId ?? item.id
             loadingItemId = item.id
             Task {
-                let tracks = await YTMusicClient.shared.fetchArtistTracks(browseId: browseId)
+                var tracks = await YTMusicClient.shared.fetchArtistTracks(browseId: browseId)
+                if tracks.isEmpty {
+                    if let searched = try? await YTMusicClient.shared.search(query: "\(item.title) popular") {
+                        tracks = searched
+                    }
+                }
                 await MainActor.run {
                     self.loadingItemId = nil
                     if !tracks.isEmpty {

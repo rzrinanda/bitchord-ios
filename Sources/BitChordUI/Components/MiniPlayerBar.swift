@@ -43,14 +43,20 @@ public struct MiniPlayerBar: View {
                     
                     Spacer()
                     
-                    // Controls
+                    // Controls (Matching Car HU Photo 1 & 2: Loading Spinner / Play / Pause)
                     Button {
                         engine.togglePlayPause()
                     } label: {
-                        Image(systemName: engine.status == .playing ? "pause.fill" : "play.fill")
-                            .font(.system(size: 20))
-                            .foregroundColor(.primary)
-                            .frame(width: 36, height: 36)
+                        if engine.status == .loading {
+                            ProgressView()
+                                .scaleEffect(0.9)
+                                .frame(width: 36, height: 36)
+                        } else {
+                            Image(systemName: engine.status == .playing ? "pause.fill" : "play.fill")
+                                .font(.system(size: 20))
+                                .foregroundColor(.primary)
+                                .frame(width: 36, height: 36)
+                        }
                     }
                     .buttonStyle(.plain)
                     

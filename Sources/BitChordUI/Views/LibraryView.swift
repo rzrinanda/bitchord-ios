@@ -344,6 +344,7 @@ public struct TrackListView: View {
     public let tracks: [Track]
     @ObservedObject var engine = AudioPlayerEngine.shared
     @Environment(\.dismiss) private var dismiss
+    @State private var selectedTrackForMenu: Track? = nil
     
     public var body: some View {
         List {
@@ -377,41 +378,59 @@ public struct TrackListView: View {
                 ContentUnavailableView("No Tracks", systemImage: "music.note", description: Text("No tracks found."))
             } else {
                 ForEach(tracks) { track in
-                    Button {
-                        let idx = tracks.firstIndex(where: { $0.id == track.id }) ?? 0
-                        engine.setQueue(tracks, startIndex: idx)
-                    } label: {
-                        HStack(spacing: 12) {
-                            if let art = track.artworkURL {
-                                AsyncImage(url: art) { phase in
-                                    if let img = phase.image {
-                                        img.resizable().aspectRatio(contentMode: .fill)
-                                    } else {
-                                        Color.gray.opacity(0.3)
+                    HStack(spacing: 12) {
+                        Button {
+                            let idx = tracks.firstIndex(where: { $0.id == track.id }) ?? 0
+                            engine.setQueue(tracks, startIndex: idx)
+                        } label: {
+                            HStack(spacing: 12) {
+                                if let art = track.artworkURL {
+                                    AsyncImage(url: art) { phase in
+                                        if let img = phase.image {
+                                            img.resizable().aspectRatio(contentMode: .fill)
+                                        } else {
+                                            Color.gray.opacity(0.3)
+                                        }
                                     }
+                                    .frame(width: 44, height: 44)
+                                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                                } else {
+                                    BitChordLogoView(size: 44, cornerRadius: 6)
                                 }
-                                .frame(width: 44, height: 44)
-                                .clipShape(RoundedRectangle(cornerRadius: 6))
-                            } else {
-                                BitChordLogoView(size: 44, cornerRadius: 6)
-                            }
-                            
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(track.title)
-                                    .font(.body)
-                                    .foregroundColor(.primary)
-                                    .lineLimit(1)
-                                Text(track.artist)
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                                    .lineLimit(1)
-                            }
-                            Spacer()
-                            if engine.currentTrack?.id == track.id {
-                                Image(systemName: "waveform")
-                                    .foregroundColor(.red)
+                                
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(track.title)
+                                        .font(.body)
+                                        .foregroundColor(.primary)
+                                        .lineLimit(1)
+                                    Text(track.artist)
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                        .lineLimit(1)
+                                }
+                                Spacer()
+                                if engine.currentTrack?.id == track.id {
+                                    Image(systemName: "waveform")
+                                        .foregroundColor(.red)
+                                }
                             }
                         }
+                        .buttonStyle(.plain)
+                        .simultaneousGesture(
+                            LongPressGesture(minimumDuration: 0.45).onEnded { _ in
+                                selectedTrackForMenu = track
+                            }
+                        )
+                        
+                        Button {
+                            selectedTrackForMenu = track
+                        } label: {
+                            Image(systemName: "ellipsis")
+                                .font(.system(size: 16))
+                                .foregroundColor(.secondary)
+                                .frame(width: 32, height: 32)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -423,6 +442,9 @@ public struct TrackListView: View {
                     dismiss()
                 }
             }
+        }
+        .sheet(item: $selectedTrackForMenu) { track in
+            TrackContextMenuSheet(track: track)
         }
     }
 }
