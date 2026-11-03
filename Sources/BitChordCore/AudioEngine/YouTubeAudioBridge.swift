@@ -111,6 +111,9 @@ public final class YouTubeAudioBridge: NSObject {
             }
           });
         }
+        if (window.YT && window.YT.Player) {
+          onYouTubeIframeAPIReady();
+        }
 
         function onPlayerReady(event) {
           isReady = true;
@@ -126,6 +129,10 @@ public final class YouTubeAudioBridge: NSObject {
             pendingId = vId;
             return;
           }
+          try {
+            if (player.unMute) player.unMute();
+            if (player.setVolume) player.setVolume(100);
+          } catch(e) {}
           player.loadVideoById({ videoId: vId, suggestedQuality: 'default' });
           player.playVideo();
         }

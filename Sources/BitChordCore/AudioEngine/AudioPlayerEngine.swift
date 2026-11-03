@@ -222,12 +222,12 @@ public final class AudioPlayerEngine: ObservableObject {
             self.status = .loading
             self.updateNowPlayingInfo()
             
-            // Watchdog fallback: if YouTubeAudioBridge doesn't start producing time/audio within 6.0s, fall back to AVPlayer!
+            // Watchdog fallback: if YouTubeAudioBridge doesn't start producing audio within 6.0s, fall back to AVPlayer!
             let targetTrackId = track.id
             Task { @MainActor [weak self] in
                 try? await Task.sleep(nanoseconds: 6_000_000_000)
                 guard let self = self, self.currentTrack?.id == targetTrackId else { return }
-                if self.status != .playing || self.currentTime == 0 {
+                if self.status != .playing {
                     print("[AudioEngine] YouTube Audio Bridge startup timed out for \(targetTrackId), switching to AVPlayer stream fallback")
                     self.attemptStreamFallback(for: track)
                 }
@@ -249,8 +249,18 @@ public final class AudioPlayerEngine: ObservableObject {
                     self.stopAVPlayer()
                     self.activeBackend = .youtubeBridge
                     YouTubeAudioBridge.shared.play(videoId: vId)
-                    self.status = .playing
+                    self.status = .loading
                     self.updateNowPlayingInfo()
+                    
+                    let targetTrackId = vId
+                    Task { @MainActor [weak self] in
+                        try? await Task.sleep(nanoseconds: 6_000_000_000)
+                        guard let self = self, self.currentTrack?.id == targetTrackId else { return }
+                        if self.status != .playing {
+                            print("[AudioEngine] YouTube Audio Bridge startup timed out for \(targetTrackId), switching to AVPlayer stream fallback")
+                            self.attemptStreamFallback(for: updated)
+                        }
+                    }
                 }
             } else if let directURL = track.streamURL, !directURL.absoluteString.contains("apple.com") {
                 self.startPlaying(url: directURL, for: track)

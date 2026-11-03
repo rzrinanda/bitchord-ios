@@ -162,9 +162,16 @@ public struct NowPlayingView: View {
                         Button {
                             engine.togglePlayPause()
                         } label: {
-                            Image(systemName: engine.status == .playing ? "pause.circle.fill" : "play.circle.fill")
-                                .font(.system(size: 68))
-                                .foregroundColor(.white)
+                            if engine.status == .loading {
+                                ProgressView()
+                                    .scaleEffect(1.6)
+                                    .tint(.white)
+                                    .frame(width: 68, height: 68)
+                            } else {
+                                Image(systemName: engine.status == .playing ? "pause.circle.fill" : "play.circle.fill")
+                                    .font(.system(size: 68))
+                                    .foregroundColor(.white)
+                            }
                         }
                         .buttonStyle(.plain)
                         
