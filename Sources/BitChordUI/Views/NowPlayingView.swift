@@ -152,13 +152,15 @@ public struct NowPlayingView: View {
                             }
                             Spacer()
                             
-                            HStack(spacing: 18) {
+                            HStack(spacing: 12) {
                                 Button {
                                     library.toggleLike(track: track)
                                 } label: {
                                     Image(systemName: library.isLiked(trackId: track.id) ? "heart.fill" : "heart")
                                         .font(.system(size: 22))
-                                        .foregroundColor(library.isLiked(trackId: track.id) ? .red : .white.opacity(0.8))
+                                        .foregroundColor(library.isLiked(trackId: track.id) ? .red : .white.opacity(0.85))
+                                        .frame(width: 40, height: 40)
+                                        .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.plain)
                                 
@@ -168,7 +170,8 @@ public struct NowPlayingView: View {
                                     Image(systemName: "ellipsis")
                                         .font(.system(size: 20, weight: .bold))
                                         .foregroundColor(.white.opacity(0.85))
-                                        .frame(width: 32, height: 32)
+                                        .frame(width: 40, height: 40)
+                                        .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.plain)
                             }

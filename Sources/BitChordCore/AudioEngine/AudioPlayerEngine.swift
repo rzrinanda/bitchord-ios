@@ -692,6 +692,7 @@ public final class AudioPlayerEngine: ObservableObject {
         pauseKeepAlive()
         #endif
         YouTubeAudioBridge.shared.pause()
+        player?.rate = 0.0
         player?.pause()
         status = .paused
         updateNowPlayingInfo()

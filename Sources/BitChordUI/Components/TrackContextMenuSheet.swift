@@ -89,10 +89,10 @@ public struct TrackContextMenuSheet: View {
                                 VStack(spacing: 6) {
                                     Image(systemName: library.isLiked(trackId: track.id) ? "star.fill" : "star")
                                         .font(.system(size: 20))
-                                        .foregroundColor(library.isLiked(trackId: track.id) ? .yellow : .primary)
+                                        .foregroundColor(library.isLiked(trackId: track.id) ? .yellow : .white)
                                     Text("Like")
                                         .font(.system(size: 12, weight: .medium))
-                                        .foregroundColor(.primary)
+                                        .foregroundColor(.white)
                                 }
                                 .frame(maxWidth: .infinity)
                             }
@@ -107,10 +107,10 @@ public struct TrackContextMenuSheet: View {
                                 VStack(spacing: 6) {
                                     Image(systemName: "heart.slash")
                                         .font(.system(size: 20))
-                                        .foregroundColor(.secondary)
+                                        .foregroundColor(.white.opacity(0.6))
                                     Text("Dislike")
                                         .font(.system(size: 12, weight: .medium))
-                                        .foregroundColor(.secondary)
+                                        .foregroundColor(.white.opacity(0.6))
                                 }
                                 .frame(maxWidth: .infinity)
                             }
@@ -121,28 +121,31 @@ public struct TrackContextMenuSheet: View {
                                 VStack(spacing: 6) {
                                     Image(systemName: "square.and.arrow.up")
                                         .font(.system(size: 20))
-                                        .foregroundColor(.primary)
+                                        .foregroundColor(.white)
                                     Text("Share")
                                         .font(.system(size: 12, weight: .medium))
-                                        .foregroundColor(.primary)
+                                        .foregroundColor(.white)
                                 }
                                 .frame(maxWidth: .infinity)
                             }
                             .buttonStyle(.plain)
                         }
                         .padding(.vertical, 12)
-                        .background(Color.secondary.opacity(0.08))
+                        .background(Color.white.opacity(0.08))
                         .clipShape(RoundedRectangle(cornerRadius: 14))
                         .padding(.horizontal, 20)
                         .padding(.bottom, 10)
                         
-                        Divider().padding(.horizontal, 20).padding(.vertical, 4)
+                        Divider().background(Color.white.opacity(0.12)).padding(.horizontal, 20).padding(.vertical, 4)
                         
                         // MARK: - Section 2: Quality & Version (Matching Car HU Photo 4)
                         VStack(spacing: 2) {
                             menuRow(icon: "sparkles", label: "Upgrade quality") {
+                                BitChordSettings.shared.wifiAudioQuality = "Lossless"
+                                BitChordSettings.shared.cellularAudioQuality = "Lossless"
+                                BitChordSettings.shared.directSourceStream = true
                                 withAnimation {
-                                    actionMessage = "Quality upgraded to Lossless 256kbps"
+                                    actionMessage = "Quality upgraded to Lossless (24-bit/48kHz)"
                                 }
                             }
                             
@@ -153,7 +156,7 @@ public struct TrackContextMenuSheet: View {
                             }
                         }
                         
-                        Divider().padding(.horizontal, 20).padding(.vertical, 4)
+                        Divider().background(Color.white.opacity(0.12)).padding(.horizontal, 20).padding(.vertical, 4)
                         
                         // MARK: - Section 3: Playlist (Matching Car HU Photo 4)
                         VStack(spacing: 2) {
@@ -162,7 +165,7 @@ public struct TrackContextMenuSheet: View {
                             }
                         }
                         
-                        Divider().padding(.horizontal, 20).padding(.vertical, 4)
+                        Divider().background(Color.white.opacity(0.12)).padding(.horizontal, 20).padding(.vertical, 4)
                         
                         // MARK: - Section 4: Queue, Radio & Download (Matching Car HU Photo 3)
                         VStack(spacing: 2) {
@@ -186,7 +189,7 @@ public struct TrackContextMenuSheet: View {
                                 }
                             }
                             
-                            menuRow(icon: "text.insert", label: "Add to queue") {
+                            menuRow(icon: "text.badge.plus", label: "Add to queue") {
                                 engine.appendToQueue(track)
                                 withAnimation {
                                     actionMessage = "Added to queue"
@@ -215,11 +218,11 @@ public struct TrackContextMenuSheet: View {
                             }
                         }
                         
-                        Divider().padding(.horizontal, 20).padding(.vertical, 4)
+                        Divider().background(Color.white.opacity(0.12)).padding(.horizontal, 20).padding(.vertical, 4)
                         
                         // MARK: - Section 5: Navigation & Info (Matching Car HU Photo 2)
                         VStack(spacing: 2) {
-                            menuRow(icon: "opticaldisc", label: "Open album", subtitle: track.album.isEmpty || track.album == "YouTube Music" ? nil : track.album) {
+                            menuRow(icon: "record.circle", label: "Open album", subtitle: track.album.isEmpty || track.album == "YouTube Music" ? nil : track.album) {
                                 let albumName = track.album.isEmpty || track.album == "YouTube Music" ? track.title : track.album
                                 Task {
                                     if let tracks = try? await YTMusicClient.shared.search(query: "\(albumName) album") {
@@ -233,7 +236,7 @@ public struct TrackContextMenuSheet: View {
                                 }
                             }
                             
-                            menuRow(icon: "mic.fill", label: "Open artist", subtitle: track.artist.isEmpty || track.artist == "YouTube Music" ? nil : track.artist) {
+                            menuRow(icon: "music.mic", label: "Open artist", subtitle: track.artist.isEmpty || track.artist == "YouTube Music" ? nil : track.artist) {
                                 Task {
                                     if let tracks = try? await YTMusicClient.shared.search(query: "\(track.artist) songs") {
                                         await MainActor.run {
@@ -251,7 +254,7 @@ public struct TrackContextMenuSheet: View {
                             }
                         }
                         
-                        Divider().padding(.horizontal, 20).padding(.vertical, 4)
+                        Divider().background(Color.white.opacity(0.12)).padding(.horizontal, 20).padding(.vertical, 4)
                         
                         // MARK: - Section 6: Player Extras (Matching Car HU Photo 2)
                         VStack(spacing: 2) {
@@ -416,6 +419,8 @@ public struct TrackContextMenuSheet: View {
         }
         .presentationDetents([.medium, .fraction(0.85)])
         .presentationDragIndicator(.visible)
+        .presentationCornerRadius(24)
+        .presentationBackground(Color(red: 0.12, green: 0.13, blue: 0.16))
     }
     
     // MARK: - Row Helper
@@ -426,17 +431,17 @@ public struct TrackContextMenuSheet: View {
                 Image(systemName: icon)
                     .font(.system(size: 18))
                     .frame(width: 28)
-                    .foregroundColor(.primary)
+                    .foregroundColor(.white.opacity(0.9))
                 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(label)
                         .font(.system(size: 15, weight: .medium))
-                        .foregroundColor(.primary)
+                        .foregroundColor(.white)
                     
                     if let sub = subtitle, !sub.isEmpty {
                         Text(sub)
                             .font(.system(size: 12))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(.white.opacity(0.6))
                             .lineLimit(1)
                     }
                 }
