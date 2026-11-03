@@ -47,6 +47,8 @@
 		BC000037BLD000000000000 /* Sources/BitChordUI/Components/TrackContextMenuSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000037FILE000000000000 /* Sources/BitChordUI/Components/TrackContextMenuSheet.swift */; };
 		BC000038BLD000000000000 /* Sources/BitChordCore/AudioEngine/YouTubeAudioBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000038FILE000000000000 /* Sources/BitChordCore/AudioEngine/YouTubeAudioBridge.swift */; };
 		BC000039BLD000000000000 /* Sources/BitChordCore/Models/SearchResultItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000039FILE000000000000 /* Sources/BitChordCore/Models/SearchResultItem.swift */; };
+		BC000040BLD000000000000 /* Sources/BitChordCore/Models/SongInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000040FILE000000000000 /* Sources/BitChordCore/Models/SongInfo.swift */; };
+		BC000041BLD000000000000 /* Sources/BitChordUI/Components/SongInfoDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000041FILE000000000000 /* Sources/BitChordUI/Components/SongInfoDialog.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -92,6 +94,8 @@
 		BC000037FILE000000000000 /* Sources/BitChordUI/Components/TrackContextMenuSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordUI/Components/TrackContextMenuSheet.swift; sourceTree = SOURCE_ROOT; };
 		BC000038FILE000000000000 /* Sources/BitChordCore/AudioEngine/YouTubeAudioBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordCore/AudioEngine/YouTubeAudioBridge.swift; sourceTree = SOURCE_ROOT; };
 		BC000039FILE000000000000 /* Sources/BitChordCore/Models/SearchResultItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordCore/Models/SearchResultItem.swift; sourceTree = SOURCE_ROOT; };
+		BC000040FILE000000000000 /* Sources/BitChordCore/Models/SongInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordCore/Models/SongInfo.swift; sourceTree = SOURCE_ROOT; };
+		BC000041FILE000000000000 /* Sources/BitChordUI/Components/SongInfoDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordUI/Components/SongInfoDialog.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -147,6 +151,8 @@
 				BC000037FILE000000000000 /* Sources/BitChordUI/Components/TrackContextMenuSheet.swift */,
 				BC000038FILE000000000000 /* Sources/BitChordCore/AudioEngine/YouTubeAudioBridge.swift */,
 				BC000039FILE000000000000 /* Sources/BitChordCore/Models/SearchResultItem.swift */,
+				BC000040FILE000000000000 /* Sources/BitChordCore/Models/SongInfo.swift */,
+				BC000041FILE000000000000 /* Sources/BitChordUI/Components/SongInfoDialog.swift */,
 				BC000000ASSETS000000000001 /* Assets.xcassets */,
 				BC000000PLIST000000000001 /* BitChord-Info.plist */,
 				BC000000GRP0000000000002 /* Products */,
@@ -269,6 +275,8 @@
 				BC000037BLD000000000000 /* Sources/BitChordUI/Components/TrackContextMenuSheet.swift in Sources */,
 				BC000038BLD000000000000 /* Sources/BitChordCore/AudioEngine/YouTubeAudioBridge.swift in Sources */,
 				BC000039BLD000000000000 /* Sources/BitChordCore/Models/SearchResultItem.swift in Sources */,
+				BC000040BLD000000000000 /* Sources/BitChordCore/Models/SongInfo.swift in Sources */,
+				BC000041BLD000000000000 /* Sources/BitChordUI/Components/SongInfoDialog.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

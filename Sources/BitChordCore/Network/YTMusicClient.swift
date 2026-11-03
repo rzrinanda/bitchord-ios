@@ -1058,4 +1058,91 @@ public actor YTMusicClient {
         extract(from: json)
         return results
     }
+    
+    // MARK: - 7. Song Info Fetcher
+    public func fetchSongInfo(for track: Track) async -> SongInfo {
+        let cleanAlbum = track.album.isEmpty || track.album == "YouTube Music" ? "-" : track.album
+        let vId = track.id
+        guard vId.count == 11 && !vId.hasPrefix("yt_") else {
+            return SongInfo(album: cleanAlbum)
+        }
+        
+        guard let url = URL(string: "https://music.youtube.com/youtubei/v1/player") else {
+            return SongInfo(album: cleanAlbum)
+        }
+        
+        let body: [String: Any] = [
+            "context": [
+                "client": [
+                    "clientName": "WEB_REMIX",
+                    "clientVersion": "1.20240401.01.00",
+                    "hl": "id",
+                    "gl": "ID"
+                ]
+            ],
+            "videoId": vId
+        ]
+        
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        req.timeoutInterval = 5.0
+        
+        var viewsString = "-"
+        var releaseDateString = "-"
+        
+        if let (data, resp) = try? await session.data(for: req),
+           let http = resp as? HTTPURLResponse, http.statusCode == 200,
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            
+            if let details = json["videoDetails"] as? [String: Any],
+               let viewCount = details["viewCount"] as? String {
+                viewsString = formatCompactCount(viewCount)
+            }
+            
+            if let micro = json["microformat"] as? [String: Any],
+               let r = micro["microformatDataRenderer"] as? [String: Any] {
+                if let pDate = r["publishDate"] as? String {
+                    releaseDateString = formatReleaseDate(pDate)
+                } else if let uDate = r["uploadDate"] as? String {
+                    releaseDateString = formatReleaseDate(uDate)
+                }
+            }
+        }
+        
+        return SongInfo(
+            album: cleanAlbum,
+            releaseDate: releaseDateString,
+            views: viewsString,
+            likes: "-",
+            comments: "-"
+        )
+    }
+    
+    private func formatCompactCount(_ raw: String) -> String {
+        guard let n = Double(raw), n >= 0 else { return raw }
+        if n >= 1_000_000_000 {
+            return String(format: "%.1fB", n / 1_000_000_000).replacingOccurrences(of: ".0", with: "")
+        } else if n >= 1_000_000 {
+            return String(format: "%.1fM", n / 1_000_000).replacingOccurrences(of: ".0", with: "")
+        } else if n >= 1_000 {
+            return String(format: "%.1fK", n / 1_000).replacingOccurrences(of: ".0", with: "")
+        } else {
+            return "\(Int(n))"
+        }
+    }
+    
+    private func formatReleaseDate(_ raw: String) -> String {
+        let prefix = String(raw.prefix(10))
+        let parts = prefix.split(separator: "-")
+        if parts.count == 3, let y = Int(parts[0]), let m = Int(parts[1]), let d = Int(parts[2]) {
+            let months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+            if m >= 1 && m <= 12 {
+                return "\(d) \(months[m - 1]) \(y)"
+            }
+        }
+        return raw.count >= 4 ? String(raw.prefix(4)) : raw
+    }
 }

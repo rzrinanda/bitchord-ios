@@ -346,6 +346,21 @@ func runAllTests() async {
         assertTest(track3.album == "YouTube Music", "Metadata Extraction: Video subtitle defaults album to 'YouTube Music' without false views")
     }
     
+    // MARK: - Test 11: Song Info Details Fetcher
+    do {
+        let sampleTrack = Track(
+            id: "5Ry74xQEW00",
+            title: "Manusia Bodoh",
+            artist: "Ada Band",
+            album: "Heaven Of Love",
+            duration: 270
+        )
+        let info = await YTMusicClient.shared.fetchSongInfo(for: sampleTrack)
+        assertTest(info.album == "Heaven Of Love", "Song Info: Correctly matches track album 'Heaven Of Love'")
+        assertTest(info.views != "-", "Song Info: Successfully retrieves formatted view count (\(info.views))")
+        assertTest(info.releaseDate != "-", "Song Info: Successfully retrieves release date (\(info.releaseDate))")
+    }
+    
     print("==================================================")
     print("🏁 Test Results: \(passed) Passed, \(failed) Failed")
     print("==================================================")
