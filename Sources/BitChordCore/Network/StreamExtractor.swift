@@ -58,6 +58,18 @@ public actor StreamExtractor {
             }
         }
         
+        // Strategy 0: Custom Addon Stream (e.g. SoundFean Qobuz Hi-Res FLAC)
+        let activeAddons = await MainActor.run {
+            BitChordSettings.shared.addonSources.filter { $0.isEnabled && $0.resources.contains("stream") }
+        }
+        if let title = title {
+            for addon in activeAddons {
+                if let addonStream = await AddonService.shared.resolveStream(trackTitle: title, artist: artist, addon: addon) {
+                    return addonStream
+                }
+            }
+        }
+        
         // Strategy 1: Direct YouTube Innertube Player API (iOS Client - Full Length Audio)
         if effectiveVideoId.count == 11, let direct = await extractViaYouTubeInnertube(trackId: effectiveVideoId) {
             return direct

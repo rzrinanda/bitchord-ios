@@ -361,6 +361,35 @@ func runAllTests() async {
         assertTest(info.releaseDate != "-", "Song Info: Successfully retrieves release date (\(info.releaseDate))")
     }
     
+    // MARK: - Test 12: Addon Server Manifest & Settings Integration
+    do {
+        // 1. Fetch live SoundFean manifest
+        let manifestURL = "https://soundfean-musics.onrender.com/a/manifest.json"
+        let addon = try? await AddonService.shared.fetchManifest(from: manifestURL)
+        assertTest(addon != nil, "Addon Service: Successfully fetched and parsed live SoundFean manifest")
+        if let addon = addon {
+            assertTest(addon.id == "dev.bitperfect.qobuz.de.personal", "Addon Service: Extracted correct addon id '\(addon.id)'")
+            assertTest(addon.name.contains("Qobuz"), "Addon Service: Addon name contains Qobuz ('\(addon.name)')")
+            assertTest(addon.resources.contains("stream"), "Addon Service: Declares 'stream' resource")
+            assertTest(addon.resources.contains("search"), "Addon Service: Declares 'search' resource")
+            assertTest(addon.baseURL == "https://soundfean-musics.onrender.com/a", "Addon Service: Correctly computed baseURL")
+            
+            // 2. Test BitChordSettings integration
+            await MainActor.run {
+                BitChordSettings.shared.addAddonSource(addon)
+                assertTest(BitChordSettings.shared.addonSources.contains(where: { $0.id == addon.id }), "Settings: Addon source added to BitChordSettings.shared.addonSources")
+                
+                BitChordSettings.shared.toggleAddonSource(id: addon.id)
+                let toggled = BitChordSettings.shared.addonSources.first(where: { $0.id == addon.id })?.isEnabled ?? true
+                assertTest(!toggled, "Settings: Addon toggle switches to false")
+                
+                BitChordSettings.shared.toggleAddonSource(id: addon.id)
+                let restored = BitChordSettings.shared.addonSources.first(where: { $0.id == addon.id })?.isEnabled ?? false
+                assertTest(restored, "Settings: Addon toggle switches back to true")
+            }
+        }
+    }
+    
     print("==================================================")
     print("🏁 Test Results: \(passed) Passed, \(failed) Failed")
     print("==================================================")

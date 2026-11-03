@@ -52,6 +52,13 @@ public final class BitChordSettings: ObservableObject {
     // Sources & Streaming
     @AppStorage("BitChord.Source.JioSaavn") public var jiosaavnSourceEnabled: Bool = false
     
+    // Addon Sources (Dynamic fallback sources e.g. SoundFean Qobuz)
+    @Published public var addonSources: [AddonSource] = [] {
+        didSet {
+            saveAddonSources()
+        }
+    }
+    
     // Storage & Cache
     @AppStorage("BitChord.Storage.ShowCachedFolder") public var showCachedSongsFolder: Bool = false
     @AppStorage("BitChord.Storage.CacheLimitMB") public var songCacheLimitMB: Double = 512.0
@@ -79,5 +86,202 @@ public final class BitChordSettings: ObservableObject {
         set { equalizerPresetRaw = newValue.rawValue }
     }
     
-    public init() {}
+    public init() {
+        loadAddonSources()
+    }
+    
+    public func addAddonSource(_ source: AddonSource) {
+        if let idx = addonSources.firstIndex(where: { $0.id == source.id }) {
+            addonSources[idx] = source
+        } else {
+            addonSources.append(source)
+        }
+    }
+    
+    public func removeAddonSource(id: String) {
+        addonSources.removeAll(where: { $0.id == id })
+    }
+    
+    public func toggleAddonSource(id: String) {
+        if let idx = addonSources.firstIndex(where: { $0.id == id }) {
+            addonSources[idx].isEnabled.toggle()
+        }
+    }
+    
+    private func saveAddonSources() {
+        if let data = try? JSONEncoder().encode(addonSources) {
+            UserDefaults.standard.set(data, forKey: "BitChord.Source.Addons")
+        }
+    }
+    
+    private func loadAddonSources() {
+        if let data = UserDefaults.standard.data(forKey: "BitChord.Source.Addons"),
+           let sources = try? JSONDecoder().decode([AddonSource].self, from: data) {
+            self.addonSources = sources
+        }
+    }
+}
+
+// MARK: - Addon Source Model (SoundFean & BitPerfect Compatible)
+public struct AddonSource: Identifiable, Codable, Hashable, Sendable {
+    public let id: String
+    public var name: String
+    public var version: String
+    public var manifestURL: String
+    public var baseURL: String
+    public var resources: [String]
+    public var allowDownloads: Bool
+    public var isEnabled: Bool
+    public var addedAt: Date
+    
+    public init(
+        id: String,
+        name: String,
+        version: String,
+        manifestURL: String,
+        baseURL: String,
+        resources: [String] = [],
+        allowDownloads: Bool = true,
+        isEnabled: Bool = true,
+        addedAt: Date = Date()
+    ) {
+        self.id = id
+        self.name = name
+        self.version = version
+        self.manifestURL = manifestURL
+        self.baseURL = baseURL
+        self.resources = resources
+        self.allowDownloads = allowDownloads
+        self.isEnabled = isEnabled
+        self.addedAt = addedAt
+    }
+}
+
+// MARK: - Addon Service
+public actor AddonService {
+    public static let shared = AddonService()
+    
+    private let session: URLSession
+    
+    public init() {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 35
+        config.timeoutIntervalForResource = 50
+        self.session = URLSession(configuration: config)
+    }
+    
+    /// Fetches and parses manifest from a user-supplied addon URL
+    public func fetchManifest(from rawInput: String) async throws -> AddonSource {
+        let trimmed = rawInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw URLError(.badURL)
+        }
+        
+        var effectiveURL = trimmed
+        if !effectiveURL.lowercased().hasPrefix("http://") && !effectiveURL.lowercased().hasPrefix("https://") {
+            effectiveURL = "https://" + effectiveURL
+        }
+        
+        var manifestURLString = effectiveURL
+        var baseURLString = effectiveURL
+        
+        if effectiveURL.lowercased().hasSuffix(".json") {
+            manifestURLString = effectiveURL
+            if let lastSlash = effectiveURL.lastIndex(of: "/") {
+                baseURLString = String(effectiveURL[..<lastSlash])
+            }
+        } else {
+            if baseURLString.hasSuffix("/") {
+                baseURLString.removeLast()
+            }
+            manifestURLString = baseURLString + "/manifest.json"
+        }
+        
+        guard let url = URL(string: manifestURLString) else {
+            throw URLError(.badURL)
+        }
+        
+        var request = URLRequest(url: url)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("BitChord-iOS/1.0", forHTTPHeaderField: "User-Agent")
+        
+        let (data, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+        
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw URLError(.cannotParseResponse)
+        }
+        
+        let id = (json["id"] as? String) ?? UUID().uuidString
+        let name = (json["name"] as? String) ?? (url.host ?? "Custom Addon")
+        let version = (json["version"] as? String) ?? "1.0.0"
+        let resources = (json["resources"] as? [String]) ?? []
+        let allowDownloads: Bool
+        if let d = json["allowDownloads"] as? Int {
+            allowDownloads = d == 1
+        } else if let b = json["allowDownloads"] as? Bool {
+            allowDownloads = b
+        } else {
+            allowDownloads = true
+        }
+        
+        return AddonSource(
+            id: id,
+            name: name,
+            version: version,
+            manifestURL: manifestURLString,
+            baseURL: baseURLString,
+            resources: resources,
+            allowDownloads: allowDownloads,
+            isEnabled: true
+        )
+    }
+    
+    /// Attempts to resolve direct stream via configured addon
+    public func resolveStream(trackTitle: String, artist: String?, addon: AddonSource) async -> StreamInfo? {
+        guard addon.isEnabled, addon.resources.contains("stream") else { return nil }
+        
+        let query = "\(trackTitle) \(artist ?? "")".trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let searchURL = URL(string: "\(addon.baseURL)/search?q=\(encodedQuery)") else {
+            return nil
+        }
+        
+        var searchReq = URLRequest(url: searchURL)
+        searchReq.timeoutInterval = 8.0
+        
+        guard let (data, resp) = try? await session.data(for: searchReq),
+              let http = resp as? HTTPURLResponse, http.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let tracks = json["tracks"] as? [[String: Any]],
+              let first = tracks.first,
+              let trackId = (first["id"] as? String) ?? (first["id"] as? Int).map(String.init) else {
+            return nil
+        }
+        
+        guard let streamURL = URL(string: "\(addon.baseURL)/stream/\(trackId)") else { return nil }
+        var streamReq = URLRequest(url: streamURL)
+        streamReq.timeoutInterval = 8.0
+        
+        guard let (streamData, sResp) = try? await session.data(for: streamReq),
+              let sHttp = sResp as? HTTPURLResponse, sHttp.statusCode == 200,
+              let streamJson = try? JSONSerialization.jsonObject(with: streamData) as? [String: Any],
+              let directURLString = streamJson["url"] as? String,
+              let directURL = URL(string: directURLString) else {
+            return nil
+        }
+        
+        let sampleRate = (streamJson["sampleRate"] as? Double) ?? Double((streamJson["sampleRate"] as? Int) ?? 44100)
+        let isLossless = (streamJson["format"] as? String)?.lowercased() == "flac" || (streamJson["quality"] as? String)?.contains("FLAC") == true
+        
+        return StreamInfo(
+            streamURL: directURL,
+            format: (streamJson["format"] as? String) ?? "flac",
+            bitrate: 1411,
+            isLossless: isLossless,
+            sampleRate: sampleRate
+        )
+    }
 }

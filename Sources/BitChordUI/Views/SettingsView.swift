@@ -11,8 +11,6 @@ public struct SettingsView: View {
     @State private var storedCount: Int = 12
     @State private var showClearAlert: Bool = false
     @State private var clearAlertType: String = ""
-    @State private var showingAddAddonAlert: Bool = false
-    @State private var addonURLInput: String = ""
     
     public init() {}
     
@@ -36,13 +34,6 @@ public struct SettingsView: View {
             .listStyle(.insetGrouped)
             .sheet(isPresented: $showingGoogleLogin) {
                 GoogleLoginSheet()
-            }
-            .alert("Add Addon Server", isPresented: $showingAddAddonAlert) {
-                TextField("https://addon.example.com", text: $addonURLInput)
-                Button("Connect", action: {})
-                Button("Cancel", role: .cancel, action: {})
-            } message: {
-                Text("Point BitChord at an addon server you host or were given a link to.")
             }
             .alert(clearAlertType.isEmpty ? "Clear Lyrics Storage?" : "Clear \(clearAlertType)?", isPresented: $showClearAlert) {
                 Button("Clear", role: .destructive) {
@@ -135,7 +126,7 @@ public struct SettingsView: View {
     private var audioQualitySection: some View {
         Section {
             NavigationLink {
-                AudioSourcesDetailView(showingAddAddonAlert: $showingAddAddonAlert)
+                AudioSourcesDetailView()
             } label: {
                 HStack(spacing: 14) {
                     Image(systemName: "puzzlepiece.extension")
@@ -431,15 +422,47 @@ private struct AccountIntegrationsDetailView: View {
 // MARK: - 2. Sources Detail View (Photos 03, 08)
 private struct AudioSourcesDetailView: View {
     @ObservedObject var settings = BitChordSettings.shared
-    @Binding var showingAddAddonAlert: Bool
+    @State private var showingAddAddonSheet: Bool = false
     
     var body: some View {
         Form {
             Section {
+                // Dynamically list user-added addons first
+                ForEach(Array(settings.addonSources.enumerated()), id: \.element.id) { index, addon in
+                    HStack(spacing: 12) {
+                        Toggle(isOn: Binding(
+                            get: { addon.isEnabled },
+                            set: { _ in settings.toggleAddonSource(id: addon.id) }
+                        )) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 6) {
+                                    Text("\(index + 1)")
+                                        .font(.system(size: 12, weight: .bold))
+                                        .foregroundColor(.secondary)
+                                    Text(addon.name)
+                                        .font(.system(size: 15, weight: .semibold))
+                                }
+                                Text("v\(addon.version) • \(addon.resources.map { $0.capitalized }.joined(separator: ", "))")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .tint(.cyan)
+                    }
+                    .swipeActions(edge: .trailing) {
+                        Button(role: .destructive) {
+                            settings.removeAddonSource(id: addon.id)
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
+                }
+                
+                // JioSaavn
                 Toggle(isOn: $settings.jiosaavnSourceEnabled) {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack {
-                            Text("1")
+                            Text("\(settings.addonSources.count + 1)")
                                 .font(.system(size: 12, weight: .bold))
                                 .foregroundColor(.secondary)
                             Text("JioSaavn")
@@ -452,10 +475,11 @@ private struct AudioSourcesDetailView: View {
                 }
                 .tint(.cyan)
                 
+                // YouTube Music
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack {
-                            Text("2")
+                            Text("\(settings.addonSources.count + 2)")
                                 .font(.system(size: 12, weight: .bold))
                                 .foregroundColor(.secondary)
                             Text("YouTube Music")
@@ -471,8 +495,9 @@ private struct AudioSourcesDetailView: View {
                         .foregroundColor(.secondary)
                 }
                 
+                // Add an addon button
                 Button {
-                    showingAddAddonAlert = true
+                    showingAddAddonSheet = true
                 } label: {
                     HStack(spacing: 12) {
                         Image(systemName: "plus")
@@ -503,6 +528,241 @@ private struct AudioSourcesDetailView: View {
             }
         }
         .navigationTitle("Sources")
+        .sheet(isPresented: $showingAddAddonSheet) {
+            AddAddonSheet()
+        }
+    }
+}
+
+// MARK: - Add Addon Sheet
+private struct AddAddonSheet: View {
+    @ObservedObject var settings = BitChordSettings.shared
+    @Environment(\.dismiss) private var dismiss
+    
+    @State private var urlInput: String = ""
+    @State private var isConnecting: Bool = false
+    @State private var errorMessage: String? = nil
+    @State private var fetchedAddon: AddonSource? = nil
+    @State private var hasAdded: Bool = false
+    
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Add Addon Server")
+                            .font(.headline)
+                        Text("Point BitChord at an addon server you host or were given a link to. Compatible with SoundFean and BitPerfect manifest URLs.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                    
+                    HStack {
+                        TextField("https://...", text: $urlInput)
+                            .keyboardType(.URL)
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                        
+                        if !urlInput.isEmpty {
+                            Button {
+                                urlInput = ""
+                                errorMessage = nil
+                                fetchedAddon = nil
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        
+                        #if canImport(UIKit)
+                        Button {
+                            if let paste = UIPasteboard.general.string {
+                                urlInput = paste.trimmingCharacters(in: .whitespacesAndNewlines)
+                            }
+                        } label: {
+                            Image(systemName: "doc.on.clipboard")
+                                .foregroundColor(.cyan)
+                        }
+                        .buttonStyle(.plain)
+                        #endif
+                    }
+                    
+                    Button {
+                        urlInput = "https://soundfean-musics.onrender.com/a/manifest.json"
+                        errorMessage = nil
+                        fetchedAddon = nil
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "sparkles")
+                                .foregroundColor(.yellow)
+                            Text("Sample: SoundFean Qobuz [Heisenbergg]")
+                                .font(.caption)
+                                .foregroundColor(.cyan)
+                        }
+                    }
+                }
+                
+                if isConnecting {
+                    Section {
+                        HStack(spacing: 14) {
+                            ProgressView()
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Connecting to Addon Server...")
+                                    .font(.subheadline.bold())
+                                Text("Render / free-tier servers may take 15–30s to wake up if sleeping.")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 8)
+                    }
+                }
+                
+                if let error = errorMessage {
+                    Section {
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundColor(.red)
+                                Text("Connection Failed")
+                                    .font(.subheadline.bold())
+                                    .foregroundColor(.red)
+                            }
+                            Text(error)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+                
+                if let addon = fetchedAddon {
+                    Section {
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(spacing: 10) {
+                                Image(systemName: "checkmark.seal.fill")
+                                    .font(.title2)
+                                    .foregroundColor(.green)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(addon.name)
+                                        .font(.headline)
+                                    Text("v\(addon.version) • \(addon.id)")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            
+                            HStack(spacing: 8) {
+                                if addon.resources.contains("stream") {
+                                    Label("Hi-Res Stream", systemImage: "waveform")
+                                        .font(.caption2.bold())
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(Color.cyan.opacity(0.15))
+                                        .clipShape(Capsule())
+                                        .foregroundColor(.cyan)
+                                }
+                                if addon.resources.contains("search") {
+                                    Label("Catalog Search", systemImage: "magnifyingglass")
+                                        .font(.caption2.bold())
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(Color.purple.opacity(0.15))
+                                        .clipShape(Capsule())
+                                        .foregroundColor(.purple)
+                                }
+                                if addon.allowDownloads {
+                                    Label("Downloads", systemImage: "arrow.down.circle")
+                                        .font(.caption2.bold())
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(Color.green.opacity(0.15))
+                                        .clipShape(Capsule())
+                                        .foregroundColor(.green)
+                                }
+                            }
+                            
+                            Button {
+                                settings.addAddonSource(addon)
+                                hasAdded = true
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                    dismiss()
+                                }
+                            } label: {
+                                HStack {
+                                    Spacer()
+                                    if hasAdded {
+                                        Image(systemName: "checkmark")
+                                        Text("Added to Sources")
+                                    } else {
+                                        Text("Save & Enable Addon")
+                                    }
+                                    Spacer()
+                                }
+                                .font(.system(size: 15, weight: .semibold))
+                                .padding(.vertical, 8)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.green)
+                        }
+                        .padding(.vertical, 6)
+                    } header: {
+                        Text("VERIFIED ADDON")
+                    }
+                }
+                
+                Section {
+                    Button {
+                        connectAddon()
+                    } label: {
+                        HStack {
+                            Spacer()
+                            if isConnecting {
+                                Text("Connecting...")
+                            } else {
+                                Text("Connect")
+                            }
+                            Spacer()
+                        }
+                        .font(.system(size: 16, weight: .semibold))
+                    }
+                    .disabled(urlInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isConnecting)
+                }
+            }
+            .navigationTitle("Add Addon")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+    
+    private func connectAddon() {
+        guard !urlInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        isConnecting = true
+        errorMessage = nil
+        fetchedAddon = nil
+        
+        Task {
+            do {
+                let addon = try await AddonService.shared.fetchManifest(from: urlInput)
+                await MainActor.run {
+                    self.fetchedAddon = addon
+                    self.isConnecting = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.isConnecting = false
+                    self.errorMessage = "Could not fetch manifest: \(error.localizedDescription). Please verify URL or wait if server is waking up."
+                }
+            }
+        }
     }
 }
 
