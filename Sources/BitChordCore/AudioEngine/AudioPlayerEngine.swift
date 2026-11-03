@@ -43,6 +43,7 @@ public final class AudioPlayerEngine: ObservableObject {
     private var timeObserverToken: Any?
     private var playerItemObservation: NSKeyValueObservation?
     private var playerItemEndObserver: NSObjectProtocol?
+    private var pendingSeekTime: TimeInterval? = nil
     
     #if os(iOS)
     private var silencePlayer: AVAudioPlayer?
@@ -59,18 +60,20 @@ public final class AudioPlayerEngine: ObservableObject {
     private func setupYouTubeBridge() {
         YouTubeAudioBridge.shared.onPlaybackEnded = { [weak self] in
             Task { @MainActor [weak self] in
-                self?.handleTrackFinished()
+                guard let self = self, self.activeBackend == .youtubeBridge else { return }
+                self.handleTrackFinished()
             }
         }
         YouTubeAudioBridge.shared.onPlaybackStateChanged = { [weak self] newStatus in
             Task { @MainActor [weak self] in
-                self?.status = newStatus
-                self?.updateNowPlayingInfo()
+                guard let self = self, self.activeBackend == .youtubeBridge else { return }
+                self.status = newStatus
+                self.updateNowPlayingInfo()
             }
         }
         YouTubeAudioBridge.shared.onTimeUpdated = { [weak self] cur, dur in
             Task { @MainActor [weak self] in
-                guard let self = self else { return }
+                guard let self = self, self.activeBackend == .youtubeBridge else { return }
                 self.currentTime = cur
                 if dur > 0 && abs(self.duration - dur) > 1.0 {
                     self.duration = dur
@@ -497,10 +500,11 @@ public final class AudioPlayerEngine: ObservableObject {
                             if self.queueIndex < self.queue.count && self.queue[self.queueIndex].id == targetTrackId {
                                 self.queue[self.queueIndex] = withStream
                             }
-                            let currentPos = self.currentTime
-                            self.startPlaying(url: streamInfo.streamURL, for: withStream)
-                            if currentPos > 1.0 {
-                                self.seek(to: currentPos)
+                            
+                            // Only switch to AVPlayer if YouTubeAudioBridge is not actively playing yet
+                            if self.status != .playing {
+                                let currentPos = self.currentTime
+                                self.startPlaying(url: streamInfo.streamURL, for: withStream, initialSeek: currentPos)
                             }
                         }
                     }
@@ -522,9 +526,13 @@ public final class AudioPlayerEngine: ObservableObject {
         }
     }
     
-    private func startPlaying(url: URL, for track: Track) {
+    private func startPlaying(url: URL, for track: Track, initialSeek: TimeInterval = 0) {
         self.activeBackend = .avPlayer
         YouTubeAudioBridge.shared.pause()
+        if initialSeek > 0 {
+            self.pendingSeekTime = initialSeek
+            self.currentTime = initialSeek
+        }
         playerItemObservation?.invalidate()
         playerItemObservation = nil
         
@@ -551,6 +559,12 @@ public final class AudioPlayerEngine: ObservableObject {
                     self.status = .playing
                     self.player?.rate = self.playbackSpeed
                     self.player?.play()
+                    if let seekTime = self.pendingSeekTime, seekTime > 0 {
+                        let cmTime = CMTime(seconds: seekTime, preferredTimescale: 600)
+                        self.player?.seek(to: cmTime, toleranceBefore: .zero, toleranceAfter: .zero)
+                        self.currentTime = seekTime
+                        self.pendingSeekTime = nil
+                    }
                     self.updateNowPlayingInfo()
                 case .failed:
                     print("[BitChord AudioEngine] AVPlayerItem failed: \(String(describing: item.error))")
@@ -850,8 +864,13 @@ public final class AudioPlayerEngine: ObservableObject {
         let interval = CMTime(seconds: 0.1, preferredTimescale: 600)
         timeObserverToken = player?.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             Task { @MainActor [weak self] in
-                guard let self = self else { return }
-                self.currentTime = time.seconds
+                guard let self = self, self.activeBackend == .avPlayer else { return }
+                if self.pendingSeekTime == nil {
+                    let sec = time.seconds
+                    if sec.isFinite && !sec.isNaN && sec >= 0 {
+                        self.currentTime = sec
+                    }
+                }
                 
                 // Keep actual audio stream duration synchronized
                 if let item = self.player?.currentItem {

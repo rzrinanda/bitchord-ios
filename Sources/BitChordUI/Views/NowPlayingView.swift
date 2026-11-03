@@ -11,6 +11,7 @@ public struct NowPlayingView: View {
     @State private var showingDownloadSheet: Bool = false
     @State private var isDraggingSlider: Bool = false
     @State private var dragSliderValue: Double = 0
+    @State private var lastSeekTime: Date = Date.distantPast
     @State private var selectedTrackForMenu: Track? = nil
     @State private var currentLyricLine: String? = nil
     @State private var loadedLyrics: Lyrics? = nil
@@ -183,9 +184,19 @@ public struct NowPlayingView: View {
                     
                     // Scrubber Bar
                     VStack(spacing: 6) {
+                        let displayTime: Double = {
+                            if isDraggingSlider {
+                                return dragSliderValue
+                            } else if Date().timeIntervalSince(lastSeekTime) < 0.45 {
+                                return dragSliderValue
+                            } else {
+                                return engine.currentTime
+                            }
+                        }()
+                        
                         Slider(
                             value: Binding(
-                                get: { isDraggingSlider ? dragSliderValue : engine.currentTime },
+                                get: { displayTime },
                                 set: { newValue in
                                     dragSliderValue = newValue
                                     isDraggingSlider = true
@@ -193,16 +204,25 @@ public struct NowPlayingView: View {
                             ),
                             in: 0...max(1, engine.duration),
                             onEditingChanged: { editing in
-                                isDraggingSlider = editing
-                                if !editing {
-                                    engine.seek(to: dragSliderValue)
+                                if editing {
+                                    isDraggingSlider = true
+                                    dragSliderValue = engine.currentTime
+                                } else {
+                                    let seekTarget = dragSliderValue
+                                    lastSeekTime = Date()
+                                    engine.seek(to: seekTarget)
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                                        if !isDraggingSlider {
+                                            isDraggingSlider = false
+                                        }
+                                    }
                                 }
                             }
                         )
                         .tint(.white)
                         
                         HStack {
-                            Text(formatTime(isDraggingSlider ? dragSliderValue : engine.currentTime))
+                            Text(formatTime(displayTime))
                                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
                                 .foregroundColor(.white.opacity(0.6))
                             
@@ -228,7 +248,7 @@ public struct NowPlayingView: View {
                             
                             Spacer()
                             
-                            Text("-\(formatTime(max(0, engine.duration - (isDraggingSlider ? dragSliderValue : engine.currentTime))))")
+                            Text("-\(formatTime(max(0, engine.duration - displayTime)))")
                                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
                                 .foregroundColor(.white.opacity(0.6))
                         }
