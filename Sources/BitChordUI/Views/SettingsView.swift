@@ -41,9 +41,14 @@ public struct SettingsView: View {
             }
             .alert(clearAlertType.isEmpty ? "Clear Lyrics Storage?" : "Clear \(clearAlertType)?", isPresented: $showClearAlert) {
                 Button("Clear", role: .destructive) {
-                    LyricsStorageManager.shared.clearAllDiskStorage()
-                    storageUsage = LyricsStorageManager.shared.formattedStorageSize()
-                    storedCount = 0
+                    Task {
+                        await LyricsStorageManager.shared.clearAllDiskStorage()
+                        let size = await LyricsStorageManager.shared.formattedStorageSize()
+                        await MainActor.run {
+                            storageUsage = size
+                            storedCount = 0
+                        }
+                    }
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
@@ -300,8 +305,14 @@ public struct SettingsView: View {
     }
     
     private func calculateStorage() {
-        storageUsage = LyricsStorageManager.shared.formattedStorageSize()
-        storedCount = LyricsStorageManager.shared.countStoredTracks()
+        Task {
+            let size = await LyricsStorageManager.shared.formattedStorageSize()
+            let count = await LyricsStorageManager.shared.countStoredTracks()
+            await MainActor.run {
+                storageUsage = size
+                storedCount = count
+            }
+        }
     }
 }
 
@@ -1297,11 +1308,14 @@ private struct SpotifyWebLoginContainerView: UIViewRepresentable {
     
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
+        config.defaultWebpagePreferences.allowsContentJavaScript = true
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
+        webView.uiDelegate = context.coordinator
+        webView.allowsBackForwardNavigationGestures = true
         if let url = URL(string: "https://accounts.spotify.com/en/login") {
             var req = URLRequest(url: url)
-            req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
+            req.timeoutInterval = 30.0
             webView.load(req)
         }
         return webView
@@ -1313,7 +1327,7 @@ private struct SpotifyWebLoginContainerView: UIViewRepresentable {
         Coordinator(onCaptureSPDC: onCaptureSPDC)
     }
     
-    class Coordinator: NSObject, WKNavigationDelegate {
+    class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
         let onCaptureSPDC: (String) -> Void
         private var hasCaptured: Bool = false
         
@@ -1323,6 +1337,32 @@ private struct SpotifyWebLoginContainerView: UIViewRepresentable {
         
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             checkCookies(in: webView)
+        }
+        
+        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+            checkCookies(in: webView)
+            decisionHandler(.allow)
+        }
+        
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            print("[BitChord SpotifyWeb] Navigation failed: \(error.localizedDescription)")
+        }
+        
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            print("[BitChord SpotifyWeb] Provisional navigation failed: \(error.localizedDescription)")
+        }
+        
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            print("[BitChord SpotifyWeb] Web content process terminated, reloading...")
+            webView.reload()
+        }
+        
+        func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+            // Handle target="_blank" or window.open popup links inside the same webView
+            if navigationAction.targetFrame == nil {
+                webView.load(navigationAction.request)
+            }
+            return nil
         }
         
         private func checkCookies(in webView: WKWebView) {
@@ -2067,25 +2107,32 @@ private struct StorageDetailView: View {
 // MARK: - 9. Local Music Detail View (Photo 26)
 private struct LocalMusicDetailView: View {
     @ObservedObject var settings = BitChordSettings.shared
-    @State private var isScanning = false
+    @ObservedObject var scanner = LocalMusicScanner.shared
+    @State private var showingFolderPicker = false
     @State private var scanResult = "No local tracks indexed yet"
     
     var body: some View {
         Form {
             Section {
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Local music folder")
-                            .font(.system(size: 15, weight: .medium))
-                        Text("\(settings.localMusicFolder) (Files & On My iPhone)")
-                            .font(.system(size: 12))
+                Button {
+                    showingFolderPicker = true
+                } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Local music folder")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundColor(.primary)
+                            Text("\(settings.localMusicFolder) (Files & On My iPhone)")
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
                             .foregroundColor(.secondary)
+                            .font(.system(size: 14))
                     }
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .foregroundColor(.secondary)
-                        .font(.system(size: 14))
                 }
+                .buttonStyle(.plain)
                 
                 Toggle(isOn: $settings.filterNonMusicAudio) {
                     VStack(alignment: .leading, spacing: 2) {
@@ -2114,23 +2161,23 @@ private struct LocalMusicDetailView: View {
             
             Section {
                 Button {
-                    isScanning = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                        isScanning = false
-                        scanResult = "Scan complete. Library updated."
+                    Task {
+                        let count = await scanner.scan()
+                        scanResult = "Scan complete. Successfully found \(count) track\(count == 1 ? "" : "s")."
                     }
                 } label: {
                     HStack {
                         Image(systemName: "arrow.triangle.2.circlepath")
                             .font(.system(size: 16))
-                        Text(isScanning ? "Scanning Audio Files..." : "Rescan Device Audio Files")
+                        Text(scanner.isScanning ? "Scanning Audio Files..." : "Rescan Device Audio Files")
                             .fontWeight(.medium)
-                        if isScanning {
+                        if scanner.isScanning {
                             Spacer()
                             ProgressView()
                         }
                     }
                 }
+                .disabled(scanner.isScanning)
             } header: {
                 Text("RESCAN")
             } footer: {
@@ -2140,8 +2187,63 @@ private struct LocalMusicDetailView: View {
             }
         }
         .navigationTitle("Local Music")
+        .sheet(isPresented: $showingFolderPicker) {
+            FolderPickerView { url in
+                scanner.setCustomFolder(url)
+                Task {
+                    let count = await scanner.scan()
+                    scanResult = "Folder selected: \(settings.localMusicFolder). Found \(count) track\(count == 1 ? "" : "s")."
+                }
+            }
+        }
+        .onAppear {
+            if !scanner.tracks.isEmpty {
+                scanResult = "Indexed \(scanner.tracks.count) track\(scanner.tracks.count == 1 ? "" : "s") in library."
+            }
+        }
     }
 }
+
+#if canImport(UIKit)
+private struct FolderPickerView: UIViewControllerRepresentable {
+    let onPick: (URL) -> Void
+    @Environment(\.dismiss) private var dismiss
+    
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder], asCopy: false)
+        picker.delegate = context.coordinator
+        picker.allowsMultipleSelection = false
+        return picker
+    }
+    
+    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onPick: onPick, dismiss: dismiss)
+    }
+    
+    class Coordinator: NSObject, UIDocumentPickerDelegate {
+        let onPick: (URL) -> Void
+        let dismiss: DismissAction
+        
+        init(onPick: @escaping (URL) -> Void, dismiss: DismissAction) {
+            self.onPick = onPick
+            self.dismiss = dismiss
+        }
+        
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            if let first = urls.first {
+                onPick(first)
+            }
+            dismiss()
+        }
+        
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+            dismiss()
+        }
+    }
+}
+#endif
 
 // MARK: - 10. Your Data Detail View (Photo 31)
 private struct YourDataDetailView: View {

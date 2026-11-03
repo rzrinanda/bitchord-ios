@@ -363,7 +363,7 @@ struct GoogleLoginWebView: UIViewRepresentable {
                     """
                     
                     webView.evaluateJavaScript(jsProbe) { result, _ in
-                        var displayName = "Akun Google"
+                        let displayName = "Akun Google"
                         var handle = "@user"
                         
                         if let jsonStr = result as? String,

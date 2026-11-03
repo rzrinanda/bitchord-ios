@@ -28,6 +28,7 @@
 		BC000018BLD000000000000 /* Sources/BitChordCore/Services/DownloadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000018FILE000000000000 /* Sources/BitChordCore/Services/DownloadManager.swift */; };
 		BC000019BLD000000000000 /* Sources/BitChordCore/Services/LastFmScrobbler.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000019FILE000000000000 /* Sources/BitChordCore/Services/LastFmScrobbler.swift */; };
 		BC000020BLD000000000000 /* Sources/BitChordCore/Services/LibraryDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000020FILE000000000000 /* Sources/BitChordCore/Services/LibraryDatabase.swift */; };
+		BC000099BLD000000000000 /* Sources/BitChordCore/Services/LocalMusicScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000099FILE000000000000 /* Sources/BitChordCore/Services/LocalMusicScanner.swift */; };
 		BC000021BLD000000000000 /* Sources/BitChordCore/Services/SpotifyImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000021FILE000000000000 /* Sources/BitChordCore/Services/SpotifyImporter.swift */; };
 		BC000022BLD000000000000 /* Sources/BitChordUI/BitChordApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000022FILE000000000000 /* Sources/BitChordUI/BitChordApp.swift */; };
 		BC000023BLD000000000000 /* Sources/BitChordUI/Components/BitChordLogoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000023FILE000000000000 /* Sources/BitChordUI/Components/BitChordLogoView.swift */; };
@@ -77,6 +78,7 @@
 		BC000018FILE000000000000 /* Sources/BitChordCore/Services/DownloadManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordCore/Services/DownloadManager.swift; sourceTree = SOURCE_ROOT; };
 		BC000019FILE000000000000 /* Sources/BitChordCore/Services/LastFmScrobbler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordCore/Services/LastFmScrobbler.swift; sourceTree = SOURCE_ROOT; };
 		BC000020FILE000000000000 /* Sources/BitChordCore/Services/LibraryDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordCore/Services/LibraryDatabase.swift; sourceTree = SOURCE_ROOT; };
+		BC000099FILE000000000000 /* Sources/BitChordCore/Services/LocalMusicScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordCore/Services/LocalMusicScanner.swift; sourceTree = SOURCE_ROOT; };
 		BC000021FILE000000000000 /* Sources/BitChordCore/Services/SpotifyImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordCore/Services/SpotifyImporter.swift; sourceTree = SOURCE_ROOT; };
 		BC000022FILE000000000000 /* Sources/BitChordUI/BitChordApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordUI/BitChordApp.swift; sourceTree = SOURCE_ROOT; };
 		BC000023FILE000000000000 /* Sources/BitChordUI/Components/BitChordLogoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordUI/Components/BitChordLogoView.swift; sourceTree = SOURCE_ROOT; };
@@ -136,6 +138,7 @@
 				BC000018FILE000000000000 /* Sources/BitChordCore/Services/DownloadManager.swift */,
 				BC000019FILE000000000000 /* Sources/BitChordCore/Services/LastFmScrobbler.swift */,
 				BC000020FILE000000000000 /* Sources/BitChordCore/Services/LibraryDatabase.swift */,
+				BC000099FILE000000000000 /* Sources/BitChordCore/Services/LocalMusicScanner.swift */,
 				BC000021FILE000000000000 /* Sources/BitChordCore/Services/SpotifyImporter.swift */,
 				BC000022FILE000000000000 /* Sources/BitChordUI/BitChordApp.swift */,
 				BC000023FILE000000000000 /* Sources/BitChordUI/Components/BitChordLogoView.swift */,
@@ -262,6 +265,7 @@
 				BC000018BLD000000000000 /* Sources/BitChordCore/Services/DownloadManager.swift in Sources */,
 				BC000019BLD000000000000 /* Sources/BitChordCore/Services/LastFmScrobbler.swift in Sources */,
 				BC000020BLD000000000000 /* Sources/BitChordCore/Services/LibraryDatabase.swift in Sources */,
+				BC000099BLD000000000000 /* Sources/BitChordCore/Services/LocalMusicScanner.swift in Sources */,
 				BC000021BLD000000000000 /* Sources/BitChordCore/Services/SpotifyImporter.swift in Sources */,
 				BC000022BLD000000000000 /* Sources/BitChordUI/BitChordApp.swift in Sources */,
 				BC000023BLD000000000000 /* Sources/BitChordUI/Components/BitChordLogoView.swift in Sources */,

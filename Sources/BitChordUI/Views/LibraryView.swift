@@ -12,6 +12,7 @@ public struct LibraryView: View {
     @State private var showingSpotifyImporter: Bool = false
     @State private var showingAccountMenu: Bool = false
     @State private var showingHistory: Bool = false
+    @ObservedObject private var localScanner = LocalMusicScanner.shared
     
     public init() {}
     
@@ -163,7 +164,7 @@ public struct LibraryView: View {
                         Divider().padding(.leading, 60)
                         
                         NavigationLink {
-                            DownloadedSongsView()
+                            LocalMusicListView()
                         } label: {
                             HStack(spacing: 16) {
                                 Image(systemName: "folder.fill")
@@ -174,6 +175,9 @@ public struct LibraryView: View {
                                     .font(.system(size: 16, weight: .medium))
                                     .foregroundColor(.primary)
                                 Spacer()
+                                Text("\(localScanner.tracks.count)")
+                                    .font(.system(size: 13))
+                                    .foregroundColor(.secondary)
                                 Image(systemName: "chevron.right")
                                     .font(.system(size: 14))
                                     .foregroundColor(.secondary)
@@ -334,6 +338,9 @@ public struct LibraryView: View {
                 let downloaded = await DownloadManager.shared.getDownloadedTracks()
                 downloadedCount = downloaded.count
                 downloadedSize = await DownloadManager.shared.getTotalDownloadedSizeString()
+                if localScanner.tracks.isEmpty {
+                    _ = await localScanner.scan()
+                }
             }
         }
     }
@@ -490,6 +497,52 @@ public struct PlaylistsDetailView: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Local Music List View
+public struct LocalMusicListView: View {
+    @ObservedObject private var scanner = LocalMusicScanner.shared
+    @ObservedObject var engine = AudioPlayerEngine.shared
+    @State private var searchText: String = ""
+    
+    public init() {}
+    
+    private var filteredTracks: [Track] {
+        if searchText.trimmingCharacters(in: .whitespaces).isEmpty {
+            return scanner.tracks
+        }
+        return scanner.tracks.filter {
+            $0.title.localizedCaseInsensitiveContains(searchText) ||
+            $0.artist.localizedCaseInsensitiveContains(searchText) ||
+            $0.album.localizedCaseInsensitiveContains(searchText)
+        }
+    }
+    
+    public var body: some View {
+        TrackListView(title: "Local Music", tracks: filteredTracks)
+            .searchable(text: $searchText, prompt: "Search local tracks")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    if scanner.isScanning {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                    } else {
+                        Button {
+                            Task {
+                                _ = await scanner.scan()
+                            }
+                        } label: {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                        }
+                    }
+                }
+            }
+            .task {
+                if scanner.tracks.isEmpty {
+                    _ = await scanner.scan()
+                }
+            }
     }
 }
 

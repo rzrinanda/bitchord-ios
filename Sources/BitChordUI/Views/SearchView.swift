@@ -45,7 +45,7 @@ public struct SearchView: View {
                             .onSubmit {
                                 performSearch()
                             }
-                            .onChange(of: query) { newQuery in
+                            .onChange(of: query) { _, newQuery in
                                 debounceSearch(newQuery)
                             }
                         

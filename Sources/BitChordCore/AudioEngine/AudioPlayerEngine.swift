@@ -109,7 +109,7 @@ public final class AudioPlayerEngine: ObservableObject {
         #if os(iOS)
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .default, options: [.allowBluetooth, .allowBluetoothA2DP, .allowAirPlay])
+            try session.setCategory(.playback, mode: .default, options: [.allowBluetoothHFP, .allowBluetoothA2DP, .allowAirPlay])
             try session.setActive(true, options: .notifyOthersOnDeactivation)
         } catch {
             print("[BitChord AudioEngine] Failed to activate AVAudioSession: \(error.localizedDescription)")
@@ -121,17 +121,19 @@ public final class AudioPlayerEngine: ObservableObject {
             object: AVAudioSession.sharedInstance(),
             queue: .main
         ) { [weak self] notif in
-            guard let self = self,
-                  let userInfo = notif.userInfo,
-                  let typeVal = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
-                  let type = AVAudioSession.InterruptionType(rawValue: typeVal) else { return }
-            
-            if type == .began {
-                self.pause()
-            } else if type == .ended {
-                if let optVal = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt,
-                   AVAudioSession.InterruptionOptions(rawValue: optVal).contains(.shouldResume) {
-                    self.resume()
+            Task { @MainActor [weak self] in
+                guard let self = self,
+                      let userInfo = notif.userInfo,
+                      let typeVal = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
+                      let type = AVAudioSession.InterruptionType(rawValue: typeVal) else { return }
+                
+                if type == .began {
+                    self.pause()
+                } else if type == .ended {
+                    if let optVal = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt,
+                       AVAudioSession.InterruptionOptions(rawValue: optVal).contains(.shouldResume) {
+                        self.resume()
+                    }
                 }
             }
         }
@@ -142,18 +144,20 @@ public final class AudioPlayerEngine: ObservableObject {
             object: AVAudioSession.sharedInstance(),
             queue: .main
         ) { [weak self] notif in
-            guard let self = self,
-                  let userInfo = notif.userInfo,
-                  let reasonVal = userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt,
-                  let reason = AVAudioSession.RouteChangeReason(rawValue: reasonVal) else { return }
-            
-            if reason == .oldDeviceUnavailable {
-                self.pause()
-            } else if BitChordSettings.shared.disableOnPhoneSpeaker {
-                let outputs = AVAudioSession.sharedInstance().currentRoute.outputs
-                if !outputs.isEmpty && outputs.allSatisfy({ $0.portType == .builtInSpeaker || $0.portType == .builtInReceiver }) {
-                    if reason != .categoryChange && self.status == .playing {
-                        self.pause()
+            Task { @MainActor [weak self] in
+                guard let self = self,
+                      let userInfo = notif.userInfo,
+                      let reasonVal = userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt,
+                      let reason = AVAudioSession.RouteChangeReason(rawValue: reasonVal) else { return }
+                
+                if reason == .oldDeviceUnavailable {
+                    self.pause()
+                } else if BitChordSettings.shared.disableOnPhoneSpeaker {
+                    let outputs = AVAudioSession.sharedInstance().currentRoute.outputs
+                    if !outputs.isEmpty && outputs.allSatisfy({ $0.portType == .builtInSpeaker || $0.portType == .builtInReceiver }) {
+                        if reason != .categoryChange && self.status == .playing {
+                            self.pause()
+                        }
                     }
                 }
             }
@@ -164,17 +168,19 @@ public final class AudioPlayerEngine: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            guard let self = self else { return }
-            self.beginBackgroundTask()
-            self.startKeepAlive()
-            if self.status == .playing {
-                if self.activeBackend == .youtubeBridge, let track = self.currentTrack, let streamURL = track.streamURL {
-                    let currentPos = self.currentTime
-                    self.startPlaying(url: streamURL, for: track, initialSeek: currentPos)
-                } else if self.activeBackend == .youtubeBridge {
-                    YouTubeAudioBridge.shared.resume()
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                self.beginBackgroundTask()
+                self.startKeepAlive()
+                if self.status == .playing {
+                    if self.activeBackend == .youtubeBridge, let track = self.currentTrack, let streamURL = track.streamURL {
+                        let currentPos = self.currentTime
+                        self.startPlaying(url: streamURL, for: track, initialSeek: currentPos)
+                    } else if self.activeBackend == .youtubeBridge {
+                        YouTubeAudioBridge.shared.resume()
+                    }
+                    self.updateNowPlayingInfo()
                 }
-                self.updateNowPlayingInfo()
             }
         }
         
@@ -183,10 +189,12 @@ public final class AudioPlayerEngine: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            guard let self = self else { return }
-            self.endBackgroundTask()
-            if self.status == .playing {
-                self.updateNowPlayingInfo()
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                self.endBackgroundTask()
+                if self.status == .playing {
+                    self.updateNowPlayingInfo()
+                }
             }
         }
         
@@ -195,12 +203,14 @@ public final class AudioPlayerEngine: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            guard let self = self else { return }
-            if self.status == .playing {
-                self.beginBackgroundTask()
-                self.startKeepAlive()
-                YouTubeAudioBridge.shared.resume()
-                self.updateNowPlayingInfo()
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                if self.status == .playing {
+                    self.beginBackgroundTask()
+                    self.startKeepAlive()
+                    YouTubeAudioBridge.shared.resume()
+                    self.updateNowPlayingInfo()
+                }
             }
         }
         
@@ -209,9 +219,11 @@ public final class AudioPlayerEngine: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            guard let self = self else { return }
-            if self.status == .playing {
-                self.updateNowPlayingInfo()
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                if self.status == .playing {
+                    self.updateNowPlayingInfo()
+                }
             }
         }
         #endif
