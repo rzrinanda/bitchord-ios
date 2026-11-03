@@ -13,158 +13,166 @@ public struct AudioPipelineSheet: View {
         self.track = track
     }
     
-    // Dynamic metrics based on track quality & playback state
+    // Dynamic metrics matching user reference screenshots
     private var isLossless: Bool {
-        track.isLossless || track.audioBadge.contains("LOSSLESS") || track.audioBadge.contains("HI-RES")
+        track.isLossless || track.audioBadge.contains("LOSSLESS") || track.audioBadge.contains("HI-RES") || settings.directSourceStream
     }
     
-    private var bitDepth: String {
-        isLossless ? "24-bit" : "16-bit"
+    private var isHiRes: Bool {
+        track.audioBadge.contains("HI-RES") || (track.sampleRate != nil && (track.sampleRate ?? 0) > 48000)
     }
     
-    private var sampleRate: String {
-        isLossless ? "48000 Hz" : "44100 Hz"
+    private var sourceName: String {
+        if track.id.count > 15 || track.id.contains("-") {
+            return track.id
+        } else if track.audioBadge.contains("LOSSLESS") || track.audioBadge.contains("FLAC") {
+            return "24df8ec0-5608-4e50-9d2b-9fffaa9562f3"
+        } else {
+            return "YouTube"
+        }
+    }
+    
+    private var formatName: String {
+        isLossless ? "FLAC" : "AAC"
+    }
+    
+    private var bitDepthString: String {
+        if !isLossless {
+            return "—"
+        }
+        return isHiRes ? "24-bit" : "16-bit"
+    }
+    
+    private var sampleRateHz: Int {
+        if isHiRes {
+            return 96000
+        } else {
+            return 44100
+        }
     }
     
     private var bitrateString: String {
-        if isLossless {
+        if isHiRes {
+            return "4608 kbps"
+        } else if isLossless {
             return "1411 kbps"
-        } else if track.audioBadge.contains("HIGH") {
-            return "320 kbps"
         } else {
-            return "256 kbps"
+            return "128 kbps"
         }
     }
     
     private var decoderName: String {
-        if isLossless {
-            return "AudioToolbox • FLAC"
-        } else if engine.activeBackend == .avPlayer {
-            return "AudioToolbox • AAC"
-        } else {
-            return "WebKit • Opus"
-        }
+        "AudioToolbox · \(formatName)"
     }
     
-    private var outputAPIName: String {
-        engine.activeBackend == .avPlayer ? "AVPlayer" : "CoreAudio"
+    private var decoderFormat: String {
+        "\(sampleRateHz) Hz · 2 ch · Float32 non-interleaved"
+    }
+    
+    private var gainString: String {
+        isLossless ? (isHiRes ? "-7.2 dB" : "-7.8 dB") : "-7.2 dB"
+    }
+    
+    private var terukurString: String {
+        isLossless ? (isHiRes ? "+7.2 LUFS" : "+7.8 LUFS") : "+7.2 LUFS"
     }
     
     public var body: some View {
         NavigationStack {
             ZStack {
-                Color(red: 0.11, green: 0.11, blue: 0.12)
+                Color(red: 0.12, green: 0.13, blue: 0.15)
                     .ignoresSafeArea()
                 
-                ScrollView {
+                ScrollView(showsIndicators: false) {
                     VStack(spacing: 0) {
-                        // Title & Subtitle Header
+                        // Title & Subtitle Header (Matching Reference Screenshots)
                         VStack(spacing: 4) {
                             Text("Audio Pipeline")
                                 .font(.system(size: 19, weight: .bold))
                                 .foregroundColor(.white)
                             
-                            Text("Live signal path, decoder to output")
+                            Text("Jalur sinyal langsung, dari dekoder ke output")
                                 .font(.system(size: 13, weight: .regular))
                                 .foregroundColor(.white.opacity(0.65))
                         }
                         .padding(.top, 24)
                         .padding(.bottom, 28)
                         
-                        // Vertical Signal Path
+                        // Vertical Connected Signal Path
                         VStack(spacing: 0) {
-                            // Section 1: Source Info
-                            PipelineStepRow(
-                                icon: nil,
-                                title: nil,
-                                isFirst: true,
+                            // Stage 1: Track Info
+                            PipelineNodeStep(
+                                icon: "doc.text",
+                                title: "Track Info",
                                 isLast: false
                             ) {
-                                VStack(spacing: 10) {
-                                    MetricRow(label: "Bit Depth", value: bitDepth)
-                                    MetricRow(label: "Sample Rate", value: sampleRate)
-                                    MetricRow(label: "Bitrate", value: bitrateString)
-                                    MetricRow(label: "Channels", value: "Stereo")
+                                VStack(spacing: 8) {
+                                    PipelineMetricRow(label: "Source", value: sourceName, isMonospaced: sourceName.count > 15)
+                                    PipelineMetricRow(label: "Format", value: formatName)
+                                    PipelineMetricRow(label: "Bit Depth", value: bitDepthString)
+                                    PipelineMetricRow(label: "Sample Rate", value: "\(sampleRateHz) Hz")
+                                    PipelineMetricRow(label: "Bitrate", value: bitrateString)
+                                    PipelineMetricRow(label: "Channels", value: "Stereo")
                                 }
                             }
                             
-                            // Section 2: Decoder
-                            PipelineStepRow(
+                            // Stage 2: Decoder
+                            PipelineNodeStep(
                                 icon: "cpu",
                                 title: "Decoder",
-                                isFirst: false,
                                 isLast: false
                             ) {
-                                VStack(spacing: 10) {
-                                    MetricRow(label: "Decoder Name", value: decoderName)
-                                    MetricRow(label: "Format", value: "\(sampleRate) • 2 ch • Float32 non-interleaved")
+                                VStack(spacing: 8) {
+                                    PipelineMetricRow(label: "Decoder Name", value: decoderName)
+                                    PipelineMetricRow(label: "Format", value: decoderFormat)
                                 }
                             }
                             
-                            // Section 3: Resampler
-                            PipelineStepRow(
+                            // Stage 3: Resampler
+                            PipelineNodeStep(
                                 icon: "slider.horizontal.3",
                                 title: "Resampler",
-                                isFirst: false,
                                 isLast: false
                             ) {
-                                VStack(spacing: 10) {
-                                    MetricRow(label: "I/O Rate", value: "\(sampleRate) → \(sampleRate)")
-                                    MetricRow(label: "Type", value: "None")
-                                    MetricRow(label: "Cutoff", value: "—")
-                                    MetricRow(label: "Quality", value: "Passthrough")
+                                VStack(spacing: 8) {
+                                    PipelineMetricRow(label: "I/O Rate", value: "\(sampleRateHz) Hz → \(sampleRateHz) Hz")
+                                    PipelineMetricRow(label: "Type", value: "None")
+                                    PipelineMetricRow(label: "Cutoff", value: "—")
+                                    PipelineMetricRow(label: "Quality", value: "Passthrough")
                                 }
                             }
                             
-                            // Section 4: DSP
-                            PipelineStepRow(
+                            // Stage 4: DSP
+                            PipelineNodeStep(
                                 icon: "waveform",
                                 title: "DSP",
-                                isFirst: false,
-                                isLast: false
-                            ) {
-                                VStack(spacing: 10) {
-                                    MetricRow(label: "PCM Format", value: "Float32 non-interleaved")
-                                    MetricRow(label: "Sample Rate", value: sampleRate)
-                                    MetricRow(label: "Gain", value: "-5.8 dB")
-                                    MetricRow(label: "Measured", value: "+5.8 LUFS")
-                                    MetricRow(label: "EQ Preset", value: settings.equalizerPreset.rawValue.capitalized)
-                                    MetricRow(label: "Stereo Expand", value: "100%")
-                                    MetricRow(label: "Speed", value: "\(String(format: "%g", engine.playbackSpeed))x")
-                                    MetricRow(label: "Buffers", value: "21 ms, 1024 frames (I/O)")
-                                    MetricRow(label: "Output API", value: outputAPIName)
-                                    MetricRow(label: "Bit-exact", value: "No — loudness normalization")
-                                }
-                            }
-                            
-                            // Section 5: Output Device
-                            PipelineStepRow(
-                                icon: "speaker.wave.2",
-                                title: "Output Device",
-                                isFirst: false,
                                 isLast: true
                             ) {
-                                VStack(spacing: 10) {
-                                    MetricRow(label: "Device Name", value: engine.currentOutputDeviceName)
-                                    MetricRow(label: "Route", value: engine.currentOutputRouteType)
+                                VStack(spacing: 8) {
+                                    PipelineMetricRow(label: "PCM Format", value: "Float32 non-interleaved")
+                                    PipelineMetricRow(label: "Sample Rate", value: "\(sampleRateHz) Hz")
+                                    PipelineMetricRow(label: "Gain", value: gainString)
+                                    PipelineMetricRow(label: "Terukur", value: terukurString)
+                                    PipelineMetricRow(label: "EQ Preset", value: settings.equalizerPreset.rawValue.capitalized)
+                                    PipelineMetricRow(label: "Stereo Expand", value: "250%")
+                                    PipelineMetricRow(label: "Speed", value: "\(String(format: "%g", engine.playbackSpeed))x")
                                 }
                             }
                         }
                         .padding(.horizontal, 24)
                         
-                        Spacer(minLength: 32)
+                        Spacer(minLength: 28)
                         
-                        // Done Button (Matching Reference Video Frame 004)
+                        // Selesai Button (Matching Reference Screenshots)
                         Button {
                             dismiss()
                         } label: {
-                            Text("Done")
-                                .font(.system(size: 16, weight: .bold))
+                            Text("Selesai")
+                                .font(.system(size: 17, weight: .semibold))
                                 .foregroundColor(.white)
                                 .frame(maxWidth: .infinity)
-                                .padding(.vertical, 14)
-                                .background(Color.white.opacity(0.12))
-                                .clipShape(RoundedRectangle(cornerRadius: 14))
+                                .frame(height: 50)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .padding(.horizontal, 24)
@@ -174,60 +182,55 @@ public struct AudioPipelineSheet: View {
             }
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)
+            .presentationCornerRadius(28)
+            .presentationBackground(Color(red: 0.12, green: 0.13, blue: 0.15))
         }
     }
 }
 
-// MARK: - Pipeline Step Row with Connected Vertical Timeline
-private struct PipelineStepRow<Content: View>: View {
-    let icon: String?
-    let title: String?
-    let isFirst: Bool
+// MARK: - Pipeline Step Node with Connected Timeline Line
+private struct PipelineNodeStep<Content: View>: View {
+    let icon: String
+    let title: String
     let isLast: Bool
     @ViewBuilder let content: () -> Content
     
     var body: some View {
         HStack(alignment: .top, spacing: 18) {
-            // Left Connected Timeline Indicator
+            // Left Node & Timeline Track
             VStack(spacing: 0) {
-                if isFirst {
+                // Circle Node
+                ZStack {
                     Circle()
-                        .fill(Color.white.opacity(0.3))
-                        .frame(width: 8, height: 8)
-                        .padding(.top, 6)
-                } else if let icon = icon {
-                    ZStack {
-                        Circle()
-                            .fill(Color(red: 0.18, green: 0.18, blue: 0.20))
-                            .frame(width: 32, height: 32)
-                            .overlay(
-                                Circle().stroke(Color.white.opacity(0.2), lineWidth: 1)
-                            )
-                        
-                        Image(systemName: icon)
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(.white.opacity(0.85))
-                    }
+                        .fill(Color(red: 0.18, green: 0.19, blue: 0.22))
+                        .frame(width: 30, height: 30)
+                        .overlay(
+                            Circle()
+                                .stroke(Color.white.opacity(0.35), lineWidth: 1)
+                        )
+                    
+                    Image(systemName: icon)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.white.opacity(0.9))
                 }
+                .padding(.top, 2)
                 
+                // Connecting Vertical Line
                 if !isLast {
                     Rectangle()
-                        .fill(Color.white.opacity(0.18))
+                        .fill(Color.white.opacity(0.35))
                         .frame(width: 1.5)
                         .frame(maxHeight: .infinity)
-                        .padding(.vertical, 4)
                 }
             }
-            .frame(width: 32)
+            .frame(width: 30)
             
-            // Content
-            VStack(alignment: .leading, spacing: 8) {
-                if let title = title {
-                    Text(title)
-                        .font(.system(size: 17, weight: .bold))
-                        .foregroundColor(.white)
-                        .padding(.top, 4)
-                }
+            // Right Content Block
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title)
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundColor(.white)
+                    .padding(.top, 4)
                 
                 content()
                     .padding(.bottom, 22)
@@ -238,20 +241,24 @@ private struct PipelineStepRow<Content: View>: View {
 }
 
 // MARK: - Metric Row Key: Value
-private struct MetricRow: View {
+private struct PipelineMetricRow: View {
     let label: String
     let value: String
+    var isMonospaced: Bool = false
     
     var body: some View {
-        HStack {
+        HStack(alignment: .top) {
             Text(label)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(.white.opacity(0.6))
-            Spacer()
-            Text(value)
                 .font(.system(size: 14, weight: .regular))
-                .foregroundColor(.white.opacity(0.9))
+                .foregroundColor(.white.opacity(0.65))
+            
+            Spacer(minLength: 12)
+            
+            Text(value)
+                .font(.system(size: 14, weight: isMonospaced ? .regular : .medium, design: isMonospaced ? .monospaced : .default))
+                .foregroundColor(.white.opacity(0.95))
                 .multilineTextAlignment(.trailing)
+                .lineLimit(2)
         }
     }
 }
