@@ -153,59 +153,74 @@ public struct SettingsView: View {
                 }
             }
             
-            Toggle(isOn: $settings.directSourceStream) {
-                HStack(spacing: 14) {
-                    Image(systemName: "bolt.horizontal.fill")
-                        .font(.system(size: 16))
-                        .foregroundColor(.white)
-                        .frame(width: 28)
-                    Text("Direct Source Stream")
-                        .font(.system(size: 15, weight: .regular))
-                        .foregroundColor(.primary)
+            NavigationLink {
+                Form {
+                    Picker("Wi-Fi Audio Quality", selection: $settings.wifiAudioQuality) {
+                        Text("Lossless").tag("Lossless")
+                        Text("High").tag("High")
+                        Text("Normal").tag("Normal")
+                    }
+                    .pickerStyle(.inline)
                 }
-            }
-            .tint(Color(red: 0.95, green: 0.20, blue: 0.35))
-            
-            Picker(selection: $settings.wifiAudioQuality) {
-                Text("Lossless").tag("Lossless")
-                Text("High").tag("High")
-                Text("Normal").tag("Normal")
+                .navigationTitle("On Wi-Fi")
             } label: {
                 HStack(spacing: 14) {
                     Image(systemName: "wifi")
                         .font(.system(size: 16))
                         .foregroundColor(.white)
                         .frame(width: 28)
+                    
                     HStack(spacing: 8) {
                         Text("On Wi-Fi")
                             .font(.system(size: 15, weight: .regular))
                             .foregroundColor(.primary)
+                        
                         if networkMonitor.isWifi {
                             InUseBadge()
                         }
                     }
+                    
+                    Spacer()
+                    
+                    Text(settings.wifiAudioQuality)
+                        .font(.system(size: 15))
+                        .foregroundColor(.secondary)
                 }
             }
             
-            Picker(selection: $settings.cellularAudioQuality) {
-                Text("Lossless").tag("Lossless")
-                Text("High").tag("High")
-                Text("Normal").tag("Normal")
-                Text("Data Saver").tag("Data Saver")
+            NavigationLink {
+                Form {
+                    Picker("Mobile Data Audio Quality", selection: $settings.cellularAudioQuality) {
+                        Text("Lossless").tag("Lossless")
+                        Text("High").tag("High")
+                        Text("Normal").tag("Normal")
+                        Text("Data Saver").tag("Data Saver")
+                    }
+                    .pickerStyle(.inline)
+                }
+                .navigationTitle("On mobile data")
             } label: {
                 HStack(spacing: 14) {
                     Image(systemName: "antenna.radiowaves.left.and.right")
                         .font(.system(size: 16))
                         .foregroundColor(.white)
                         .frame(width: 28)
+                    
                     HStack(spacing: 8) {
                         Text("On mobile data")
                             .font(.system(size: 15, weight: .regular))
                             .foregroundColor(.primary)
+                        
                         if networkMonitor.isCellular {
                             InUseBadge()
                         }
                     }
+                    
+                    Spacer()
+                    
+                    Text(settings.cellularAudioQuality)
+                        .font(.system(size: 15))
+                        .foregroundColor(.secondary)
                 }
             }
             

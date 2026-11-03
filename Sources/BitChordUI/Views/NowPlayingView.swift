@@ -238,7 +238,7 @@ public struct NowPlayingView: View {
                                         showBilingualTranslation.toggle()
                                     }
                                 } label: {
-                                    Image(systemName: showBilingualTranslation ? "character.bubble.fill" : "character.bubble")
+                                    Image(systemName: "translate")
                                         .font(.system(size: 15))
                                         .foregroundColor(showBilingualTranslation ? .white : .white.opacity(0.85))
                                         .frame(width: 36, height: 36)
@@ -517,34 +517,52 @@ public struct NowPlayingView: View {
                             }
                         } label: {
                             Image(systemName: showingLyrics ? "quote.bubble.fill" : "quote.bubble")
-                                .font(.system(size: 20))
+                                .font(.system(size: 19))
                                 .foregroundColor(showingLyrics ? .white : .white.opacity(0.6))
-                                .frame(width: 40, height: 40)
+                                .frame(width: 44, height: 44)
+                                .background(showingLyrics ? Color.white.opacity(0.15) : Color.clear)
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         }
                         .buttonStyle(.plain)
                         
                         Spacer()
                         
-                        // Headphones / Audio Output Route
-                        Button {
-                            // Route picker
-                        } label: {
-                            Image(systemName: "headphones")
-                                .font(.system(size: 20))
-                                .foregroundColor(.white.opacity(0.6))
-                                .frame(width: 40, height: 40)
-                        }
-                        .buttonStyle(.plain)
-                        
                         if showingLyrics {
-                            Spacer()
-                            
-                            // Listen Together / Person icon
+                            // Joined Headphones + Person capsule as seen in Reference Image 1
+                            HStack(spacing: 0) {
+                                Button {
+                                    // Route picker
+                                } label: {
+                                    Image(systemName: "headphones")
+                                        .font(.system(size: 17))
+                                        .foregroundColor(.white.opacity(0.85))
+                                        .frame(width: 44, height: 38)
+                                }
+                                .buttonStyle(.plain)
+                                
+                                Rectangle()
+                                    .fill(Color.white.opacity(0.15))
+                                    .frame(width: 1, height: 20)
+                                
+                                Button {
+                                    // Profile / Listen together
+                                } label: {
+                                    Image(systemName: "person.fill")
+                                        .font(.system(size: 15))
+                                        .foregroundColor(.white.opacity(0.85))
+                                        .frame(width: 44, height: 38)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .background(Color.white.opacity(0.12))
+                            .clipShape(Capsule())
+                        } else {
+                            // Standalone Headphones / Audio Output Route as seen in Reference Image 2
                             Button {
-                                // Profile / Listen together
+                                // Route picker
                             } label: {
-                                Image(systemName: "person.fill")
-                                    .font(.system(size: 19))
+                                Image(systemName: "headphones")
+                                    .font(.system(size: 20))
                                     .foregroundColor(.white.opacity(0.6))
                                     .frame(width: 40, height: 40)
                             }
