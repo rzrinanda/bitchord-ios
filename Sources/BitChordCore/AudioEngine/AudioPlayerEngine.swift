@@ -853,6 +853,13 @@ public final class AudioPlayerEngine: ObservableObject {
         }
     }
     
+    public func setVolume(_ newVolume: Float) {
+        let clamped = max(0.0, min(1.0, newVolume))
+        volume = clamped
+        player?.volume = clamped
+        YouTubeAudioBridge.shared.setVolume(clamped)
+    }
+    
     // MARK: - Observers & Now Playing
     
     private func attachTimeObserver() {

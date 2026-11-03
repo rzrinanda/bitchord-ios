@@ -57,10 +57,12 @@ public final class BitChordSettings: ObservableObject {
     @AppStorage("BitChord.Performance.RenderQuality") public var renderQuality: String = "Balanced"
     
     // Lyrics Options
+    @AppStorage("BitChord.Lyrics.ShowFullLyrics") public var showFullLyrics: Bool = false
     @AppStorage("BitChord.Lyrics.Synced") public var syncedLyricsEnabled: Bool = true
     @AppStorage("BitChord.Lyrics.BlurUnfocused") public var blurUnfocusedLyrics: Bool = true
     @AppStorage("BitChord.Lyrics.ArtistSignatures") public var artistSignaturesEnabled: Bool = false
     @AppStorage("BitChord.Lyrics.TranslationLanguage") public var translationLanguage: String = "Follows the app language"
+    @AppStorage("BitChord.Lyrics.ActiveSource") public var activeLyricSourceId: String = "betterlyrics_portato"
     @AppStorage("BitChord.Lyrics.SourcesJSON") public var lyricSourcesJSON: String = ""
     
     // Local Music

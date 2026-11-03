@@ -18,10 +18,14 @@ public actor LyricsManager {
     }
     
     /// Loads lyrics for a given track with automatic caching, storage fallback, and network lookup.
-    public func loadLyrics(for track: Track) async -> Lyrics? {
+    public func loadLyrics(for track: Track, provider: String? = nil) async -> Lyrics? {
+        let effectiveProvider = provider ?? "BetterLyrics"
+        
         // Step 1: Check Local Storage / In-memory Cache
         if let cached = await storage.getLyrics(for: track.id) {
-            return cached
+            if provider == nil || cached.provider.lowercased() == effectiveProvider.lowercased() {
+                return cached
+            }
         }
         
         // Step 2: Fetch from Online Provider (LRCLIB)
@@ -38,14 +42,14 @@ public actor LyricsManager {
             
             if let synced = response.syncedLyrics, !synced.isEmpty {
                 rawLRC = synced
-                lyrics = parser.parse(trackId: track.id, lrcContent: synced, provider: "LRCLIB")
+                lyrics = parser.parse(trackId: track.id, lrcContent: synced, provider: effectiveProvider)
             } else if let plain = response.plainLyrics, !plain.isEmpty {
                 lyrics = Lyrics(
                     trackId: track.id,
                     isSynced: false,
                     lines: [],
                     plainLyrics: plain,
-                    provider: "LRCLIB",
+                    provider: effectiveProvider,
                     source: .network
                 )
             } else {

@@ -1685,6 +1685,17 @@ private struct AppearanceDetailView: View {
             }
             
             Section {
+                Toggle(isOn: $settings.showFullLyrics) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Show full lyrics")
+                            .font(.system(size: 15, weight: .medium))
+                        Text("Opens Now Playing directly in full synchronized lyrics mode")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .tint(.teal)
+                
                 Toggle(isOn: $settings.artistSignaturesEnabled) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Artist signatures")
@@ -1815,6 +1826,17 @@ private struct LyricsDetailView: View {
     var body: some View {
         Form {
             Section {
+                Toggle(isOn: $settings.showFullLyrics) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Show full lyrics")
+                            .font(.system(size: 15, weight: .medium))
+                        Text("Opens Now Playing directly in full synchronized lyrics mode")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .tint(.teal)
+                
                 Toggle(isOn: $settings.artistSignaturesEnabled) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Artist signatures")
