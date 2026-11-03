@@ -5,7 +5,7 @@ public actor YTMusicClient {
     private let session: URLSession
     
     // Innertube Public API key
-    private let innertubeKey = "AIzaSyAO_FJ2SlqAE4Anad-CA4Pr-G93427u1r"
+    private let innertubeKey = "AIzaSyDyT5W0Jh49F30Pqqtyfdf7pDLFKLJoAnw"
     
     // Fast reliable Piped and Invidious instances
     private let pipedInstances = [

@@ -471,6 +471,12 @@ public final class AudioPlayerEngine: ObservableObject {
     }
     
     public func resume() {
+        if status == .idle || status == .error {
+            if !queue.isEmpty {
+                playTrack(at: queueIndex)
+                return
+            }
+        }
         switch activeBackend {
         case .youtubeBridge:
             YouTubeAudioBridge.shared.resume()

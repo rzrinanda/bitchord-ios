@@ -101,7 +101,8 @@ public final class YouTubeAudioBridge: NSObject {
               'rel': 0,
               'fs': 0,
               'disablekb': 1,
-              'enablejsapi': 1
+              'enablejsapi': 1,
+              'origin': 'https://bitchord.app'
             },
             events: {
               'onReady': onPlayerReady,
@@ -132,7 +133,7 @@ public final class YouTubeAudioBridge: NSObject {
             if (player.unMute) player.unMute();
             if (player.setVolume) player.setVolume(100);
           } catch(e) {}
-          player.loadVideoById({ videoId: vId, suggestedQuality: 'default' });
+          player.loadVideoById(vId);
           player.playVideo();
         }
 
@@ -178,7 +179,7 @@ public final class YouTubeAudioBridge: NSObject {
         </html>
         """
         
-        webView?.loadHTMLString(html, baseURL: URL(string: "https://www.youtube.com"))
+        webView?.loadHTMLString(html, baseURL: URL(string: "https://bitchord.app"))
     }
     #endif
     
@@ -272,6 +273,14 @@ public struct YouTubeBridgeView: UIViewRepresentable {
         return YouTubeAudioBridge.shared.getWebView()
     }
     public func updateUIView(_ uiView: WKWebView, context: Context) {}
+}
+#elseif os(macOS)
+public struct YouTubeBridgeView: NSViewRepresentable {
+    public init() {}
+    public func makeNSView(context: Context) -> WKWebView {
+        return YouTubeAudioBridge.shared.getWebView()
+    }
+    public func updateNSView(_ nsView: WKWebView, context: Context) {}
 }
 #endif
 

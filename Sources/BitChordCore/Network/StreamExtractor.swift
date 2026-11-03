@@ -26,7 +26,7 @@ public actor StreamExtractor {
     public static let shared = StreamExtractor()
     
     // YouTube Innertube public client key
-    private let innertubeKey = "AIzaSyAO_FJ2SlqAE4Anad-CA4Pr-G93427u1r"
+    private let innertubeKey = "AIzaSyDyT5W0Jh49F30Pqqtyfdf7pDLFKLJoAnw"
     
     private let pipedInstances = [
         "https://pipedapi.kavin.rocks",

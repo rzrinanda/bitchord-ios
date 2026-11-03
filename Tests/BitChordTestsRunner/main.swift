@@ -300,6 +300,16 @@ func runAllTests() async {
         assertTest(false, "Search Categories: Threw unexpected error: \(error)")
     }
     
+    // MARK: - Test 9: Official Topic Audio Resolution Fallback
+    do {
+        let topicId = await YTMusicClient.shared.resolveTopicVideoId(
+            title: "Mimpi Yang Sempurna",
+            artist: "NOAH"
+        )
+        print("  ℹ️ Resolved Topic video ID: \(topicId ?? "none")")
+        assertTest(topicId != nil && topicId?.count == 11, "Topic Resolver: Successfully resolved official Topic video ID")
+    }
+    
     print("==================================================")
     print("🏁 Test Results: \(passed) Passed, \(failed) Failed")
     print("==================================================")
