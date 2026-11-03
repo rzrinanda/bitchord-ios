@@ -165,10 +165,15 @@ public final class AudioPlayerEngine: ObservableObject {
             queue: .main
         ) { [weak self] _ in
             guard let self = self else { return }
+            self.beginBackgroundTask()
+            self.startKeepAlive()
             if self.status == .playing {
-                self.beginBackgroundTask()
-                self.startKeepAlive()
-                YouTubeAudioBridge.shared.resume()
+                if self.activeBackend == .youtubeBridge, let track = self.currentTrack, let streamURL = track.streamURL {
+                    let currentPos = self.currentTime
+                    self.startPlaying(url: streamURL, for: track, initialSeek: currentPos)
+                } else if self.activeBackend == .youtubeBridge {
+                    YouTubeAudioBridge.shared.resume()
+                }
                 self.updateNowPlayingInfo()
             }
         }
@@ -452,10 +457,15 @@ public final class AudioPlayerEngine: ObservableObject {
                     if self.queueIndex < self.queue.count && self.queue[self.queueIndex].id == targetTrackId {
                         self.queue[self.queueIndex] = updated
                     }
-                    let currentPos = self.currentTime
-                    self.startPlaying(url: streamInfo.streamURL, for: updated)
-                    if currentPos > 1.0 {
-                        self.seek(to: currentPos)
+                    #if os(iOS)
+                    let isBackgrounded = UIApplication.shared.applicationState != .active
+                    #else
+                    let isBackgrounded = false
+                    #endif
+                    
+                    if self.status != .playing || isBackgrounded {
+                        let currentPos = self.currentTime
+                        self.startPlaying(url: streamInfo.streamURL, for: updated, initialSeek: currentPos)
                     }
                 }
             }
