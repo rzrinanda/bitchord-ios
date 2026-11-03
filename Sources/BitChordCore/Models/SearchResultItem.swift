@@ -83,20 +83,18 @@ public struct SearchResultItem: Identifiable, Hashable, Codable, Sendable {
         guard !parts.isEmpty else { return "Unknown Artist" }
         
         let badgeKeywords: Set<String> = [
-            "lagu", "song", "video", "album", "artis", "artist", "playlist", "daftar putar", "single", "ep"
+            "lagu", "song", "video", "album", "artis", "artist", "playlist", "daftar putar", "single", "ep", "profil"
         ]
         
-        // If the first part is a category/type badge (e.g. "Lagu • Ada Band • ..."):
-        if badgeKeywords.contains(parts[0].lowercased()) {
-            if parts.count >= 2 {
-                return parts[1]
-            } else {
-                return "Unknown Artist"
-            }
+        for candidate in parts {
+            let lower = candidate.lowercased()
+            if badgeKeywords.contains(lower) { continue }
+            if lower.contains("ditonton") || lower.contains("pemutaran") || lower.contains("views") || lower.contains("view") || lower.contains("audiens") { continue }
+            if candidate.range(of: #"^\d+[\.:]\d+$"#, options: .regularExpression) != nil { continue }
+            if candidate.range(of: #"^\d{4}$"#, options: .regularExpression) != nil { continue }
+            return candidate
         }
-        
-        // If first part is not a category badge, it is directly the artist name (e.g. "Ada Band • Heaven Of Love • 4.18"):
-        return parts[0]
+        return "Unknown Artist"
     }
     
     public static func extractAlbum(from subtitle: String) -> String? {
@@ -104,28 +102,22 @@ public struct SearchResultItem: Identifiable, Hashable, Codable, Sendable {
         guard parts.count >= 2 else { return nil }
         
         let badgeKeywords: Set<String> = [
-            "lagu", "song", "video", "album", "artis", "artist", "playlist", "daftar putar", "single", "ep"
+            "lagu", "song", "video", "album", "artis", "artist", "playlist", "daftar putar", "single", "ep", "profil"
         ]
         
-        let candidate: String
-        if badgeKeywords.contains(parts[0].lowercased()) {
-            guard parts.count >= 3 else { return nil }
-            candidate = parts[2]
-        } else {
-            candidate = parts[1]
+        var validCandidates: [String] = []
+        for part in parts {
+            let lower = part.lowercased()
+            if badgeKeywords.contains(lower) { continue }
+            if lower.contains("ditonton") || lower.contains("pemutaran") || lower.contains("views") || lower.contains("view") || lower.contains("audiens") { continue }
+            if part.range(of: #"^\d+[\.:]\d+$"#, options: .regularExpression) != nil { continue }
+            if part.range(of: #"^\d{4}$"#, options: .regularExpression) != nil { continue }
+            validCandidates.append(part)
         }
         
-        let lower = candidate.lowercased()
-        if lower.contains("ditonton") || lower.contains("pemutaran") || lower.contains("views") || lower.contains("view") {
-            return nil
+        if validCandidates.count >= 2 {
+            return validCandidates[1]
         }
-        if candidate.range(of: #"^\d+[\.:]\d+$"#, options: .regularExpression) != nil {
-            return nil // Duration like 4.18 or 3:45
-        }
-        if candidate.range(of: #"^\d{4}$"#, options: .regularExpression) != nil {
-            return nil // Year like 2004
-        }
-        
-        return candidate
+        return nil
     }
 }

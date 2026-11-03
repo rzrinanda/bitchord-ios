@@ -106,7 +106,7 @@ public final class AudioPlayerEngine: ObservableObject {
         #if os(iOS)
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .default, options: [.allowAirPlay, .allowBluetoothA2DP])
+            try session.setCategory(.playback, mode: .default, policy: .longFormAudio, options: [])
             try session.setActive(true)
         } catch {
             print("[BitChord AudioEngine] Failed to activate AVAudioSession: \(error.localizedDescription)")
@@ -120,6 +120,7 @@ public final class AudioPlayerEngine: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self = self else { return }
                 if self.status == .playing {
+                    self.beginBackgroundTask()
                     self.startKeepAlive()
                     YouTubeAudioBridge.shared.resume()
                     self.updateNowPlayingInfo()
@@ -134,6 +135,7 @@ public final class AudioPlayerEngine: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self = self else { return }
+                self.endBackgroundTask()
                 if self.status == .playing {
                     self.updateNowPlayingInfo()
                 }
@@ -148,6 +150,7 @@ public final class AudioPlayerEngine: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self = self else { return }
                 if self.status == .playing {
+                    self.beginBackgroundTask()
                     self.startKeepAlive()
                     YouTubeAudioBridge.shared.resume()
                     self.updateNowPlayingInfo()
@@ -171,12 +174,30 @@ public final class AudioPlayerEngine: ObservableObject {
     }
     
     #if os(iOS)
+    private var backgroundTaskId: UIBackgroundTaskIdentifier = .invalid
+    
+    private func beginBackgroundTask() {
+        endBackgroundTask()
+        backgroundTaskId = UIApplication.shared.beginBackgroundTask(withName: "BitChordPlaybackKeepAlive") { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.endBackgroundTask()
+            }
+        }
+    }
+    
+    private func endBackgroundTask() {
+        if backgroundTaskId != .invalid {
+            UIApplication.shared.endBackgroundTask(backgroundTaskId)
+            backgroundTaskId = .invalid
+        }
+    }
+    
     private func setupKeepAlive() {
         guard silencePlayer == nil else { return }
         let url = makeSilentWAV()
         if let player = try? AVAudioPlayer(contentsOf: url) {
             player.numberOfLoops = -1
-            player.volume = 0.05
+            player.volume = 0.0001
             player.prepareToPlay()
             self.silencePlayer = player
         }
@@ -774,38 +795,53 @@ public final class AudioPlayerEngine: ObservableObject {
         let commandCenter = MPRemoteCommandCenter.shared()
         commandCenter.playCommand.isEnabled = true
         commandCenter.playCommand.addTarget { [weak self] _ in
-            self?.resume()
+            Task { @MainActor [weak self] in
+                self?.resume()
+            }
             return .success
         }
         commandCenter.pauseCommand.isEnabled = true
         commandCenter.pauseCommand.addTarget { [weak self] _ in
-            self?.pause()
+            Task { @MainActor [weak self] in
+                self?.pause()
+            }
             return .success
         }
         commandCenter.stopCommand.isEnabled = true
         commandCenter.stopCommand.addTarget { [weak self] _ in
-            self?.stop()
+            Task { @MainActor [weak self] in
+                self?.stop()
+            }
             return .success
         }
         commandCenter.togglePlayPauseCommand.isEnabled = true
         commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
-            self?.togglePlayPause()
+            Task { @MainActor [weak self] in
+                self?.togglePlayPause()
+            }
             return .success
         }
         commandCenter.nextTrackCommand.isEnabled = true
         commandCenter.nextTrackCommand.addTarget { [weak self] _ in
-            self?.nextTrack()
+            Task { @MainActor [weak self] in
+                self?.nextTrack()
+            }
             return .success
         }
         commandCenter.previousTrackCommand.isEnabled = true
         commandCenter.previousTrackCommand.addTarget { [weak self] _ in
-            self?.previousTrack()
+            Task { @MainActor [weak self] in
+                self?.previousTrack()
+            }
             return .success
         }
         commandCenter.changePlaybackPositionCommand.isEnabled = true
         commandCenter.changePlaybackPositionCommand.addTarget { [weak self] event in
             guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
-            self?.seek(to: event.positionTime)
+            let pos = event.positionTime
+            Task { @MainActor [weak self] in
+                self?.seek(to: pos)
+            }
             return .success
         }
         
@@ -853,17 +889,40 @@ public final class AudioPlayerEngine: ObservableObject {
             info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: cached.size) { _ in cached }
         } else if let artworkURL = track.artworkURL {
             loadArtwork(from: artworkURL, for: track.id)
-            if let fallback = UIImage(systemName: "music.note") {
-                info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: CGSize(width: 512, height: 512)) { _ in fallback }
-            }
-        } else if let fallback = UIImage(systemName: "music.note") {
-            info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: CGSize(width: 512, height: 512)) { _ in fallback }
+            let defaultArt = makeDefaultArtwork()
+            info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: defaultArt.size) { _ in defaultArt }
+        } else {
+            let defaultArt = makeDefaultArtwork()
+            info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: defaultArt.size) { _ in defaultArt }
         }
         #endif
         
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         #endif
     }
+    
+    #if os(iOS)
+    private func makeDefaultArtwork() -> UIImage {
+        let size = CGSize(width: 512, height: 512)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        return renderer.image { ctx in
+            let colors = [
+                UIColor(red: 0.85, green: 0.15, blue: 0.25, alpha: 1.0).cgColor,
+                UIColor(red: 0.12, green: 0.12, blue: 0.18, alpha: 1.0).cgColor
+            ]
+            let colorSpace = CGColorSpaceCreateDeviceRGB()
+            if let gradient = CGGradient(colorsSpace: colorSpace, colors: colors as CFArray, locations: [0.0, 1.0]) {
+                ctx.cgContext.drawLinearGradient(gradient, start: CGPoint.zero, end: CGPoint(x: 512, y: 512), options: [])
+            }
+            
+            let config = UIImage.SymbolConfiguration(pointSize: 180, weight: .bold)
+            if let icon = UIImage(systemName: "music.note", withConfiguration: config)?.withTintColor(.white, renderingMode: .alwaysOriginal) {
+                let iconRect = CGRect(x: (512 - icon.size.width) / 2, y: (512 - icon.size.height) / 2, width: icon.size.width, height: icon.size.height)
+                icon.draw(in: iconRect)
+            }
+        }
+    }
+    #endif
     
     #if os(iOS)
     private func loadArtwork(from url: URL, for trackId: String) {

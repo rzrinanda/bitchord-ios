@@ -55,6 +55,48 @@ public final class YouTubeAudioBridge: NSObject {
         
         let contentController = WKUserContentController()
         contentController.add(self, name: "bridge")
+        
+        // Multi-frame UserScript (injected into top frame AND all subframes/iframes like YouTube's)
+        let spoofScript = """
+        (function() {
+            window._bitchordUserPlaying = true;
+            
+            // 1. Force Page Visibility APIs to always report visible across all frames
+            try {
+                Object.defineProperty(document, 'hidden', { get: function() { return false; }, configurable: true });
+                Object.defineProperty(document, 'visibilityState', { get: function() { return 'visible'; }, configurable: true });
+                Object.defineProperty(document, 'webkitVisibilityState', { get: function() { return 'visible'; }, configurable: true });
+                document.hasFocus = function() { return true; };
+            } catch(e) {}
+            
+            // 2. Intercept and neuter visibilitychange, blur, and pagehide listeners on YouTube frames
+            var origAddEventListener = EventTarget.prototype.addEventListener;
+            EventTarget.prototype.addEventListener = function(type, listener, options) {
+                if (type === 'visibilitychange' || type === 'webkitvisibilitychange' || type === 'pagehide' || type === 'freeze') {
+                    return;
+                }
+                return origAddEventListener.call(this, type, listener, options);
+            };
+            
+            // 3. Intercept HTMLVideoElement.prototype.pause so automatic OS backgrounding pauses are ignored when playing
+            try {
+                var origPause = HTMLVideoElement.prototype.pause;
+                HTMLVideoElement.prototype.pause = function() {
+                    if (window._bitchordUserPlaying) {
+                        return; // Ignore automatic OS background pause
+                    }
+                    return origPause.apply(this, arguments);
+                };
+            } catch(e) {}
+        })();
+        """
+        
+        let userScript = WKUserScript(
+            source: spoofScript,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: false
+        )
+        contentController.addUserScript(userScript)
         config.userContentController = contentController
         
         // Active viewport dimensions so iOS WebKit never throttles media or timers
@@ -251,7 +293,7 @@ public final class YouTubeAudioBridge: NSObject {
             self.pendingVideoId = videoId
             return
         }
-        let script = "playVideoId('\(videoId)');"
+        let script = "window._bitchordUserPlaying = true; playVideoId('\(videoId)');"
         webView?.evaluateJavaScript(script, completionHandler: nil)
         #endif
     }
@@ -264,13 +306,15 @@ public final class YouTubeAudioBridge: NSObject {
     
     public func pause() {
         #if canImport(WebKit)
-        webView?.evaluateJavaScript("pauseVideo();", completionHandler: nil)
+        let script = "window._bitchordUserPlaying = false; pauseVideo();"
+        webView?.evaluateJavaScript(script, completionHandler: nil)
         #endif
     }
     
     public func resume() {
         #if canImport(WebKit)
-        webView?.evaluateJavaScript("resumeVideo();", completionHandler: nil)
+        let script = "window._bitchordUserPlaying = true; resumeVideo();"
+        webView?.evaluateJavaScript(script, completionHandler: nil)
         #endif
     }
     

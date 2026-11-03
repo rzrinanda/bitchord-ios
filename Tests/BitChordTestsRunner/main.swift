@@ -333,6 +333,17 @@ func runAllTests() async {
         let track2 = item2.asTrack
         assertTest(track2.artist == "Ada Band", "Metadata Extraction: Prefixed 'Lagu • Ada Band' resolves artist 'Ada Band'")
         assertTest(track2.album == "Heaven Of Love", "Metadata Extraction: Prefixed 'Lagu • Ada Band' resolves album 'Heaven Of Love'")
+        
+        // Test video result with view count
+        let item3 = SearchResultItem(
+            id: "5Ry74xQEW00",
+            title: "Manusia Bodoh",
+            subtitle: "Video • Ada Band • 3,6 jt x ditonton",
+            type: .video
+        )
+        let track3 = item3.asTrack
+        assertTest(track3.artist == "Ada Band", "Metadata Extraction: Video subtitle extracts artist 'Ada Band' bypassing view count")
+        assertTest(track3.album == "YouTube Music", "Metadata Extraction: Video subtitle defaults album to 'YouTube Music' without false views")
     }
     
     print("==================================================")
