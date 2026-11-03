@@ -268,6 +268,38 @@ func runAllTests() async {
         }
     }
     
+    // MARK: - Test 8: YouTube Music Search Categories (Albums, Playlists, Artists) & Album Tracklist Resolution
+    do {
+        // 1. Search Albums category
+        let albumResults = try await YTMusicClient.shared.searchItems(query: "muse", filter: "Albums")
+        assertTest(!albumResults.isEmpty, "Search: Category 'Albums' returns album items")
+        let albumHit = albumResults.first { $0.type == .album }
+        assertTest(albumHit != nil, "Search: Found item with type == .album")
+        if let album = albumHit {
+            assertTest(album.playlistId != nil || album.browseId != nil, "Search: Album item preserves playlistId or browseId")
+            
+            // 2. Fetch full tracklist of the album
+            let albumId = album.playlistId ?? album.browseId ?? album.id
+            let tracks = await YTMusicClient.shared.fetchPlaylistOrAlbumTracks(identifier: albumId)
+            assertTest(!tracks.isEmpty, "Album Fetcher: Retrieved playable tracks for album '\(album.title)'")
+            if let firstTrack = tracks.first {
+                assertTest(firstTrack.id.count == 11, "Album Fetcher: Track has real 11-char YouTube ID (\(firstTrack.id))")
+            }
+        }
+        
+        // 3. Search Artists category
+        let artistResults = try await YTMusicClient.shared.searchItems(query: "muse", filter: "Artists")
+        assertTest(!artistResults.isEmpty, "Search: Category 'Artists' returns artist items")
+        let artistHit = artistResults.first { $0.type == .artist }
+        assertTest(artistHit != nil, "Search: Found item with type == .artist")
+        if let artist = artistHit, let browseId = artist.browseId {
+            let artistTracks = await YTMusicClient.shared.fetchArtistTracks(browseId: browseId)
+            assertTest(!artistTracks.isEmpty, "Artist Fetcher: Retrieved top tracks for artist '\(artist.title)'")
+        }
+    } catch {
+        assertTest(false, "Search Categories: Threw unexpected error: \(error)")
+    }
+    
     print("==================================================")
     print("🏁 Test Results: \(passed) Passed, \(failed) Failed")
     print("==================================================")

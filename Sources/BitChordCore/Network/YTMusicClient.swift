@@ -27,10 +27,18 @@ public actor YTMusicClient {
     /// Multi-source resilient high-speed music search:
     /// Queries YouTube Music catalog with official BitChord filter parameters
     public func search(query: String, filter: String? = nil) async throws -> [Track] {
+        let items = try await searchItems(query: query, filter: filter)
+        if !items.isEmpty {
+            return items.map { $0.asTrack }
+        }
+        return []
+    }
+    
+    /// Returns rich heterogeneous search items matching BitChord Android (Songs, Videos, Albums, Artists, Playlists)
+    public func searchItems(query: String, filter: String? = nil) async throws -> [SearchResultItem] {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty else { return [] }
         
-        // Query official YouTube Music catalog with exact BitChord filter params
         let ytMusicResults = await searchViaInnertube(query: trimmedQuery, filter: filter)
         if !ytMusicResults.isEmpty {
             return ytMusicResults
@@ -38,12 +46,32 @@ public actor YTMusicClient {
         
         // Fallback to iTunes metadata if needed
         if let itunesResults = await searchViaITunes(query: trimmedQuery), !itunesResults.isEmpty {
-            return itunesResults
+            return itunesResults.map { track in
+                SearchResultItem(
+                    id: track.id,
+                    title: track.title,
+                    subtitle: "Lagu • \(track.artist)",
+                    type: .song,
+                    artworkURL: track.artworkURL,
+                    videoId: track.id.count == 11 ? track.id : nil,
+                    duration: track.duration
+                )
+            }
         }
         
         // Fallback to Piped
         if let pipedResults = await searchViaPiped(query: trimmedQuery), !pipedResults.isEmpty {
-            return pipedResults
+            return pipedResults.map { track in
+                SearchResultItem(
+                    id: track.id,
+                    title: track.title,
+                    subtitle: "Lagu • \(track.artist)",
+                    type: .song,
+                    artworkURL: track.artworkURL,
+                    videoId: track.id,
+                    duration: track.duration
+                )
+            }
         }
         
         return []
@@ -392,7 +420,7 @@ public actor YTMusicClient {
     }
     
     // MARK: - 4. YouTube Music Web Search
-    private func searchViaInnertube(query: String, filter: String? = nil) async -> [Track] {
+    private func searchViaInnertube(query: String, filter: String? = nil) async -> [SearchResultItem] {
         var body: [String: Any] = [
             "context": [
                 "client": [
@@ -412,7 +440,7 @@ public actor YTMusicClient {
         case "albums": "EgWKAQIYAWoKEAkQChAFEAMQBA=="
         case "artists": "EgWKAQIgAWoKEAkQChAFEAMQBA=="
         case "playlists": "EgWKAQIoAWoKEAkQChAFEAMQBA=="
-        default: "EgWKAQIIAWoKEAkQChAFEAMQBA==" // Default to Songs for official tracks
+        default: nil // "All" or nil sends no filter param, returning mixed catalog!
         }
         
         if let param = filterParam {
@@ -427,7 +455,7 @@ public actor YTMusicClient {
         request.setValue("https://music.youtube.com", forHTTPHeaderField: "Origin")
         request.setValue("https://music.youtube.com", forHTTPHeaderField: "Referer")
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        request.timeoutInterval = 5.0
+        request.timeoutInterval = 7.0
         
         guard let (data, resp) = try? await session.data(for: request),
               let http = resp as? HTTPURLResponse, http.statusCode == 200,
@@ -435,36 +463,297 @@ public actor YTMusicClient {
             return []
         }
         
-        return parseMusicSearchResults(json: json)
+        return parseMusicSearchResults(json: json, filter: filter)
     }
     
-    private func parseMusicSearchResults(json: Any) -> [Track] {
+    private func parseMusicSearchResults(json: Any, filter: String? = nil) -> [SearchResultItem] {
+        var results: [SearchResultItem] = []
+        var seen = Set<String>()
+        
+        func extract(from obj: Any) {
+            if let dict = obj as? [String: Any] {
+                if let r = dict["musicResponsiveListItemRenderer"] as? [String: Any] {
+                    var title = ""
+                    var subtitle = ""
+                    var artist = "YouTube Music"
+                    var browseId: String? = nil
+                    var pageType = ""
+                    var videoId: String? = nil
+                    var playlistId: String? = nil
+                    
+                    // 1. Extract runs from flexColumns
+                    if let flexColumns = r["flexColumns"] as? [[String: Any]] {
+                        for (idx, flex) in flexColumns.enumerated() {
+                            if let flexRenderer = flex["musicResponsiveListItemFlexColumnRenderer"] as? [String: Any],
+                               let textObj = flexRenderer["text"] as? [String: Any],
+                               let runs = textObj["runs"] as? [[String: Any]] {
+                                
+                                let text = runs.compactMap { $0["text"] as? String }.joined()
+                                if idx == 0 {
+                                    title = text
+                                    if let firstRun = runs.first,
+                                       let nav = firstRun["navigationEndpoint"] as? [String: Any] {
+                                        if let watch = nav["watchEndpoint"] as? [String: Any],
+                                           let vId = watch["videoId"] as? String {
+                                            videoId = vId
+                                        }
+                                        if let browse = nav["browseEndpoint"] as? [String: Any] {
+                                            browseId = browse["browseId"] as? String
+                                            if let cfg = browse["browseEndpointContextSupportedConfigs"] as? [String: Any],
+                                               let mCfg = cfg["browseEndpointContextMusicConfig"] as? [String: Any],
+                                               let pt = mCfg["pageType"] as? String {
+                                                pageType = pt
+                                            }
+                                        }
+                                    }
+                                } else if idx == 1 {
+                                    subtitle = text
+                                    if let firstRun = runs.first, let aName = firstRun["text"] as? String {
+                                        artist = aName
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    // 2. Fallback navigationEndpoint
+                    if let nav = r["navigationEndpoint"] as? [String: Any],
+                       let browse = nav["browseEndpoint"] as? [String: Any] {
+                        if browseId == nil {
+                            browseId = browse["browseId"] as? String
+                        }
+                        if pageType.isEmpty,
+                           let cfg = browse["browseEndpointContextSupportedConfigs"] as? [String: Any],
+                           let mCfg = cfg["browseEndpointContextMusicConfig"] as? [String: Any],
+                           let pt = mCfg["pageType"] as? String {
+                            pageType = pt
+                        }
+                    }
+                    
+                    // 3. Fallback videoId from playlistItemData
+                    if videoId == nil {
+                        if let playlistItemData = r["playlistItemData"] as? [String: Any],
+                           let vId = playlistItemData["videoId"] as? String {
+                            videoId = vId
+                        }
+                    }
+                    
+                    // 4. Overlay Play Button Endpoint (for playlistId / videoId)
+                    if let overlay = r["overlay"] as? [String: Any],
+                       let thumbOverlay = overlay["musicItemThumbnailOverlayRenderer"] as? [String: Any],
+                       let content = thumbOverlay["content"] as? [String: Any],
+                       let playBtn = content["musicPlayButtonRenderer"] as? [String: Any],
+                       let playNav = playBtn["playNavigationEndpoint"] as? [String: Any] {
+                        if let wp = playNav["watchPlaylistEndpoint"] as? [String: Any],
+                           let pId = wp["playlistId"] as? String {
+                            playlistId = pId
+                        }
+                        if videoId == nil,
+                           let we = playNav["watchEndpoint"] as? [String: Any],
+                           let vId = we["videoId"] as? String {
+                            videoId = vId
+                        }
+                    }
+                    
+                    // 5. Artwork URL
+                    var artworkURL: URL? = nil
+                    if let thumb = r["thumbnail"] as? [String: Any],
+                       let musicThumb = thumb["musicThumbnailRenderer"] as? [String: Any],
+                       let thumbObj = musicThumb["thumbnail"] as? [String: Any],
+                       let thumbs = thumbObj["thumbnails"] as? [[String: Any]],
+                       let last = thumbs.last,
+                       let u = last["url"] as? String {
+                        artworkURL = URL(string: u)
+                    }
+                    
+                    // 6. Determine item type
+                    let subLower = subtitle.lowercased()
+                    let filterLower = filter?.lowercased() ?? ""
+                    let itemType: SearchResultType
+                    
+                    if pageType.contains("ALBUM") || (browseId?.hasPrefix("MPRE") == true) || subLower.hasPrefix("album") || filterLower == "albums" {
+                        itemType = .album
+                    } else if pageType.contains("ARTIST") || (browseId?.hasPrefix("UC") == true) || subLower.hasPrefix("artist") || subLower.hasPrefix("artis") || filterLower == "artists" {
+                        itemType = .artist
+                    } else if pageType.contains("PLAYLIST") || (browseId?.hasPrefix("VL") == true) || (playlistId != nil && videoId == nil) || subLower.hasPrefix("playlist") || filterLower == "playlists" {
+                        itemType = .playlist
+                    } else if subLower.hasPrefix("video") || filterLower == "videos" {
+                        itemType = .video
+                    } else {
+                        itemType = .song
+                    }
+                    
+                    let key = videoId ?? playlistId ?? browseId ?? "\(title)_\(subtitle)"
+                    if !title.isEmpty && title != "Unknown" && seen.insert(key).inserted {
+                        results.append(
+                            SearchResultItem(
+                                id: key,
+                                title: title,
+                                subtitle: subtitle.isEmpty ? "\(itemType.rawValue) • \(artist)" : subtitle,
+                                type: itemType,
+                                artworkURL: artworkURL,
+                                videoId: videoId,
+                                browseId: browseId,
+                                playlistId: playlistId,
+                                duration: 210
+                            )
+                        )
+                    }
+                }
+                for (_, val) in dict {
+                    extract(from: val)
+                }
+            } else if let arr = obj as? [Any] {
+                for it in arr {
+                    extract(from: it)
+                }
+            }
+        }
+        
+        extract(from: json)
+        return results
+    }
+    
+    // MARK: - 5. Album & Playlist Tracklist Fetcher
+    /// Fetches all playable full-length tracks for an Album or Playlist (e.g. OLAK..., PL..., MPRE..., VL...)
+    public func fetchPlaylistOrAlbumTracks(identifier: String) async -> [Track] {
+        let cleanId = identifier.hasPrefix("VL") ? String(identifier.dropFirst(2)) : identifier
+        
+        // 1. If identifier is a playlistId, load via watch next queue endpoint
+        if cleanId.hasPrefix("OLAK") || cleanId.hasPrefix("PL") || cleanId.hasPrefix("RD") {
+            let body: [String: Any] = [
+                "context": [
+                    "client": [
+                        "clientName": "WEB_REMIX",
+                        "clientVersion": "1.20250101.01.00",
+                        "hl": "id",
+                        "gl": "ID"
+                    ]
+                ],
+                "playlistId": cleanId,
+                "isAudioOnly": true
+            ]
+            
+            guard let url = URL(string: "https://music.youtube.com/youtubei/v1/next") else { return [] }
+            var req = URLRequest(url: url)
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.setValue("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
+            req.setValue("https://music.youtube.com", forHTTPHeaderField: "Origin")
+            req.setValue("https://music.youtube.com", forHTTPHeaderField: "Referer")
+            req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+            req.timeoutInterval = 8.0
+            
+            if let (data, resp) = try? await session.data(for: req),
+               let http = resp as? HTTPURLResponse, http.statusCode == 200,
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                let tracks = parsePlaylistPanelVideos(json: json, seedVideoId: "")
+                if !tracks.isEmpty {
+                    return tracks
+                }
+            }
+        }
+        
+        // 2. Query /youtubei/v1/browse with browseId
+        let browseId = cleanId.hasPrefix("VL") || cleanId.hasPrefix("MPRE") ? cleanId : "VL\(cleanId)"
+        let browseBody: [String: Any] = [
+            "context": [
+                "client": [
+                    "clientName": "WEB_REMIX",
+                    "clientVersion": "1.20250101.01.00",
+                    "hl": "id",
+                    "gl": "ID"
+                ]
+            ],
+            "browseId": browseId
+        ]
+        
+        guard let bUrl = URL(string: "https://music.youtube.com/youtubei/v1/browse") else { return [] }
+        var bReq = URLRequest(url: bUrl)
+        bReq.httpMethod = "POST"
+        bReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        bReq.setValue("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
+        bReq.setValue("https://music.youtube.com", forHTTPHeaderField: "Origin")
+        bReq.setValue("https://music.youtube.com", forHTTPHeaderField: "Referer")
+        bReq.httpBody = try? JSONSerialization.data(withJSONObject: browseBody)
+        bReq.timeoutInterval = 8.0
+        
+        if let (data, resp) = try? await session.data(for: bReq),
+           let http = resp as? HTTPURLResponse, http.statusCode == 200,
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            let browseTracks = parseBrowseTracks(json: json)
+            if !browseTracks.isEmpty {
+                return browseTracks
+            }
+        }
+        
+        return []
+    }
+    
+    // MARK: - 6. Artist Top Tracks Fetcher
+    /// Fetches top songs of an Artist by browseId (UC...)
+    public func fetchArtistTracks(browseId: String) async -> [Track] {
+        let browseBody: [String: Any] = [
+            "context": [
+                "client": [
+                    "clientName": "WEB_REMIX",
+                    "clientVersion": "1.20250101.01.00",
+                    "hl": "id",
+                    "gl": "ID"
+                ]
+            ],
+            "browseId": browseId
+        ]
+        
+        guard let url = URL(string: "https://music.youtube.com/youtubei/v1/browse") else { return [] }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
+        req.setValue("https://music.youtube.com", forHTTPHeaderField: "Origin")
+        req.setValue("https://music.youtube.com", forHTTPHeaderField: "Referer")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: browseBody)
+        req.timeoutInterval = 8.0
+        
+        if let (data, resp) = try? await session.data(for: req),
+           let http = resp as? HTTPURLResponse, http.statusCode == 200,
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            return parseBrowseTracks(json: json)
+        }
+        return []
+    }
+    
+    private func parseBrowseTracks(json: Any) -> [Track] {
         var results: [Track] = []
+        var seen = Set<String>()
         
         func extract(from obj: Any) {
             if let dict = obj as? [String: Any] {
                 if let r = dict["musicResponsiveListItemRenderer"] as? [String: Any] {
                     var videoId: String? = nil
-                    var songTitle = "Unknown"
+                    var songTitle = "Unknown Track"
                     var artistName = "YouTube Music"
+                    var albumName = ""
                     
                     if let flexColumns = r["flexColumns"] as? [[String: Any]] {
                         for (idx, flex) in flexColumns.enumerated() {
                             if let flexRenderer = flex["musicResponsiveListItemFlexColumnRenderer"] as? [String: Any],
                                let textObj = flexRenderer["text"] as? [String: Any],
-                               let runs = textObj["runs"] as? [[String: Any]],
-                               let firstRun = runs.first,
-                               let t = firstRun["text"] as? String {
+                               let runs = textObj["runs"] as? [[String: Any]] {
                                 
+                                let text = runs.compactMap { $0["text"] as? String }.joined()
                                 if idx == 0 {
-                                    songTitle = t
-                                    if let nav = firstRun["navigationEndpoint"] as? [String: Any],
+                                    songTitle = text
+                                    if let firstRun = runs.first,
+                                       let nav = firstRun["navigationEndpoint"] as? [String: Any],
                                        let watch = nav["watchEndpoint"] as? [String: Any],
                                        let vId = watch["videoId"] as? String {
                                         videoId = vId
                                     }
                                 } else if idx == 1 {
-                                    artistName = t
+                                    artistName = text
+                                } else if idx == 2 {
+                                    albumName = text
                                 }
                             }
                         }
@@ -487,15 +776,16 @@ public actor YTMusicClient {
                         artworkURL = URL(string: u)
                     }
                     
-                    if let vId = videoId, vId.count == 11, !results.contains(where: { $0.id == vId }) {
+                    if let vId = videoId, vId.count == 11, seen.insert(vId).inserted {
                         results.append(
                             Track(
                                 id: vId,
                                 title: songTitle,
                                 artist: artistName,
-                                album: "YouTube Music",
+                                album: albumName.isEmpty ? "YouTube Music" : albumName,
                                 duration: 210,
                                 artworkURL: artworkURL,
+                                streamURL: nil,
                                 isLossless: true
                             )
                         )
