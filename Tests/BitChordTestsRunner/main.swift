@@ -310,6 +310,31 @@ func runAllTests() async {
         assertTest(topicId != nil && topicId?.count == 11, "Topic Resolver: Successfully resolved official Topic video ID")
     }
     
+    // MARK: - Test 10: Artist and Album Metadata Extraction
+    do {
+        // Test non-prefixed search result subtitle (e.g. from YouTube Music "Songs" tab)
+        let item1 = SearchResultItem(
+            id: "lgY2lwBjMjk",
+            title: "Manusia Bodoh",
+            subtitle: "Ada Band • Heaven Of Love • 4.18",
+            type: .song
+        )
+        let track1 = item1.asTrack
+        assertTest(track1.artist == "Ada Band", "Metadata Extraction: Artist correctly resolved as 'Ada Band' (not album)")
+        assertTest(track1.album == "Heaven Of Love", "Metadata Extraction: Album correctly resolved as 'Heaven Of Love'")
+        
+        // Test category-prefixed search result subtitle
+        let item2 = SearchResultItem(
+            id: "sample_vid",
+            title: "Manusia Bodoh",
+            subtitle: "Lagu • Ada Band • Heaven Of Love • 2004",
+            type: .song
+        )
+        let track2 = item2.asTrack
+        assertTest(track2.artist == "Ada Band", "Metadata Extraction: Prefixed 'Lagu • Ada Band' resolves artist 'Ada Band'")
+        assertTest(track2.album == "Heaven Of Love", "Metadata Extraction: Prefixed 'Lagu • Ada Band' resolves album 'Heaven Of Love'")
+    }
+    
     print("==================================================")
     print("🏁 Test Results: \(passed) Passed, \(failed) Failed")
     print("==================================================")

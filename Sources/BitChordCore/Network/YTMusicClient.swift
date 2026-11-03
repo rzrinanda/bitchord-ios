@@ -79,6 +79,8 @@ public actor YTMusicClient {
                     title: track.title,
                     subtitle: "Lagu • \(track.artist)",
                     type: .song,
+                    artist: track.artist,
+                    album: track.album,
                     artworkURL: track.artworkURL,
                     videoId: track.id.count == 11 ? track.id : nil,
                     duration: track.duration
@@ -94,6 +96,8 @@ public actor YTMusicClient {
                     title: track.title,
                     subtitle: "Lagu • \(track.artist)",
                     type: .song,
+                    artist: track.artist,
+                    album: track.album,
                     artworkURL: track.artworkURL,
                     videoId: track.id,
                     duration: track.duration
@@ -307,15 +311,28 @@ public actor YTMusicClient {
                     let songTitle = title?.first?["text"] as? String ?? "Unknown Title"
                     
                     var artistName = "YouTube Music"
+                    var albumName = "YouTube Music"
                     if let runs = (r["longBylineText"] as? [String: Any])?["runs"] as? [[String: Any]] {
-                        var artistRuns: [String] = []
+                        var groups: [[String]] = [[]]
                         for run in runs {
                             let t = run["text"] as? String ?? ""
-                            if t.contains("•") { break }
-                            artistRuns.append(t)
+                            if t.contains("•") {
+                                groups.append([])
+                            } else {
+                                groups[groups.count - 1].append(t)
+                            }
                         }
-                        let joined = artistRuns.joined().trimmingCharacters(in: .whitespacesAndNewlines)
-                        if !joined.isEmpty { artistName = joined }
+                        let groupStrings = groups.map { $0.joined().trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+                        if let first = groupStrings.first, !first.isEmpty {
+                            artistName = first
+                        }
+                        if groupStrings.count > 1 {
+                            let candidate = groupStrings[1]
+                            let lower = candidate.lowercased()
+                            if !lower.contains("views") && !lower.contains("ditonton") && !lower.contains("pemutaran") && candidate.range(of: #"^\d+[\.:]\d+$"#, options: .regularExpression) == nil {
+                                albumName = candidate
+                            }
+                        }
                     }
                     
                     var artworkURL: URL? = nil
@@ -340,7 +357,7 @@ public actor YTMusicClient {
                             id: vId,
                             title: songTitle,
                             artist: artistName,
-                            album: "YouTube Music",
+                            album: albumName,
                             duration: duration,
                             artworkURL: artworkURL,
                             isLossless: true
@@ -581,6 +598,8 @@ public actor YTMusicClient {
                     var title = ""
                     var subtitle = ""
                     var artist = "YouTube Music"
+                    var extractedArtist: String? = nil
+                    var extractedAlbum: String? = nil
                     var browseId: String? = nil
                     var pageType = ""
                     var videoId: String? = nil
@@ -613,6 +632,36 @@ public actor YTMusicClient {
                                     }
                                 } else if idx == 1 {
                                     subtitle = text
+                                    
+                                    // Parse artist and album directly from run endpoints
+                                    var runGroups: [[[String: Any]]] = [[]]
+                                    for run in runs {
+                                        let t = (run["text"] as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
+                                        if t == "•" {
+                                            runGroups.append([])
+                                        } else {
+                                            runGroups[runGroups.count - 1].append(run)
+                                        }
+                                    }
+                                    
+                                    for group in runGroups {
+                                        for run in group {
+                                            if let nav = run["navigationEndpoint"] as? [String: Any],
+                                               let browse = nav["browseEndpoint"] as? [String: Any] {
+                                                let bId = browse["browseId"] as? String ?? ""
+                                                let pType = ((browse["browseEndpointContextSupportedConfigs"] as? [String: Any])?["browseEndpointContextMusicConfig"] as? [String: Any])?["pageType"] as? String ?? ""
+                                                
+                                                if (pType.contains("ARTIST") || bId.hasPrefix("UC")) && extractedArtist == nil {
+                                                    let name = group.compactMap { $0["text"] as? String }.joined().trimmingCharacters(in: .whitespaces)
+                                                    if !name.isEmpty { extractedArtist = name }
+                                                } else if (pType.contains("ALBUM") || bId.hasPrefix("MPRE")) && extractedAlbum == nil {
+                                                    let aName = group.compactMap { $0["text"] as? String }.joined().trimmingCharacters(in: .whitespaces)
+                                                    if !aName.isEmpty { extractedAlbum = aName }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    
                                     if let firstRun = runs.first, let aName = firstRun["text"] as? String {
                                         artist = aName
                                     }
@@ -688,14 +737,23 @@ public actor YTMusicClient {
                         itemType = .song
                     }
                     
+                    if extractedArtist == nil {
+                        extractedArtist = SearchResultItem.extractArtist(from: subtitle, type: itemType)
+                    }
+                    if extractedAlbum == nil {
+                        extractedAlbum = SearchResultItem.extractAlbum(from: subtitle)
+                    }
+                    
                     let key = videoId ?? playlistId ?? browseId ?? "\(title)_\(subtitle)"
                     if !title.isEmpty && title != "Unknown" && seen.insert(key).inserted {
                         results.append(
                             SearchResultItem(
                                 id: key,
                                 title: title,
-                                subtitle: subtitle.isEmpty ? "\(itemType.rawValue) • \(artist)" : subtitle,
+                                subtitle: subtitle.isEmpty ? "\(itemType.rawValue) • \(extractedArtist ?? artist)" : subtitle,
                                 type: itemType,
+                                artist: extractedArtist,
+                                album: extractedAlbum,
                                 artworkURL: artworkURL,
                                 videoId: videoId,
                                 browseId: browseId,
@@ -832,13 +890,71 @@ public actor YTMusicClient {
         var results: [Track] = []
         var seen = Set<String>()
         
+        // Extract album/playlist header metadata
+        var headerArtist: String? = nil
+        var headerAlbum: String? = nil
+        var headerArtworkURL: URL? = nil
+        
+        func extractHeader(from obj: Any) {
+            guard headerArtist == nil || headerAlbum == nil || headerArtworkURL == nil else { return }
+            if let dict = obj as? [String: Any] {
+                if let header = dict["musicResponsiveHeaderRenderer"] as? [String: Any] {
+                    if let strapline = header["straplineTextOne"] as? [String: Any],
+                       let runs = strapline["runs"] as? [[String: Any]] {
+                        let name = runs.compactMap { $0["text"] as? String }.joined().trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !name.isEmpty { headerArtist = name }
+                    }
+                    if let titleObj = header["title"] as? [String: Any],
+                       let runs = titleObj["runs"] as? [[String: Any]] {
+                        let aName = runs.compactMap { $0["text"] as? String }.joined().trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !aName.isEmpty { headerAlbum = aName }
+                    }
+                    if let thumb = header["thumbnail"] as? [String: Any],
+                       let mThumb = thumb["musicThumbnailRenderer"] as? [String: Any],
+                       let tObj = mThumb["thumbnail"] as? [String: Any],
+                       let thumbs = tObj["thumbnails"] as? [[String: Any]],
+                       let last = thumbs.last,
+                       let u = last["url"] as? String {
+                        headerArtworkURL = URL(string: u)
+                    }
+                } else if let detail = dict["musicDetailHeaderRenderer"] as? [String: Any] {
+                    if let subObj = detail["subtitle"] as? [String: Any],
+                       let runs = subObj["runs"] as? [[String: Any]] {
+                        for run in runs {
+                            if let nav = run["navigationEndpoint"] as? [String: Any],
+                               let browse = nav["browseEndpoint"] as? [String: Any] {
+                                let bId = browse["browseId"] as? String ?? ""
+                                if bId.hasPrefix("UC") {
+                                    headerArtist = run["text"] as? String
+                                }
+                            }
+                        }
+                    }
+                    if let titleObj = detail["title"] as? [String: Any],
+                       let runs = titleObj["runs"] as? [[String: Any]] {
+                        let aName = runs.compactMap { $0["text"] as? String }.joined().trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !aName.isEmpty { headerAlbum = aName }
+                    }
+                }
+                for (_, v) in dict {
+                    extractHeader(from: v)
+                }
+            } else if let arr = obj as? [Any] {
+                for it in arr {
+                    extractHeader(from: it)
+                }
+            }
+        }
+        
+        extractHeader(from: json)
+        
         func extract(from obj: Any) {
             if let dict = obj as? [String: Any] {
                 if let r = dict["musicResponsiveListItemRenderer"] as? [String: Any] {
                     var videoId: String? = nil
                     var songTitle = "Unknown Track"
-                    var artistName = "YouTube Music"
-                    var albumName = ""
+                    var trackArtist: String? = nil
+                    var trackAlbum: String? = nil
                     
                     if let flexColumns = r["flexColumns"] as? [[String: Any]] {
                         for (idx, flex) in flexColumns.enumerated() {
@@ -846,7 +962,7 @@ public actor YTMusicClient {
                                let textObj = flexRenderer["text"] as? [String: Any],
                                let runs = textObj["runs"] as? [[String: Any]] {
                                 
-                                let text = runs.compactMap { $0["text"] as? String }.joined()
+                                let text = runs.compactMap { $0["text"] as? String }.joined().trimmingCharacters(in: .whitespacesAndNewlines)
                                 if idx == 0 {
                                     songTitle = text
                                     if let firstRun = runs.first,
@@ -855,12 +971,41 @@ public actor YTMusicClient {
                                        let vId = watch["videoId"] as? String {
                                         videoId = vId
                                     }
-                                } else if idx == 1 {
-                                    artistName = text
-                                } else if idx == 2 {
-                                    albumName = text
+                                } else if idx == 1 && !text.isEmpty {
+                                    for run in runs {
+                                        if let nav = run["navigationEndpoint"] as? [String: Any],
+                                           let browse = nav["browseEndpoint"] as? [String: Any] {
+                                            let bId = browse["browseId"] as? String ?? ""
+                                            if bId.hasPrefix("UC") {
+                                                trackArtist = run["text"] as? String
+                                            }
+                                        }
+                                    }
+                                    if trackArtist == nil && !text.contains("pemutaran") && !text.contains("ditonton") && text.range(of: #"^\d+[\.:]\d+$"#, options: .regularExpression) == nil {
+                                        trackArtist = text
+                                    }
+                                } else if idx == 2 && !text.isEmpty {
+                                    if !text.contains("pemutaran") && !text.contains("ditonton") && text.range(of: #"^\d+[\.:]\d+$"#, options: .regularExpression) == nil {
+                                        trackAlbum = text
+                                    }
                                 }
                             }
+                        }
+                    }
+                    
+                    // Accessibility data fallback on play button (e.g. "Putar Manusia Bodoh - Ada Band" or "Play Song by Artist")
+                    if trackArtist == nil,
+                       let overlay = r["overlay"] as? [String: Any],
+                       let mOverlay = overlay["musicItemThumbnailOverlayRenderer"] as? [String: Any],
+                       let content = mOverlay["content"] as? [String: Any],
+                       let playBtn = content["musicPlayButtonRenderer"] as? [String: Any],
+                       let aData = playBtn["accessibilityPlayData"] as? [String: Any],
+                       let aInner = aData["accessibilityData"] as? [String: Any],
+                       let label = aInner["label"] as? String {
+                        if let dashIdx = label.range(of: " - ") {
+                            trackArtist = String(label[dashIdx.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+                        } else if let byIdx = label.range(of: " by ") {
+                            trackArtist = String(label[byIdx.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
                         }
                     }
                     
@@ -881,15 +1026,19 @@ public actor YTMusicClient {
                         artworkURL = URL(string: u)
                     }
                     
+                    let finalArtist = trackArtist ?? headerArtist ?? "YouTube Music"
+                    let finalAlbum = trackAlbum ?? headerAlbum ?? "YouTube Music"
+                    let finalArtwork = artworkURL ?? headerArtworkURL
+                    
                     if let vId = videoId, vId.count == 11, seen.insert(vId).inserted {
                         results.append(
                             Track(
                                 id: vId,
                                 title: songTitle,
-                                artist: artistName,
-                                album: albumName.isEmpty ? "YouTube Music" : albumName,
+                                artist: finalArtist,
+                                album: finalAlbum,
                                 duration: 210,
-                                artworkURL: artworkURL,
+                                artworkURL: finalArtwork,
                                 streamURL: nil,
                                 isLossless: true
                             )

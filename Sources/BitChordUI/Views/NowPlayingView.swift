@@ -95,10 +95,23 @@ public struct NowPlayingView: View {
                                     .foregroundColor(.white)
                                     .lineLimit(1)
                                 
-                                Text(track.artist)
-                                    .font(.system(size: 17, weight: .medium))
-                                    .foregroundColor(.white.opacity(0.7))
-                                    .lineLimit(1)
+                                HStack(spacing: 6) {
+                                    Text(track.artist)
+                                        .font(.system(size: 17, weight: .medium))
+                                        .foregroundColor(.white.opacity(0.85))
+                                        .lineLimit(1)
+                                    
+                                    if !track.album.isEmpty && track.album != "YouTube Music" && track.album.lowercased() != track.title.lowercased() && track.album.lowercased() != track.artist.lowercased() {
+                                        Text("•")
+                                            .font(.system(size: 13, weight: .bold))
+                                            .foregroundColor(.white.opacity(0.4))
+                                        
+                                        Text(track.album)
+                                            .font(.system(size: 15, weight: .regular))
+                                            .foregroundColor(.white.opacity(0.65))
+                                            .lineLimit(1)
+                                    }
+                                }
                             }
                             Spacer()
                             
