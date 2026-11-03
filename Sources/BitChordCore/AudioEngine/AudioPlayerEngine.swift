@@ -393,8 +393,27 @@ public final class AudioPlayerEngine: ObservableObject {
             self.status = .loading
             self.updateNowPlayingInfo()
             
-            // Watchdog fallback: if YouTubeAudioBridge doesn't start producing audio within 6.0s, fall back to AVPlayer!
+            // Concurrently extract native direct stream for AVPlayer (enabling uninterrupted lock-screen audio)
             let targetTrackId = track.id
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                if let streamInfo = try? await StreamExtractor.shared.extractAudioStream(trackId: targetTrackId, title: track.title, artist: track.artist) {
+                    guard self.currentTrack?.id == targetTrackId else { return }
+                    var updated = track
+                    updated.streamURL = streamInfo.streamURL
+                    self.currentTrack = updated
+                    if self.queueIndex < self.queue.count && self.queue[self.queueIndex].id == targetTrackId {
+                        self.queue[self.queueIndex] = updated
+                    }
+                    let currentPos = self.currentTime
+                    self.startPlaying(url: streamInfo.streamURL, for: updated)
+                    if currentPos > 1.0 {
+                        self.seek(to: currentPos)
+                    }
+                }
+            }
+            
+            // Watchdog fallback: if YouTubeAudioBridge doesn't start producing audio within 6.0s, fall back to AVPlayer!
             Task { @MainActor [weak self] in
                 try? await Task.sleep(nanoseconds: 6_000_000_000)
                 guard let self = self, self.currentTrack?.id == targetTrackId else { return }
@@ -424,6 +443,24 @@ public final class AudioPlayerEngine: ObservableObject {
                     self.updateNowPlayingInfo()
                     
                     let targetTrackId = vId
+                    Task { @MainActor [weak self] in
+                        guard let self = self else { return }
+                        if let streamInfo = try? await StreamExtractor.shared.extractAudioStream(trackId: targetTrackId, title: track.title, artist: track.artist) {
+                            guard self.currentTrack?.id == targetTrackId else { return }
+                            var withStream = updated
+                            withStream.streamURL = streamInfo.streamURL
+                            self.currentTrack = withStream
+                            if self.queueIndex < self.queue.count && self.queue[self.queueIndex].id == targetTrackId {
+                                self.queue[self.queueIndex] = withStream
+                            }
+                            let currentPos = self.currentTime
+                            self.startPlaying(url: streamInfo.streamURL, for: withStream)
+                            if currentPos > 1.0 {
+                                self.seek(to: currentPos)
+                            }
+                        }
+                    }
+                    
                     Task { @MainActor [weak self] in
                         try? await Task.sleep(nanoseconds: 6_000_000_000)
                         guard let self = self, self.currentTrack?.id == targetTrackId else { return }
@@ -940,4 +977,40 @@ public final class AudioPlayerEngine: ObservableObject {
         }
     }
     #endif
+    
+    // MARK: - Audio Routing & Hardware Device Info
+    public var currentOutputDeviceName: String {
+        #if os(iOS)
+        let outputs = AVAudioSession.sharedInstance().currentRoute.outputs
+        if let first = outputs.first {
+            return first.portName
+        }
+        return "This phone"
+        #else
+        return "This Mac"
+        #endif
+    }
+    
+    public var currentOutputRouteType: String {
+        #if os(iOS)
+        let outputs = AVAudioSession.sharedInstance().currentRoute.outputs
+        if let first = outputs.first {
+            switch first.portType {
+            case .builtInSpeaker, .builtInReceiver:
+                return "PHONE"
+            case .bluetoothA2DP, .bluetoothHFP, .bluetoothLE:
+                return "BLUETOOTH"
+            case .airPlay:
+                return "AIRPLAY"
+            case .headphones, .headsetMic:
+                return "HEADPHONES"
+            default:
+                return first.portType.rawValue.uppercased()
+            }
+        }
+        return "PHONE"
+        #else
+        return "INTERNAL"
+        #endif
+    }
 }

@@ -7,9 +7,12 @@ public struct NowPlayingView: View {
     
     @State private var showingLyrics: Bool = false
     @State private var showingQueue: Bool = false
+    @State private var showingAudioPipeline: Bool = false
     @State private var isDraggingSlider: Bool = false
     @State private var dragSliderValue: Double = 0
     @State private var selectedTrackForMenu: Track? = nil
+    @State private var currentLyricLine: String? = nil
+    @State private var loadedLyrics: Lyrics? = nil
     
     public init() {}
     
@@ -33,14 +36,19 @@ public struct NowPlayingView: View {
                         
                         Spacer()
                         
-                        // Audio Quality Badge
-                        Text(track.audioBadge)
-                            .font(.system(size: 10, weight: .bold))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(Color.white.opacity(0.15))
-                            .clipShape(Capsule())
-                            .foregroundColor(.white.opacity(0.9))
+                        // Audio Quality Badge -> Opens Audio Pipeline
+                        Button {
+                            showingAudioPipeline = true
+                        } label: {
+                            Text(track.audioBadge)
+                                .font(.system(size: 10, weight: .bold))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Color.white.opacity(0.15))
+                                .clipShape(Capsule())
+                                .foregroundColor(.white.opacity(0.9))
+                        }
+                        .buttonStyle(.plain)
                         
                         Spacer()
                         
@@ -113,6 +121,34 @@ public struct NowPlayingView: View {
                                             .lineLimit(1)
                                     }
                                 }
+                                
+                                // Synchronized Lyric / Instrumental Snippet (Matching Reference Video Frame 001/010)
+                                Button {
+                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                        showingLyrics.toggle()
+                                    }
+                                } label: {
+                                    HStack(spacing: 4) {
+                                        if let line = currentLyricLine, !line.isEmpty {
+                                            Text(line)
+                                                .font(.system(size: 13, weight: .medium))
+                                                .foregroundColor(.white.opacity(0.85))
+                                                .lineLimit(1)
+                                        } else {
+                                            Image(systemName: "music.note")
+                                                .font(.system(size: 11))
+                                                .foregroundColor(.white.opacity(0.6))
+                                            Text("Instrumental")
+                                                .font(.system(size: 13, weight: .medium))
+                                                .foregroundColor(.white.opacity(0.75))
+                                        }
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 10, weight: .bold))
+                                            .foregroundColor(.white.opacity(0.45))
+                                    }
+                                    .padding(.top, 2)
+                                }
+                                .buttonStyle(.plain)
                             }
                             Spacer()
                             
@@ -165,7 +201,29 @@ public struct NowPlayingView: View {
                             Text(formatTime(isDraggingSlider ? dragSliderValue : engine.currentTime))
                                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
                                 .foregroundColor(.white.opacity(0.6))
+                            
                             Spacer()
+                            
+                            // Audio Pipeline Trigger Pill (Matching User Reference Video)
+                            Button {
+                                showingAudioPipeline = true
+                            } label: {
+                                HStack(spacing: 5) {
+                                    Image(systemName: "headphones")
+                                        .font(.system(size: 11))
+                                    Text(track.audioBadge.capitalized)
+                                        .font(.system(size: 11, weight: .semibold))
+                                }
+                                .foregroundColor(.white.opacity(0.85))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 3)
+                                .background(Color.white.opacity(0.12))
+                                .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            
+                            Spacer()
+                            
                             Text("-\(formatTime(max(0, engine.duration - (isDraggingSlider ? dragSliderValue : engine.currentTime))))")
                                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
                                 .foregroundColor(.white.opacity(0.6))
@@ -321,6 +379,36 @@ public struct NowPlayingView: View {
         }
         .sheet(item: $selectedTrackForMenu) { track in
             TrackContextMenuSheet(track: track)
+        }
+        .sheet(isPresented: $showingAudioPipeline) {
+            if let track = engine.currentTrack {
+                AudioPipelineSheet(track: track)
+            }
+        }
+        .task(id: engine.currentTrack?.id) {
+            guard let track = engine.currentTrack else {
+                currentLyricLine = nil
+                loadedLyrics = nil
+                return
+            }
+            let l = await LyricsManager.shared.loadLyrics(for: track)
+            self.loadedLyrics = l
+            if let l = l {
+                if let idx = l.activeLineIndex(for: engine.currentTime), idx < l.lines.count {
+                    currentLyricLine = l.lines[idx].text
+                } else {
+                    currentLyricLine = l.lines.first?.text
+                }
+            } else {
+                currentLyricLine = nil
+            }
+        }
+        .onChange(of: engine.currentTime) { _, newTime in
+            if let l = loadedLyrics {
+                if let idx = l.activeLineIndex(for: newTime), idx < l.lines.count {
+                    currentLyricLine = l.lines[idx].text
+                }
+            }
         }
     }
     
