@@ -55,8 +55,6 @@ public final class YouTubeAudioBridge: NSObject {
         // Multi-frame UserScript (injected into top frame AND all subframes/iframes like YouTube's)
         let spoofScript = """
         (function() {
-            window._bitchordUserPlaying = true;
-            
             // 1. Force Page Visibility APIs to always report visible across all frames
             try {
                 Object.defineProperty(document, 'hidden', { get: function() { return false; }, configurable: true });
@@ -73,17 +71,6 @@ public final class YouTubeAudioBridge: NSObject {
                 }
                 return origAddEventListener.call(this, type, listener, options);
             };
-            
-            // 3. Intercept HTMLVideoElement.prototype.pause so automatic OS backgrounding pauses are ignored when playing
-            try {
-                var origPause = HTMLVideoElement.prototype.pause;
-                HTMLVideoElement.prototype.pause = function() {
-                    if (window._bitchordUserPlaying) {
-                        return; // Ignore automatic OS background pause
-                    }
-                    return origPause.apply(this, arguments);
-                };
-            } catch(e) {}
         })();
         """
         
@@ -221,7 +208,15 @@ public final class YouTubeAudioBridge: NSObject {
           if ('mediaSession' in navigator) {
             try { navigator.mediaSession.playbackState = 'paused'; } catch(e) {}
           }
-          if (player && player.pauseVideo) player.pauseVideo();
+          if (player && player.pauseVideo) {
+            try { player.pauseVideo(); } catch(e) {}
+          }
+          try {
+            var vids = document.getElementsByTagName('video');
+            for (var i = 0; i < vids.length; i++) {
+              vids[i].pause();
+            }
+          } catch(e) {}
         }
 
         function resumeVideo() {
@@ -234,7 +229,15 @@ public final class YouTubeAudioBridge: NSObject {
           if ('mediaSession' in navigator) {
             try { navigator.mediaSession.playbackState = 'playing'; } catch(e) {}
           }
-          if (player && player.playVideo) player.playVideo();
+          if (player && player.playVideo) {
+            try { player.playVideo(); } catch(e) {}
+          }
+          try {
+            var vids = document.getElementsByTagName('video');
+            for (var i = 0; i < vids.length; i++) {
+              vids[i].play();
+            }
+          } catch(e) {}
         }
 
         function seekTo(seconds) {
@@ -246,16 +249,8 @@ public final class YouTubeAudioBridge: NSObject {
         }
 
         function onPlayerStateChange(event) {
-          // If paused automatically by OS backgrounding/minimization while user intended playback, force resume!
-          if (event.data === 2 && isUserPlaying) {
-            if (player && player.playVideo) {
-              player.playVideo();
-            }
-            return;
-          }
-          
           window.webkit.messageHandlers.bridge.postMessage({ type: 'state', state: event.data });
-          if (event.data === 5 && player && player.playVideo) {
+          if (event.data === 5 && player && player.playVideo && isUserPlaying) {
             player.playVideo();
           }
         }
@@ -282,14 +277,17 @@ public final class YouTubeAudioBridge: NSObject {
     }
     #endif
     
+    public private(set) var isPausedByUser: Bool = false
+    
     public func play(videoId: String) {
+        self.isPausedByUser = false
         self.currentVideoId = videoId
         #if canImport(WebKit)
         if !isReady {
             self.pendingVideoId = videoId
             return
         }
-        let script = "window._bitchordUserPlaying = true; playVideoId('\(videoId)');"
+        let script = "playVideoId('\(videoId)');"
         webView?.evaluateJavaScript(script, completionHandler: nil)
         #endif
     }
@@ -301,15 +299,17 @@ public final class YouTubeAudioBridge: NSObject {
     }
     
     public func pause() {
+        self.isPausedByUser = true
         #if canImport(WebKit)
-        let script = "window._bitchordUserPlaying = false; pauseVideo();"
+        let script = "pauseVideo();"
         webView?.evaluateJavaScript(script, completionHandler: nil)
         #endif
     }
     
     public func resume() {
+        self.isPausedByUser = false
         #if canImport(WebKit)
-        let script = "window._bitchordUserPlaying = true; resumeVideo();"
+        let script = "resumeVideo();"
         webView?.evaluateJavaScript(script, completionHandler: nil)
         #endif
     }
@@ -347,11 +347,17 @@ extension YouTubeAudioBridge: WKScriptMessageHandler {
                 case 0: // Ended
                     self.onPlaybackEnded?()
                 case 1: // Playing
-                    self.onPlaybackStateChanged?(.playing)
+                    if self.isPausedByUser {
+                        self.pause()
+                    } else {
+                        self.onPlaybackStateChanged?(.playing)
+                    }
                 case 2: // Paused
                     self.onPlaybackStateChanged?(.paused)
                 case 3: // Buffering
-                    self.onPlaybackStateChanged?(.loading)
+                    if !self.isPausedByUser {
+                        self.onPlaybackStateChanged?(.loading)
+                    }
                 default:
                     break
                 }

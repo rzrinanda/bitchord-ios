@@ -9,6 +9,7 @@ public struct NowPlayingView: View {
     @State private var showingQueue: Bool = false
     @State private var isDraggingSlider: Bool = false
     @State private var dragSliderValue: Double = 0
+    @State private var selectedTrackForMenu: Track? = nil
     
     public init() {}
     
@@ -115,14 +116,26 @@ public struct NowPlayingView: View {
                             }
                             Spacer()
                             
-                            Button {
-                                library.toggleLike(track: track)
-                            } label: {
-                                Image(systemName: library.isLiked(trackId: track.id) ? "heart.fill" : "heart")
-                                    .font(.system(size: 22))
-                                    .foregroundColor(library.isLiked(trackId: track.id) ? .red : .white.opacity(0.8))
+                            HStack(spacing: 18) {
+                                Button {
+                                    library.toggleLike(track: track)
+                                } label: {
+                                    Image(systemName: library.isLiked(trackId: track.id) ? "heart.fill" : "heart")
+                                        .font(.system(size: 22))
+                                        .foregroundColor(library.isLiked(trackId: track.id) ? .red : .white.opacity(0.8))
+                                }
+                                .buttonStyle(.plain)
+                                
+                                Button {
+                                    selectedTrackForMenu = track
+                                } label: {
+                                    Image(systemName: "ellipsis")
+                                        .font(.system(size: 20, weight: .bold))
+                                        .foregroundColor(.white.opacity(0.85))
+                                        .frame(width: 32, height: 32)
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
                         .padding(.horizontal, 32)
                         .padding(.bottom, 16)
@@ -305,6 +318,9 @@ public struct NowPlayingView: View {
         }
         .sheet(isPresented: $showingQueue) {
             QueueSheetView()
+        }
+        .sheet(item: $selectedTrackForMenu) { track in
+            TrackContextMenuSheet(track: track)
         }
     }
     

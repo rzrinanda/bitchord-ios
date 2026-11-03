@@ -121,7 +121,7 @@ public final class AudioPlayerEngine: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self = self else { return }
-                if self.status == .playing {
+                if self.status == .playing && !YouTubeAudioBridge.shared.isPausedByUser {
                     self.beginBackgroundTask()
                     self.startKeepAlive()
                     YouTubeAudioBridge.shared.resume()
@@ -151,7 +151,7 @@ public final class AudioPlayerEngine: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self = self else { return }
-                if self.status == .playing {
+                if self.status == .playing && !YouTubeAudioBridge.shared.isPausedByUser {
                     self.beginBackgroundTask()
                     self.startKeepAlive()
                     YouTubeAudioBridge.shared.resume()
