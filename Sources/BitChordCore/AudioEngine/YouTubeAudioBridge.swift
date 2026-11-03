@@ -59,7 +59,6 @@ public final class YouTubeAudioBridge: NSObject {
         
         // Active viewport dimensions so iOS WebKit never throttles media or timers
         let wv = WKWebView(frame: .init(x: 0, y: 0, width: 100, height: 100), configuration: config)
-        wv.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
         #if os(iOS)
         wv.isOpaque = false
         wv.backgroundColor = .clear
@@ -76,7 +75,8 @@ public final class YouTubeAudioBridge: NSObject {
         <!DOCTYPE html>
         <html>
         <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="referrer" content="strict-origin-when-cross-origin">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
         <style>
           body, html { margin:0; padding:0; width:100%; height:100%; background-color:#000; overflow:hidden; }
           #player { width:100%; height:100%; }
@@ -101,8 +101,7 @@ public final class YouTubeAudioBridge: NSObject {
               'rel': 0,
               'fs': 0,
               'disablekb': 1,
-              'enablejsapi': 1,
-              'origin': 'https://www.youtube.com'
+              'enablejsapi': 1
             },
             events: {
               'onReady': onPlayerReady,

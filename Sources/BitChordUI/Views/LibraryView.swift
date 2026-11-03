@@ -72,12 +72,12 @@ public struct LibraryView: View {
                                 // Card 2: Top Song (Kangen / Dewa 19)
                                 Button {
                                     let kangen = Track(
-                                        id: "q_k8g6X2jls",
+                                        id: "utgn0LCDirk",
                                         title: "Kangen",
                                         artist: "Dewa 19",
                                         album: "19",
                                         duration: 312,
-                                        artworkURL: URL(string: "https://i.ytimg.com/vi/q_k8g6X2jls/hqdefault.jpg"),
+                                        artworkURL: URL(string: "https://i.ytimg.com/vi/utgn0LCDirk/hqdefault.jpg"),
                                         isLossless: true
                                     )
                                     engine.setQueue([kangen], startIndex: 0)

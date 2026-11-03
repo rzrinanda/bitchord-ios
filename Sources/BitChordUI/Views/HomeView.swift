@@ -9,39 +9,39 @@ public struct HomeView: View {
     // Top Picks matching user's car Head Unit (Photo 1 & 4)
     private let topPicks: [Track] = [
         Track(
-            id: "aL3Z_bA8d38",
+            id: "IqxdiPd_q40",
             title: "Mimpi Yang Sempurna",
             artist: "NOAH",
             album: "Taman Langit",
             duration: 218,
-            artworkURL: URL(string: "https://i.ytimg.com/vi/aL3Z_bA8d38/hqdefault.jpg"),
+            artworkURL: URL(string: "https://i.ytimg.com/vi/IqxdiPd_q40/hqdefault.jpg"),
             isLossless: true
         ),
         Track(
-            id: "q_k8g6X2jls",
+            id: "utgn0LCDirk",
             title: "Kangen",
             artist: "Dewa 19",
             album: "19",
             duration: 312,
-            artworkURL: URL(string: "https://i.ytimg.com/vi/q_k8g6X2jls/hqdefault.jpg"),
+            artworkURL: URL(string: "https://i.ytimg.com/vi/utgn0LCDirk/hqdefault.jpg"),
             isLossless: true
         ),
         Track(
-            id: "wO0A0XcWy88",
+            id: "b0ZBBjViV8Y",
             title: "Separuh Aku",
             artist: "NOAH",
             album: "Seperti Seharusnya",
             duration: 268,
-            artworkURL: URL(string: "https://i.ytimg.com/vi/wO0A0XcWy88/hqdefault.jpg"),
+            artworkURL: URL(string: "https://i.ytimg.com/vi/b0ZBBjViV8Y/hqdefault.jpg"),
             isLossless: true
         ),
         Track(
-            id: "b_H_y2fHqZs",
+            id: "CNbmVEEW-mA",
             title: "Yang Terdalam",
             artist: "NOAH",
             album: "Taman Langit",
             duration: 198,
-            artworkURL: URL(string: "https://i.ytimg.com/vi/b_H_y2fHqZs/hqdefault.jpg"),
+            artworkURL: URL(string: "https://i.ytimg.com/vi/CNbmVEEW-mA/hqdefault.jpg"),
             isLossless: true
         ),
         Track(

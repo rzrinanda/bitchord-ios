@@ -41,12 +41,12 @@ public final class LibraryDatabase: ObservableObject {
             // Default seed matching user's car HU search history (Photo 2)
             self.recentSearches = [
                 Track(
-                    id: "b_H_y2fHqZs",
+                    id: "CNbmVEEW-mA",
                     title: "Yang Terdalam",
                     artist: "NOAH",
                     album: "Taman Langit",
                     duration: 198,
-                    artworkURL: URL(string: "https://i.ytimg.com/vi/b_H_y2fHqZs/hqdefault.jpg"),
+                    artworkURL: URL(string: "https://i.ytimg.com/vi/CNbmVEEW-mA/hqdefault.jpg"),
                     isLossless: true
                 )
             ]

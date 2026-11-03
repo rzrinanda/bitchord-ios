@@ -78,11 +78,6 @@ public actor StreamExtractor {
             return invidious
         }
         
-        // Strategy 5: High-Fidelity Audio Catalog (Instant Audio Fallback)
-        if let title = title, let catalog = await extractViaAudioCatalog(title: title, artist: artist) {
-            return catalog
-        }
-        
         throw URLError(.cannotFindHost)
     }
     
@@ -266,52 +261,6 @@ public actor StreamExtractor {
                 )
             }
         }
-        return nil
-    }
-    
-    // MARK: - 2. High-Fidelity Audio Catalog Fallback (Instant AAC / ALAC)
-    private func extractViaAudioCatalog(title: String, artist: String?) async -> StreamInfo? {
-        let cleanTitle = title
-            .replacingOccurrences(of: "\\(.*\\)", with: "", options: .regularExpression)
-            .replacingOccurrences(of: "\\[.*\\]", with: "", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        
-        let queries = [
-            "\(cleanTitle) \(artist ?? "")",
-            cleanTitle
-        ]
-        
-        for q in queries {
-            let cleanQuery = q.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard let encoded = cleanQuery.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-                  let url = URL(string: "https://itunes.apple.com/search?term=\(encoded)&media=music&entity=song&limit=5") else {
-                continue
-            }
-            
-            var request = URLRequest(url: url)
-            request.timeoutInterval = 3.5
-            
-            guard let (data, response) = try? await URLSession.shared.data(for: request),
-                  let http = response as? HTTPURLResponse, http.statusCode == 200,
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let results = json["results"] as? [[String: Any]] else {
-                continue
-            }
-            
-            for item in results {
-                if let preview = item["previewUrl"] as? String,
-                   let streamURL = URL(string: preview) {
-                    return StreamInfo(
-                        streamURL: streamURL,
-                        format: "audio/m4a",
-                        bitrate: 256,
-                        isLossless: true,
-                        sampleRate: 44100
-                    )
-                }
-            }
-        }
-        
         return nil
     }
     

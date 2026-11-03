@@ -71,7 +71,23 @@ public final class AudioPlayerEngine: ObservableObject {
         YouTubeAudioBridge.shared.onPlaybackError = { [weak self] code in
             Task { @MainActor [weak self] in
                 guard let self = self, let track = self.currentTrack else { return }
-                print("[AudioEngine] YouTube Audio Bridge error (\(code)) - fallback to direct audio stream")
+                print("[AudioEngine] YouTube Audio Bridge error (\(code)) - resolving topic or fallback stream")
+                
+                // If embedding is restricted (101, 150, 152), automatically try the official Topic track
+                if code == 101 || code == 150 || code == 152 {
+                    if let topicId = await YTMusicClient.shared.resolveTopicVideoId(title: track.title, artist: track.artist), topicId != track.id {
+                        print("[AudioEngine] Switching to Topic videoId: \(topicId)")
+                        var updated = track
+                        updated.id = topicId
+                        self.currentTrack = updated
+                        if self.queueIndex < self.queue.count {
+                            self.queue[self.queueIndex] = updated
+                        }
+                        YouTubeAudioBridge.shared.play(videoId: topicId)
+                        return
+                    }
+                }
+                
                 self.attemptStreamFallback(for: track)
             }
         }
@@ -414,7 +430,22 @@ public final class AudioPlayerEngine: ObservableObject {
                 return
             }
             
-            // 2. High-Fidelity Multi-source StreamExtractor (Full Length Audio Only)
+            // 2. Official Topic Video fallback on YouTube bridge (Topic videos always allow embedding)
+            if let topicId = await YTMusicClient.shared.resolveTopicVideoId(title: track.title, artist: track.artist), topicId != track.id {
+                print("[BitChord AudioEngine] Fallback switching to Topic videoId: \(topicId)")
+                var updated = track
+                updated.id = topicId
+                self.currentTrack = updated
+                if self.queueIndex < self.queue.count {
+                    self.queue[self.queueIndex] = updated
+                }
+                self.activeBackend = .youtubeBridge
+                self.stopAVPlayer()
+                YouTubeAudioBridge.shared.play(videoId: topicId)
+                return
+            }
+            
+            // 3. High-Fidelity Multi-source StreamExtractor (Full Length Audio Only)
             if let streamInfo = try? await StreamExtractor.shared.extractAudioStream(trackId: track.id, title: track.title, artist: track.artist) {
                 print("[BitChord AudioEngine] StreamExtractor recovered full stream: \(streamInfo.streamURL)")
                 var recoveredTrack = track

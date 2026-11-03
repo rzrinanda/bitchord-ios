@@ -111,6 +111,41 @@ public actor YTMusicClient {
         return extractFirstVideoId(from: json)
     }
     
+    /// Resolves official YouTube Music Topic / Audio videoId which always has embedding allowed
+    public func resolveTopicVideoId(title: String, artist: String?) async -> String? {
+        let cleanArtist = artist?.components(separatedBy: " ft.")[0].components(separatedBy: " feat.")[0].trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let query = "\(title) \(cleanArtist) topic"
+        let body: [String: Any] = [
+            "context": [
+                "client": [
+                    "clientName": "WEB_REMIX",
+                    "clientVersion": "1.20250101.01.00",
+                    "hl": "id",
+                    "gl": "ID"
+                ]
+            ],
+            "query": query
+        ]
+        
+        guard let url = URL(string: "https://music.youtube.com/youtubei/v1/search") else { return nil }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
+        req.setValue("https://music.youtube.com", forHTTPHeaderField: "Origin")
+        req.setValue("https://music.youtube.com", forHTTPHeaderField: "Referer")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        req.timeoutInterval = 4.0
+        
+        guard let (data, resp) = try? await session.data(for: req),
+              let http = resp as? HTTPURLResponse, http.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        
+        return extractFirstVideoId(from: json)
+    }
+    
     private func extractFirstVideoId(from json: Any) -> String? {
         if let dict = json as? [String: Any] {
             if let vId = dict["videoId"] as? String, vId.count == 11, !vId.hasPrefix("yt_") {
