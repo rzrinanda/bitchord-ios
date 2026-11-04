@@ -71,10 +71,34 @@ public struct NowPlayingView: View {
                     if showingLyrics {
                         // Image 1: Drag handle + Mini Track Header
                         VStack(spacing: 10) {
-                            Capsule()
-                                .fill(Color.white.opacity(0.35))
-                                .frame(width: 36, height: 4)
-                                .padding(.top, 8)
+                            HStack {
+                                Button {
+                                    dismiss()
+                                } label: {
+                                    Image(systemName: "chevron.down")
+                                        .font(.system(size: 16, weight: .bold))
+                                        .foregroundColor(.white.opacity(0.8))
+                                        .frame(width: 34, height: 34)
+                                        .background(Color.white.opacity(0.1))
+                                        .clipShape(Circle())
+                                }
+                                .buttonStyle(.plain)
+                                
+                                Spacer()
+                                
+                                Capsule()
+                                    .fill(Color.white.opacity(0.35))
+                                    .frame(width: 36, height: 4)
+                                    .onTapGesture {
+                                        dismiss()
+                                    }
+                                
+                                Spacer()
+                                
+                                Color.clear.frame(width: 34, height: 34)
+                            }
+                            .padding(.horizontal, 20)
+                            .padding(.top, 8)
                             
                             HStack(spacing: 12) {
                                 if let artURL = track.artworkURL {
@@ -134,20 +158,113 @@ public struct NowPlayingView: View {
                             .padding(.horizontal, 24)
                         }
                         .padding(.bottom, 4)
+                        .contentShape(Rectangle())
+                        .gesture(
+                            DragGesture(minimumDistance: 20)
+                                .onEnded { value in
+                                    if value.translation.height > 45 {
+                                        dismiss()
+                                    }
+                                }
+                        )
                     } else {
-                        // Image 2: Drag handle + Centered "Playing from Liked Songs"
-                        VStack(spacing: 6) {
-                            Capsule()
-                                .fill(Color.white.opacity(0.35))
-                                .frame(width: 36, height: 4)
-                                .padding(.top, 8)
+                        // Image 2: Drag handle + Dismiss button + Centered "Playing from Liked Songs"
+                        HStack {
+                            Button {
+                                dismiss()
+                            } label: {
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 16, weight: .bold))
+                                    .foregroundColor(.white.opacity(0.8))
+                                    .frame(width: 34, height: 34)
+                                    .background(Color.white.opacity(0.1))
+                                    .clipShape(Circle())
+                            }
+                            .buttonStyle(.plain)
                             
-                            Text(headerPlayingFromText(for: track))
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundColor(.white.opacity(0.75))
-                                .padding(.top, 2)
+                            Spacer()
+                            
+                            VStack(spacing: 6) {
+                                Capsule()
+                                    .fill(Color.white.opacity(0.35))
+                                    .frame(width: 36, height: 4)
+                                
+                                if !settings.hideSongStatus {
+                                    Text(headerPlayingFromText(for: track))
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundColor(.white.opacity(0.75))
+                                        .padding(.top, 2)
+                                }
+                            }
+                            .onTapGesture {
+                                dismiss()
+                            }
+                            
+                            Spacer()
+                            
+                            Color.clear.frame(width: 34, height: 34)
                         }
+                        .padding(.horizontal, 20)
+                        .padding(.top, 8)
                         .padding(.bottom, 6)
+                        .contentShape(Rectangle())
+                        .gesture(
+                            DragGesture(minimumDistance: 20)
+                                .onEnded { value in
+                                    if value.translation.height > 45 {
+                                        dismiss()
+                                    }
+                                }
+                        )
+                    }
+                    
+                    // MARK: - Stats for Nerds Live Telemetry Overlay
+                    if settings.statsForNerdsEnabled {
+                        Button {
+                            showingAudioPipeline = true
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Label("STATS FOR NERDS", systemImage: "cpu")
+                                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                        .foregroundColor(.cyan)
+                                    Spacer()
+                                    Text(engine.activeBackend == .avPlayer ? "DIRECT STREAM" : "YT ENGINE")
+                                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Color.cyan.opacity(0.2))
+                                        .foregroundColor(.cyan)
+                                        .clipShape(Capsule())
+                                }
+                                
+                                let codecText = track.isLossless ? "FLAC / ALAC" : "AAC-LC / Opus"
+                                let srKhz = String(format: "%.1f kHz", (track.sampleRate ?? 44100) / 1000.0)
+                                let bitDepthText = track.isLossless ? "\(track.bitDepth ?? ((track.sampleRate ?? 44100) > 48000 ? 24 : 16))-bit" : "16-bit"
+                                let bitrateText = track.isLossless ? ((track.sampleRate ?? 44100) > 48000 ? "4608 kbps" : "1411 kbps") : "256 kbps"
+                                
+                                Text("Codec: \(codecText) • \(bitDepthText) / \(srKhz) • \(bitrateText)")
+                                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                    .foregroundColor(.white.opacity(0.92))
+                                    .lineLimit(1)
+                                
+                                Text("Pipeline: CoreAudio \(settings.outputPrecision) • Route: \(currentDeviceRouteName) • ID: \(track.id)")
+                                    .font(.system(size: 10, weight: .regular, design: .monospaced))
+                                    .foregroundColor(.white.opacity(0.7))
+                                    .lineLimit(1)
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(Color.black.opacity(0.45))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .stroke(Color.cyan.opacity(0.35), lineWidth: 1)
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            .padding(.horizontal, 24)
+                            .padding(.bottom, 6)
+                        }
+                        .buttonStyle(.plain)
                     }
                     
                     // MARK: - Center Content (Image 1: Synced Lyrics vs Image 2: Large Artwork)
@@ -236,6 +353,7 @@ public struct NowPlayingView: View {
                                 Button {
                                     withAnimation {
                                         showBilingualTranslation.toggle()
+                                        settings.showBilingualLyrics = showBilingualTranslation
                                     }
                                 } label: {
                                     Image(systemName: "translate")
@@ -527,7 +645,7 @@ public struct NowPlayingView: View {
                         
                         Spacer()
                         
-                        if showingLyrics {
+                        if showingLyrics && settings.showListenTogetherButton {
                             // Joined Headphones + Person capsule as seen in Reference Image 1
                             HStack(spacing: 0) {
                                 Button {
@@ -657,11 +775,17 @@ public struct NowPlayingView: View {
             if settings.showFullLyrics {
                 showingLyrics = true
             }
+            if settings.showBilingualLyrics {
+                showBilingualTranslation = true
+            }
             updateAudioRoute()
         }
         .onChange(of: settings.showFullLyrics) { _, newValue in
             showingLyrics = newValue
         }
+        #if os(iOS)
+        .statusBarHidden(settings.hideStatusBarInPlayer)
+        #endif
     }
     
     private func formatTime(_ time: TimeInterval) -> String {
@@ -732,6 +856,7 @@ public struct LyricsSourcePickerSheet: View {
 
 public struct QueueSheetView: View {
     @ObservedObject var engine = AudioPlayerEngine.shared
+    @ObservedObject var settings = BitChordSettings.shared
     @Environment(\.dismiss) private var dismiss
     
     @State private var dynamicAutoPlayTracks: [Track] = []
@@ -844,6 +969,58 @@ public struct QueueSheetView: View {
                 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
+                        // MARK: - Queue History (When Show Queue History is enabled)
+                        if settings.showQueueHistory && engine.queueIndex > 0 {
+                            let historyItems = Array(engine.queue.enumerated().prefix(engine.queueIndex).suffix(25))
+                            if !historyItems.isEmpty {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("Previously played")
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundColor(.secondary)
+                                        .padding(.horizontal, 20)
+                                    
+                                    VStack(spacing: 4) {
+                                        ForEach(historyItems, id: \.element.id) { index, track in
+                                            HStack(spacing: 12) {
+                                                if let art = track.artworkURL {
+                                                    AsyncImage(url: art) { phase in
+                                                        if let img = phase.image {
+                                                            img.resizable().aspectRatio(contentMode: .fill)
+                                                        } else {
+                                                            Color.gray.opacity(0.3)
+                                                        }
+                                                    }
+                                                    .frame(width: 38, height: 38)
+                                                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                                                } else {
+                                                    BitChordLogoView(size: 38, cornerRadius: 6)
+                                                }
+                                                
+                                                VStack(alignment: .leading, spacing: 2) {
+                                                    Text(track.title)
+                                                        .font(.system(size: 14, weight: .medium))
+                                                        .foregroundColor(.secondary)
+                                                        .lineLimit(1)
+                                                    Text(track.artist)
+                                                        .font(.system(size: 12))
+                                                        .foregroundColor(.secondary.opacity(0.8))
+                                                        .lineLimit(1)
+                                                }
+                                                Spacer()
+                                            }
+                                            .padding(.horizontal, 20)
+                                            .padding(.vertical, 4)
+                                            .contentShape(Rectangle())
+                                            .onTapGesture {
+                                                engine.playTrack(at: index)
+                                            }
+                                        }
+                                    }
+                                }
+                                .padding(.top, 8)
+                            }
+                        }
+                        
                         // MARK: - Now Playing
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Now playing")

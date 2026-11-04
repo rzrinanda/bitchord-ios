@@ -58,6 +58,7 @@ public final class BitChordSettings: ObservableObject {
     
     // Lyrics Options
     @AppStorage("BitChord.Lyrics.ShowFullLyrics") public var showFullLyrics: Bool = false
+    @AppStorage("BitChord.Lyrics.ShowBilingual") public var showBilingualLyrics: Bool = false
     @AppStorage("BitChord.Lyrics.Synced") public var syncedLyricsEnabled: Bool = true
     @AppStorage("BitChord.Lyrics.BlurUnfocused") public var blurUnfocusedLyrics: Bool = true
     @AppStorage("BitChord.Lyrics.ArtistSignatures") public var artistSignaturesEnabled: Bool = false
@@ -362,9 +363,21 @@ public actor AddonService {
         guard let (data, resp) = try? await session.data(for: searchReq),
               let http = resp as? HTTPURLResponse, http.statusCode == 200,
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let tracks = json["tracks"] as? [[String: Any]],
-              let first = tracks.first,
-              let trackId = (first["id"] as? String) ?? (first["id"] as? Int).map(String.init) else {
+              let tracks = json["tracks"] as? [[String: Any]] else {
+            return nil
+        }
+        
+        // Pick the best full-length track (never a 30s sample or short clip)
+        let validTrack = tracks.first { item in
+            if let isSample = item["sample"] as? Bool, isSample { return false }
+            if let dur = (item["duration"] as? Double) ?? (item["duration"] as? Int).map(Double.init), dur > 0 && dur < 60 {
+                return false
+            }
+            return true
+        } ?? tracks.first
+        
+        guard let chosen = validTrack,
+              let trackId = (chosen["id"] as? String) ?? (chosen["id"] as? Int).map(String.init) else {
             return nil
         }
         
@@ -380,15 +393,29 @@ public actor AddonService {
             return nil
         }
         
+        // Reject any 30-second sample/preview stream
+        if let isSample = (streamJson["sample"] as? Bool) ?? (streamJson["isSample"] as? Bool), isSample {
+            return nil
+        }
+        if let streamDur = (streamJson["duration"] as? Double) ?? (streamJson["duration"] as? Int).map(Double.init), streamDur > 0 && streamDur < 60 {
+            return nil
+        }
+        let lowerURL = directURLString.lowercased()
+        if lowerURL.contains("sample") || lowerURL.contains("preview") || lowerURL.contains("teaser") {
+            return nil
+        }
+        
         let sampleRate = (streamJson["sampleRate"] as? Double) ?? Double((streamJson["sampleRate"] as? Int) ?? 44100)
         let isLossless = (streamJson["format"] as? String)?.lowercased() == "flac" || (streamJson["quality"] as? String)?.contains("FLAC") == true
+        let bitDepth = (streamJson["bitDepth"] as? Int) ?? (isLossless ? (sampleRate > 48000 ? 24 : 16) : nil)
         
         return StreamInfo(
             streamURL: directURL,
             format: (streamJson["format"] as? String) ?? "flac",
-            bitrate: 1411,
+            bitrate: sampleRate > 48000 ? 4608 : 1411,
             isLossless: isLossless,
-            sampleRate: sampleRate
+            sampleRate: sampleRate,
+            bitDepth: bitDepth
         )
     }
 }
@@ -408,10 +435,17 @@ public final class NetworkMonitor: ObservableObject {
         monitor.pathUpdateHandler = { [weak self] path in
             Task { @MainActor [weak self] in
                 guard let self = self else { return }
-                let onCellular = path.usesInterfaceType(.cellular)
-                let onWifi = path.usesInterfaceType(.wifi) || (!onCellular && path.status == .satisfied)
-                self.isCellular = onCellular
-                self.isWifi = onWifi
+                // Strictly mutually exclusive: if Wi-Fi or Ethernet is active, Wi-Fi is IN USE and Cellular is NOT.
+                if path.usesInterfaceType(.wifi) || path.usesInterfaceType(.wiredEthernet) {
+                    self.isWifi = true
+                    self.isCellular = false
+                } else if path.usesInterfaceType(.cellular) {
+                    self.isWifi = false
+                    self.isCellular = true
+                } else {
+                    self.isWifi = true
+                    self.isCellular = false
+                }
             }
         }
         monitor.start(queue: queue)

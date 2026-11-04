@@ -211,7 +211,7 @@ public struct SettingsView: View {
                             .font(.system(size: 15, weight: .regular))
                             .foregroundColor(.primary)
                         
-                        if networkMonitor.isCellular {
+                        if !networkMonitor.isWifi && networkMonitor.isCellular {
                             InUseBadge()
                         }
                     }
@@ -413,8 +413,8 @@ private struct AccountIntegrationsDetailView: View {
             }
             
             Section {
-                Button {
-                    showingSpotifySheet = true
+                NavigationLink {
+                    SpotifyConnectSheet()
                 } label: {
                     HStack {
                         Image(systemName: "music.note.list")
@@ -438,10 +438,6 @@ private struct AccountIntegrationsDetailView: View {
                         if settings.spotifyConnected {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundColor(.green)
-                        } else {
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundColor(.secondary)
                         }
                     }
                 }
@@ -449,9 +445,6 @@ private struct AccountIntegrationsDetailView: View {
                 Text("SPOTIFY")
             } footer: {
                 Text("Sign in to load your playlists. Playback uses YouTube Music.")
-            }
-            .sheet(isPresented: $showingSpotifySheet) {
-                SpotifyConnectSheet()
             }
             
             Section {
@@ -872,29 +865,20 @@ public struct SpotifyConnectSheet: View {
     public init() {}
     
     public var body: some View {
-        NavigationStack {
-            ZStack {
-                Color(red: 0.08, green: 0.09, blue: 0.11).ignoresSafeArea()
-                
-                if settings.spotifyConnected {
-                    connectedView
-                } else {
-                    unconnectedView
-                }
+        ZStack {
+            Color(red: 0.08, green: 0.09, blue: 0.11).ignoresSafeArea()
+            
+            if settings.spotifyConnected {
+                connectedView
+            } else {
+                unconnectedView
             }
-            .navigationTitle("Spotify")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") {
-                        dismiss()
-                    }
-                }
-            }
-            .task {
-                if settings.spotifyConnected {
-                    await loadPlaylists()
-                }
+        }
+        .navigationTitle("Spotify")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            if settings.spotifyConnected {
+                await loadPlaylists()
             }
         }
     }
@@ -1318,20 +1302,66 @@ public struct SpotifyConnectSheet: View {
 
 // MARK: - Spotify Web Login View (WKWebView Cookie Capture)
 #if canImport(WebKit)
-private struct SpotifyWebLoginContainerView: UIViewRepresentable {
+private struct SpotifyWebLoginContainerView: View {
+    let onCaptureSPDC: (String) -> Void
+    @State private var isLoadingPage: Bool = true
+    
+    var body: some View {
+        ZStack {
+            Color(red: 0.08, green: 0.09, blue: 0.11).ignoresSafeArea()
+            
+            SpotifyWebLoginWebView(isLoading: $isLoadingPage, onCaptureSPDC: onCaptureSPDC)
+            
+            if isLoadingPage {
+                VStack(spacing: 12) {
+                    ProgressView()
+                        .tint(.green)
+                        .scaleEffect(1.2)
+                    Text("Loading Spotify Login...")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.secondary)
+                }
+                .padding(20)
+                .background(Color(red: 0.12, green: 0.13, blue: 0.16).opacity(0.95))
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+            }
+        }
+    }
+}
+
+private struct SpotifyWebLoginWebView: UIViewRepresentable {
+    @Binding var isLoading: Bool
     let onCaptureSPDC: (String) -> Void
     
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
+        config.websiteDataStore = .default()
         config.defaultWebpagePreferences.allowsContentJavaScript = true
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
         webView.allowsBackForwardNavigationGestures = true
-        if let url = URL(string: "https://accounts.spotify.com/en/login") {
-            var req = URLRequest(url: url)
-            req.timeoutInterval = 30.0
-            webView.load(req)
+        #if os(iOS)
+        webView.isOpaque = false
+        webView.backgroundColor = UIColor(red: 0.08, green: 0.09, blue: 0.11, alpha: 1.0)
+        webView.scrollView.backgroundColor = UIColor(red: 0.08, green: 0.09, blue: 0.11, alpha: 1.0)
+        #endif
+        
+        // Clear any stale sp_dc cookie before loading login so user can cleanly sign in
+        let store = config.websiteDataStore.httpCookieStore
+        store.getAllCookies { cookies in
+            let group = DispatchGroup()
+            for cookie in cookies where cookie.name == "sp_dc" {
+                group.enter()
+                store.delete(cookie) { group.leave() }
+            }
+            group.notify(queue: .main) {
+                if let url = URL(string: "https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com%2F") {
+                    var req = URLRequest(url: url)
+                    req.timeoutInterval = 30.0
+                    webView.load(req)
+                }
+            }
         }
         return webView
     }
@@ -1339,31 +1369,53 @@ private struct SpotifyWebLoginContainerView: UIViewRepresentable {
     func updateUIView(_ uiView: WKWebView, context: Context) {}
     
     func makeCoordinator() -> Coordinator {
-        Coordinator(onCaptureSPDC: onCaptureSPDC)
+        Coordinator(parent: self, onCaptureSPDC: onCaptureSPDC)
     }
     
     class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
+        let parent: SpotifyWebLoginWebView
         let onCaptureSPDC: (String) -> Void
         private var hasCaptured: Bool = false
         
-        init(onCaptureSPDC: @escaping (String) -> Void) {
+        init(parent: SpotifyWebLoginWebView, onCaptureSPDC: @escaping (String) -> Void) {
+            self.parent = parent
             self.onCaptureSPDC = onCaptureSPDC
         }
         
+        func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+            DispatchQueue.main.async {
+                self.parent.isLoading = true
+            }
+        }
+        
+        func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+            DispatchQueue.main.async {
+                self.parent.isLoading = false
+            }
+        }
+        
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            DispatchQueue.main.async {
+                self.parent.isLoading = false
+            }
             checkCookies(in: webView)
         }
         
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-            checkCookies(in: webView)
             decisionHandler(.allow)
         }
         
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            DispatchQueue.main.async {
+                self.parent.isLoading = false
+            }
             print("[BitChord SpotifyWeb] Navigation failed: \(error.localizedDescription)")
         }
         
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            DispatchQueue.main.async {
+                self.parent.isLoading = false
+            }
             print("[BitChord SpotifyWeb] Provisional navigation failed: \(error.localizedDescription)")
         }
         
@@ -1373,7 +1425,6 @@ private struct SpotifyWebLoginContainerView: UIViewRepresentable {
         }
         
         func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-            // Handle target="_blank" or window.open popup links inside the same webView
             if navigationAction.targetFrame == nil {
                 webView.load(navigationAction.request)
             }
@@ -2415,6 +2466,17 @@ private struct MiscellaneousDetailView: View {
                     }
                 }
                 .tint(.gray)
+                
+                Toggle(isOn: $settings.statsForNerdsEnabled) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Show stats for nerds")
+                            .font(.system(size: 15, weight: .medium))
+                        Text("Codec, bitrate and sample rate on the player")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .tint(.cyan)
             } header: {
                 Text("NOW PLAYING UI")
             }

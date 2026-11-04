@@ -157,9 +157,8 @@ public struct AccountMenuSheet: View {
                 GoogleLoginSheet()
             }
             .sheet(isPresented: $showingSettings) {
-                NavigationStack {
-                    SettingsView()
-                }
+                SettingsView()
+                    .presentationDetents([.large])
             }
             .confirmationDialog("Tambah Akun", isPresented: $showingAddAccountDialog, titleVisibility: .visible) {
                 Button("Hubungkan Akun Google (Disarankan)") {

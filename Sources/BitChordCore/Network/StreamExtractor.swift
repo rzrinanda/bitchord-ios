@@ -96,9 +96,13 @@ public actor StreamExtractor {
         throw URLError(.cannotFindHost)
     }
     
-    // Resolve YouTube 11-char Video ID from search
+    // Resolve YouTube 11-char Video ID from search (Full-length official audio only)
     private func resolveYouTubeVideoId(title: String, artist: String?) async -> String? {
-        let query = "\(title) \(artist ?? "")".trimmingCharacters(in: .whitespacesAndNewlines)
+        if let ytMusicId = await YTMusicClient.shared.resolveYouTubeVideoId(title: title, artist: artist) {
+            return ytMusicId
+        }
+        
+        let query = "\(title) \(artist ?? "") Official Audio".trimmingCharacters(in: .whitespacesAndNewlines)
         let body: [String: Any] = [
             "context": [
                 "client": [
@@ -134,6 +138,13 @@ public actor StreamExtractor {
                     for item in contentsArray {
                         if let videoRenderer = item["videoRenderer"] as? [String: Any],
                            let vId = videoRenderer["videoId"] as? String, vId.count == 11 {
+                            // Verify duration is not a short/teaser (< 60s)
+                            if let lengthText = (videoRenderer["lengthText"] as? [String: Any])?["simpleText"] as? String {
+                                let parts = lengthText.split(separator: ":")
+                                if parts.count == 2, let m = Int(parts[0]), let s = Int(parts[1]), (m * 60 + s) < 60 {
+                                    continue
+                                }
+                            }
                             return vId
                         }
                     }
@@ -183,7 +194,14 @@ public actor StreamExtractor {
             return nil
         }
         
-        // Parse adaptiveFormats
+        // Reject short clips / teasers (< 60s)
+        if let videoDetails = json["videoDetails"] as? [String: Any],
+           let lengthStr = videoDetails["lengthSeconds"] as? String,
+           let lengthSec = Int(lengthStr), lengthSec > 0 && lengthSec < 60 {
+            return nil
+        }
+        
+        // Parse adaptiveFormats (sorted by highest bitrate)
         if let adaptiveFormats = streamingData["adaptiveFormats"] as? [[String: Any]] {
             let audioStreams = adaptiveFormats.filter { format in
                 let mime = format["mimeType"] as? String ?? ""
@@ -201,12 +219,13 @@ public actor StreamExtractor {
                let streamURL = URL(string: urlString) {
                 let bitrate = (best["bitrate"] as? Int ?? 256000) / 1000
                 let mime = best["mimeType"] as? String ?? "audio/mp4"
+                let sampleRate = Double(best["audioSampleRate"] as? String ?? "44100") ?? 44100
                 return StreamInfo(
                     streamURL: streamURL,
                     format: mime,
                     bitrate: bitrate,
                     isLossless: false,
-                    sampleRate: 44100
+                    sampleRate: sampleRate
                 )
             }
         }
@@ -259,20 +278,33 @@ public actor StreamExtractor {
             return nil
         }
         
+        // Reject short clips / teasers (< 60s)
+        if let videoDetails = json["videoDetails"] as? [String: Any],
+           let lengthStr = videoDetails["lengthSeconds"] as? String,
+           let lengthSec = Int(lengthStr), lengthSec > 0 && lengthSec < 60 {
+            return nil
+        }
+        
         if let adaptiveFormats = streamingData["adaptiveFormats"] as? [[String: Any]] {
             let audioStreams = adaptiveFormats.filter { format in
                 let mime = format["mimeType"] as? String ?? ""
                 return mime.contains("audio") && format["url"] != nil
+            }.sorted {
+                let b1 = $0["bitrate"] as? Int ?? 0
+                let b2 = $1["bitrate"] as? Int ?? 0
+                return b1 > b2
             }
             if let best = audioStreams.first,
                let urlString = best["url"] as? String,
                let streamURL = URL(string: urlString) {
                 let bitrate = (best["bitrate"] as? Int ?? 256000) / 1000
+                let sampleRate = Double(best["audioSampleRate"] as? String ?? "44100") ?? 44100
                 return StreamInfo(
                     streamURL: streamURL,
                     format: "audio/mp4",
                     bitrate: bitrate,
-                    isLossless: false
+                    isLossless: false,
+                    sampleRate: sampleRate
                 )
             }
         }

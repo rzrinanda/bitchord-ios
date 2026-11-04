@@ -104,8 +104,10 @@ public struct MainTabView: View {
             }
         }
         .ignoresSafeArea(.keyboard, edges: .bottom)
-        .fullScreenCover(isPresented: $showingNowPlaying) {
+        .sheet(isPresented: $showingNowPlaying) {
             NowPlayingView()
+                .presentationDetents([.large])
+                .presentationDragIndicator(.hidden)
         }
     }
 }

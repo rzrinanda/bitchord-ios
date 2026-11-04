@@ -108,7 +108,7 @@ public actor YTMusicClient {
         return []
     }
     
-    /// Resolves direct YouTube 11-character videoId from track title and artist
+    /// Resolves direct YouTube 11-character videoId from track title and artist (Songs filter for official full-length studio audio)
     public func resolveYouTubeVideoId(title: String, artist: String?) async -> String? {
         let query = "\(title) \(artist ?? "")".trimmingCharacters(in: .whitespacesAndNewlines)
         let body: [String: Any] = [
@@ -120,7 +120,8 @@ public actor YTMusicClient {
                     "gl": "ID"
                 ]
             ],
-            "query": query
+            "query": query,
+            "params": "EgWKAQIIAWoKEAkQChAFEAMQBA=="
         ]
         
         guard let url = URL(string: "https://music.youtube.com/youtubei/v1/search") else { return nil }
@@ -140,13 +141,13 @@ public actor YTMusicClient {
             return nil
         }
         
-        return extractFirstVideoId(from: json)
+        return extractBestFullSongVideoId(from: json) ?? extractFirstVideoId(from: json)
     }
     
-    /// Resolves official YouTube Music Topic / Audio videoId which always has embedding allowed
+    /// Resolves official YouTube Music Topic / Audio videoId which always has embedding allowed and is full length
     public func resolveTopicVideoId(title: String, artist: String?) async -> String? {
         let cleanArtist = artist?.components(separatedBy: " ft.")[0].components(separatedBy: " feat.")[0].trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let query = "\(title) \(cleanArtist) topic"
+        let query = "\(title) \(cleanArtist)"
         let body: [String: Any] = [
             "context": [
                 "client": [
@@ -156,7 +157,8 @@ public actor YTMusicClient {
                     "gl": "ID"
                 ]
             ],
-            "query": query
+            "query": query,
+            "params": "EgWKAQIIAWoKEAkQChAFEAMQBA=="
         ]
         
         guard let url = URL(string: "https://music.youtube.com/youtubei/v1/search") else { return nil }
@@ -176,7 +178,67 @@ public actor YTMusicClient {
             return nil
         }
         
-        return extractFirstVideoId(from: json)
+        return extractBestFullSongVideoId(from: json) ?? extractFirstVideoId(from: json)
+    }
+    
+    /// Extracts the first full-length official song videoId (>= 60s, non-teaser/short) in deterministic shelf order
+    private func extractBestFullSongVideoId(from json: [String: Any]) -> String? {
+        guard let contents = json["contents"] as? [String: Any],
+              let tabbed = contents["tabbedSearchResultsRenderer"] as? [String: Any],
+              let tabs = tabbed["tabs"] as? [[String: Any]] else {
+            return nil
+        }
+        
+        for tab in tabs {
+            guard let tabRenderer = tab["tabRenderer"] as? [String: Any],
+                  let tabContent = tabRenderer["content"] as? [String: Any],
+                  let sectionList = tabContent["sectionListRenderer"] as? [String: Any],
+                  let sections = sectionList["contents"] as? [[String: Any]] else {
+                continue
+            }
+            for section in sections {
+                guard let shelf = section["musicShelfRenderer"] as? [String: Any],
+                      let items = shelf["contents"] as? [[String: Any]] else {
+                    continue
+                }
+                for item in items {
+                    guard let renderer = item["musicResponsiveListItemRenderer"] as? [String: Any] else { continue }
+                    let vId = (renderer["playlistItemData"] as? [String: Any])?["videoId"] as? String
+                        ?? extractFirstVideoId(from: renderer)
+                    guard let candidateId = vId, candidateId.count == 11, !candidateId.hasPrefix("yt_") else { continue }
+                    
+                    // Inspect text runs to ensure it is not a short/teaser/preview (< 60s)
+                    var allText = ""
+                    var parsedDuration: Double? = nil
+                    if let flexCols = renderer["flexColumns"] as? [[String: Any]] {
+                        for col in flexCols {
+                            if let textRenderer = col["musicResponsiveListItemFlexColumnRenderer"] as? [String: Any],
+                               let textObj = textRenderer["text"] as? [String: Any],
+                               let runs = textObj["runs"] as? [[String: Any]] {
+                                for run in runs {
+                                    if let t = run["text"] as? String {
+                                        allText += " " + t.lowercased()
+                                        let parts = t.split(separator: ":")
+                                        if parts.count == 2, let m = Double(parts[0]), let s = Double(parts[1]) {
+                                            parsedDuration = m * 60 + s
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    if let dur = parsedDuration, dur > 0 && dur < 60 {
+                        continue
+                    }
+                    if allText.contains("teaser") || allText.contains("#shorts") || allText.contains("preview") || allText.contains(" snippet") {
+                        continue
+                    }
+                    return candidateId
+                }
+            }
+        }
+        return nil
     }
     
     private func extractFirstVideoId(from json: Any) -> String? {

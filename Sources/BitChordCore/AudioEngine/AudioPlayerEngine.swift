@@ -74,8 +74,21 @@ public final class AudioPlayerEngine: ObservableObject {
         YouTubeAudioBridge.shared.onTimeUpdated = { [weak self] cur, dur in
             Task { @MainActor [weak self] in
                 guard let self = self, self.activeBackend == .youtubeBridge else { return }
+                // Guard against short clips/teasers (< 55s) when track is a full song
+                if dur > 0 && dur < 55, let track = self.currentTrack, track.duration >= 60 {
+                    if let topicId = await YTMusicClient.shared.resolveTopicVideoId(title: track.title, artist: track.artist), topicId != track.id {
+                        var updated = track
+                        updated.id = topicId
+                        self.currentTrack = updated
+                        if self.queueIndex < self.queue.count {
+                            self.queue[self.queueIndex] = updated
+                        }
+                        YouTubeAudioBridge.shared.play(videoId: topicId)
+                        return
+                    }
+                }
                 self.currentTime = cur
-                if dur > 0 && abs(self.duration - dur) > 1.0 {
+                if dur >= 55 && abs(self.duration - dur) > 1.0 {
                     self.duration = dur
                 }
             }
@@ -907,11 +920,38 @@ public final class AudioPlayerEngine: ObservableObject {
                     }
                 }
                 
-                // Keep actual audio stream duration synchronized
+                // Keep actual audio stream duration synchronized (and reject 30s remote preview clips)
                 if let item = self.player?.currentItem {
                     let realDuration = item.duration.seconds
-                    if realDuration.isFinite && realDuration > 0 && abs(self.duration - realDuration) > 0.5 {
-                        self.duration = realDuration
+                    if realDuration.isFinite && realDuration > 0 {
+                        if realDuration < 55,
+                           let track = self.currentTrack,
+                           track.duration >= 60,
+                           !(track.streamURL?.isFileURL ?? false) {
+                            // Remote stream was a 30s sample/preview clip: switch to full-length official audio
+                            var cleaned = track
+                            cleaned.streamURL = nil
+                            cleaned.isLossless = false
+                            self.currentTrack = cleaned
+                            self.stopAVPlayer()
+                            self.activeBackend = .youtubeBridge
+                            if cleaned.id.count == 11 && !cleaned.id.hasPrefix("yt_") {
+                                YouTubeAudioBridge.shared.play(videoId: cleaned.id)
+                            } else {
+                                Task { @MainActor [weak self] in
+                                    guard let self = self else { return }
+                                    if let topicId = await YTMusicClient.shared.resolveTopicVideoId(title: cleaned.title, artist: cleaned.artist) {
+                                        var updated = cleaned
+                                        updated.id = topicId
+                                        self.currentTrack = updated
+                                        YouTubeAudioBridge.shared.play(videoId: topicId)
+                                    }
+                                }
+                            }
+                            return
+                        } else if abs(self.duration - realDuration) > 0.5 {
+                            self.duration = realDuration
+                        }
                     }
                 }
                 
