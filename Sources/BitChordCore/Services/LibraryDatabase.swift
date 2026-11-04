@@ -9,12 +9,18 @@ public final class LibraryDatabase: ObservableObject {
     @Published public private(set) var recentTracks: [Track] = []
     @Published public private(set) var recentSearches: [Track] = []
     @Published public var totalMinutesListened: Int = 62
+    @Published public var lastPlayedAt: Date? = nil
+    @Published public var lastPlaybackPosition: TimeInterval = 0
+    @Published public var lastPlaybackDuration: TimeInterval = 0
     
     private let likedKey = "BitChord.Library.LikedTracks"
     private let playlistsKey = "BitChord.Library.Playlists"
     private let recentsKey = "BitChord.Library.Recents"
     private let recentSearchesKey = "BitChord.Library.RecentSearches"
     private let minutesKey = "BitChord.Library.MinutesListened"
+    private let lastPlayedAtKey = "BitChord.Library.LastPlayedAt"
+    private let lastPositionKey = "BitChord.Library.LastPosition"
+    private let lastDurationKey = "BitChord.Library.LastDuration"
     
     public init() {
         loadData()
@@ -31,9 +37,49 @@ public final class LibraryDatabase: ObservableObject {
             self.userPlaylists = playlists
         }
         if let data = UserDefaults.standard.data(forKey: recentsKey),
-           let recents = try? decoder.decode([Track].self, from: data) {
+           let recents = try? decoder.decode([Track].self, from: data),
+           !recents.isEmpty {
             self.recentTracks = recents
+        } else {
+            self.recentTracks = [
+                Track(
+                    id: "IqxdiPd_q40",
+                    title: "Mimpi Yang Sempurna",
+                    artist: "NOAH",
+                    album: "Taman Langit",
+                    duration: 218,
+                    artworkURL: URL(string: "https://i.ytimg.com/vi/IqxdiPd_q40/hqdefault.jpg"),
+                    isLossless: true
+                ),
+                Track(
+                    id: "utgn0LCDirk",
+                    title: "Kangen",
+                    artist: "Dewa 19",
+                    album: "19",
+                    duration: 312,
+                    artworkURL: URL(string: "https://i.ytimg.com/vi/utgn0LCDirk/hqdefault.jpg"),
+                    isLossless: true
+                ),
+                Track(
+                    id: "b0ZBBjViV8Y",
+                    title: "Separuh Aku",
+                    artist: "NOAH",
+                    album: "Seperti Seharusnya",
+                    duration: 268,
+                    artworkURL: URL(string: "https://i.ytimg.com/vi/b0ZBBjViV8Y/hqdefault.jpg"),
+                    isLossless: true
+                )
+            ]
         }
+        if let savedTime = UserDefaults.standard.object(forKey: lastPlayedAtKey) as? Date {
+            self.lastPlayedAt = savedTime
+        } else {
+            self.lastPlayedAt = Date().addingTimeInterval(-300)
+        }
+        let savedPos = UserDefaults.standard.double(forKey: lastPositionKey)
+        self.lastPlaybackPosition = savedPos > 0 ? savedPos : 84
+        let savedDur = UserDefaults.standard.double(forKey: lastDurationKey)
+        self.lastPlaybackDuration = savedDur > 0 ? savedDur : (recentTracks.first?.duration ?? 218)
         if let data = UserDefaults.standard.data(forKey: recentSearchesKey),
            let searches = try? decoder.decode([Track].self, from: data) {
             self.recentSearches = searches
@@ -124,8 +170,25 @@ public final class LibraryDatabase: ObservableObject {
             recentTracks.removeLast()
         }
         saveRecents()
+        let now = Date()
+        self.lastPlayedAt = now
+        self.lastPlaybackDuration = track.duration
+        UserDefaults.standard.set(now, forKey: lastPlayedAtKey)
+        UserDefaults.standard.set(track.duration, forKey: lastDurationKey)
         totalMinutesListened += max(1, Int(track.duration / 60))
         UserDefaults.standard.set(totalMinutesListened, forKey: minutesKey)
+    }
+    
+    public func updateLastPlaybackProgress(position: TimeInterval, duration: TimeInterval) {
+        self.lastPlaybackPosition = position
+        if duration > 0 {
+            self.lastPlaybackDuration = duration
+            UserDefaults.standard.set(duration, forKey: lastDurationKey)
+        }
+        let now = Date()
+        self.lastPlayedAt = now
+        UserDefaults.standard.set(position, forKey: lastPositionKey)
+        UserDefaults.standard.set(now, forKey: lastPlayedAtKey)
     }
     
     // MARK: - Recent Searches

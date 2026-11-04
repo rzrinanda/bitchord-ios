@@ -44,6 +44,7 @@ public final class AudioPlayerEngine: ObservableObject {
     private var playerItemObservation: NSKeyValueObservation?
     private var playerItemEndObserver: NSObjectProtocol?
     private var pendingSeekTime: TimeInterval? = nil
+    private var lastSavedProgressTimestamp: TimeInterval = 0
     
     #if os(iOS)
     private var silencePlayer: AVAudioPlayer?
@@ -55,6 +56,23 @@ public final class AudioPlayerEngine: ObservableObject {
         setupAudioSession()
         setupRemoteCommands()
         setupYouTubeBridge()
+        restoreLastPlayedSession()
+    }
+    
+    private func restoreLastPlayedSession() {
+        let db = LibraryDatabase.shared
+        guard self.currentTrack == nil, let lastTrack = db.recentTracks.first else { return }
+        self.queue = db.recentTracks
+        self.originalQueue = db.recentTracks
+        self.queueIndex = 0
+        self.currentTrack = lastTrack
+        let savedDur = db.lastPlaybackDuration > 0 ? db.lastPlaybackDuration : lastTrack.duration
+        self.duration = savedDur
+        let savedPos = min(max(0, db.lastPlaybackPosition), max(0, savedDur - 5))
+        self.currentTime = savedPos
+        self.pendingSeekTime = savedPos > 2 ? savedPos : nil
+        self.status = .paused
+        self.updateNowPlayingInfo()
     }
     
     private func setupYouTubeBridge() {
@@ -90,6 +108,15 @@ public final class AudioPlayerEngine: ObservableObject {
                 self.currentTime = cur
                 if dur >= 55 && abs(self.duration - dur) > 1.0 {
                     self.duration = dur
+                }
+                if let seekTarget = self.pendingSeekTime, seekTarget > 2, cur < 2.0, dur > seekTarget {
+                    self.pendingSeekTime = nil
+                    YouTubeAudioBridge.shared.seek(to: seekTarget)
+                    self.currentTime = seekTarget
+                }
+                if abs(cur - self.lastSavedProgressTimestamp) >= 2.0 {
+                    self.lastSavedProgressTimestamp = cur
+                    LibraryDatabase.shared.updateLastPlaybackProgress(position: cur, duration: self.duration)
                 }
             }
         }
@@ -442,14 +469,20 @@ public final class AudioPlayerEngine: ObservableObject {
     
     // MARK: - Playback Control
     
-    public func playTrack(at index: Int) {
+    public func playTrack(at index: Int, initialSeek: TimeInterval? = nil) {
         guard index >= 0 && index < queue.count else { return }
         queueIndex = index
         let track = queue[index]
         self.currentTrack = track
         self.duration = track.duration
-        self.currentTime = 0
+        let startPos = initialSeek ?? 0
+        self.currentTime = startPos
+        self.pendingSeekTime = startPos > 2 ? startPos : nil
         self.status = .loading
+        LibraryDatabase.shared.recordPlayback(track: track)
+        if startPos > 0 {
+            LibraryDatabase.shared.updateLastPlaybackProgress(position: startPos, duration: track.duration)
+        }
         
         #if os(iOS)
         startKeepAlive()
@@ -762,9 +795,10 @@ public final class AudioPlayerEngine: ObservableObject {
     }
     
     public func resume() {
-        if status == .idle || status == .error {
+        if status == .idle || status == .error || activeBackend == .none {
             if !queue.isEmpty {
-                playTrack(at: queueIndex)
+                let resumeTime = pendingSeekTime ?? (currentTime > 2 ? currentTime : nil)
+                playTrack(at: queueIndex, initialSeek: resumeTime)
                 return
             }
         }
@@ -794,6 +828,9 @@ public final class AudioPlayerEngine: ObservableObject {
         player?.rate = 0.0
         player?.pause()
         status = .paused
+        if currentTime > 0 {
+            LibraryDatabase.shared.updateLastPlaybackProgress(position: currentTime, duration: duration)
+        }
         updateNowPlayingInfo()
     }
     
@@ -917,6 +954,10 @@ public final class AudioPlayerEngine: ObservableObject {
                     let sec = time.seconds
                     if sec.isFinite && !sec.isNaN && sec >= 0 {
                         self.currentTime = sec
+                        if abs(sec - self.lastSavedProgressTimestamp) >= 2.0 {
+                            self.lastSavedProgressTimestamp = sec
+                            LibraryDatabase.shared.updateLastPlaybackProgress(position: sec, duration: self.duration)
+                        }
                     }
                 }
                 

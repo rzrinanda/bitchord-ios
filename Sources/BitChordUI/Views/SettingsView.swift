@@ -271,6 +271,16 @@ public struct SettingsView: View {
             }
             
             NavigationLink {
+                LyricsDetailView(
+                    storageUsage: $storageUsage,
+                    storedCount: $storedCount,
+                    showClearAlert: $showClearAlert
+                )
+            } label: {
+                SettingsRowLabel(icon: "quote.bubble", color: .teal, title: "Lyrics & Offline Storage")
+            }
+            
+            NavigationLink {
                 PerformanceDetailView()
             } label: {
                 SettingsRowLabel(icon: "speedometer", color: .green, title: "Performance")
@@ -1834,6 +1844,17 @@ private struct AppearanceDetailView: View {
                     }
                 }
                 .tint(.yellow)
+                
+                Toggle(isOn: $settings.autoDownloadLyricsToStorage) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Auto-download lyrics to storage")
+                            .font(.system(size: 15, weight: .medium))
+                        Text("Saves time-synced LRC files locally for offline listening")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .tint(.teal)
             } header: {
                 Text("PLAYER LYRICS DISPLAY")
             }
@@ -2091,6 +2112,17 @@ private struct StorageDetailView: View {
     var body: some View {
         Form {
             Section {
+                Toggle(isOn: $settings.autoDownloadLyricsToStorage) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Auto-download lyrics to storage")
+                            .font(.system(size: 15, weight: .medium))
+                        Text("Automatically saves time-synced LRC files to device storage for offline listening")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .tint(.teal)
+                
                 Toggle(isOn: $settings.showCachedSongsFolder) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Show cached songs folder")
@@ -2101,6 +2133,8 @@ private struct StorageDetailView: View {
                     }
                 }
                 .tint(.blue)
+            } header: {
+                Text("OFFLINE LYRICS & CACHE")
             }
             
             Section {

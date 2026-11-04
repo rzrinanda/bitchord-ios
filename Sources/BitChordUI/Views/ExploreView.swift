@@ -5,18 +5,92 @@ public struct ExploreView: View {
     @ObservedObject var library = LibraryDatabase.shared
     @State private var showingAccountMenu: Bool = false
     @State private var selectedTrackForMenu: Track? = nil
-    @State private var loadingChartTitle: String? = nil
+    @State private var loadingQueryTitle: String? = nil
     
-    // Curated Indonesian & Global charts
-    private let charts: [(title: String, subtitle: String, image: String, color: Color)] = [
-        ("Top 50 Indonesia", "Lagu terpopuler minggu ini", "flame.fill", .red),
-        ("Top 50 Global", "Hits internasional teratas", "globe", .blue),
-        ("Nostalgia Indonesia", "Lagu legendaris 90s & 2000s", "music.note.tv.fill", .orange),
-        ("Indie & Senja", "Karya musisi independen tanah air", "guitars.fill", .purple)
+    // Top 3 YT Music Navigation Cards
+    private let topCategoryCards: [(title: String, icon: String, query: String, color: Color)] = [
+        ("New releases", "sparkles.rectangle.stack.fill", "New Releases Official Songs", Color(red: 0.90, green: 0.25, blue: 0.35)),
+        ("Charts", "chart.line.uptrend.xyaxis", "Top 100 Songs Chart", Color(red: 0.20, green: 0.55, blue: 0.95)),
+        ("Moods & genres", "face.smiling.inverse", "Best Moods & Genres Hits", Color(red: 0.65, green: 0.30, blue: 0.90))
     ]
     
-    // Explore featured Indonesian songs matching user's taste (NOAH, Dewa 19, etc.)
-    private let exploreSongs: [Track] = [
+    // New Albums & Singles
+    private let newAlbumsAndSingles: [Track] = [
+        Track(
+            id: "kPa7bsKwL-c",
+            title: "Die With A Smile",
+            artist: "Lady Gaga & Bruno Mars",
+            album: "Single • 2026",
+            duration: 251,
+            artworkURL: URL(string: "https://i.ytimg.com/vi/kPa7bsKwL-c/hqdefault.jpg"),
+            isLossless: true
+        ),
+        Track(
+            id: "V9PVRfjEBTI",
+            title: "BIRDS OF A FEATHER",
+            artist: "Billie Eilish",
+            album: "Album • HIT ME HARD AND SOFT",
+            duration: 210,
+            artworkURL: URL(string: "https://i.ytimg.com/vi/V9PVRfjEBTI/hqdefault.jpg"),
+            isLossless: true
+        ),
+        Track(
+            id: "eVli-tstM5E",
+            title: "Espresso",
+            artist: "Sabrina Carpenter",
+            album: "Single • Short n' Sweet",
+            duration: 175,
+            artworkURL: URL(string: "https://i.ytimg.com/vi/eVli-tstM5E/hqdefault.jpg"),
+            isLossless: true
+        ),
+        Track(
+            id: "IqxdiPd_q40",
+            title: "Mimpi Yang Sempurna",
+            artist: "NOAH",
+            album: "Album • Taman Langit",
+            duration: 218,
+            artworkURL: URL(string: "https://i.ytimg.com/vi/IqxdiPd_q40/hqdefault.jpg"),
+            isLossless: true
+        ),
+        Track(
+            id: "utgn0LCDirk",
+            title: "Kangen",
+            artist: "Dewa 19",
+            album: "Album • 19",
+            duration: 312,
+            artworkURL: URL(string: "https://i.ytimg.com/vi/utgn0LCDirk/hqdefault.jpg"),
+            isLossless: true
+        )
+    ]
+    
+    // Curated Charts (YouTube Music Charts)
+    private let charts: [(title: String, subtitle: String, image: String, color: Color)] = [
+        ("Top 100 Indonesia", "Daily music charts", "chart.bar.fill", Color(red: 0.90, green: 0.18, blue: 0.28)),
+        ("Top 100 Global", "Worldwide hits", "globe.americas.fill", Color(red: 0.15, green: 0.50, blue: 0.92)),
+        ("Trending 20", "Fastest rising tracks", "flame.fill", Color(red: 0.95, green: 0.45, blue: 0.12)),
+        ("Indonesian Legends", "90s & 2000s rock/pop", "guitars.fill", Color(red: 0.55, green: 0.22, blue: 0.85))
+    ]
+    
+    // Moods & Genres (YouTube Music colored left-border strips)
+    private let moodsAndGenres: [(name: String, stripeColor: Color)] = [
+        ("Chill", .cyan),
+        ("Commute", .orange),
+        ("Energy Boosters", .yellow),
+        ("Feel Good", .green),
+        ("Focus", .indigo),
+        ("Workout", .red),
+        ("Romance", .pink),
+        ("Party", .purple),
+        ("Indonesian Pop", .mint),
+        ("Rock & Alternative", .red),
+        ("R&B & Soul", .blue),
+        ("Jazz & Acoustic", .brown),
+        ("Indie & Senja", .teal),
+        ("Sleep", .purple)
+    ]
+    
+    // Trending Songs (Ranked 1..8 with YT Music numbering)
+    private let trendingSongs: [Track] = [
         Track(
             id: "IqxdiPd_q40",
             title: "Mimpi Yang Sempurna",
@@ -61,6 +135,33 @@ public struct ExploreView: View {
             duration: 198,
             artworkURL: URL(string: "https://i.ytimg.com/vi/CNbmVEEW-mA/hqdefault.jpg"),
             isLossless: true
+        ),
+        Track(
+            id: "kPa7bsKwL-c",
+            title: "Die With A Smile",
+            artist: "Lady Gaga & Bruno Mars",
+            album: "Single",
+            duration: 251,
+            artworkURL: URL(string: "https://i.ytimg.com/vi/kPa7bsKwL-c/hqdefault.jpg"),
+            isLossless: true
+        ),
+        Track(
+            id: "34Na4j8AVgA",
+            title: "Starboy",
+            artist: "The Weeknd ft. Daft Punk",
+            album: "Starboy",
+            duration: 230,
+            artworkURL: URL(string: "https://i.ytimg.com/vi/34Na4j8AVgA/hqdefault.jpg"),
+            isLossless: true
+        ),
+        Track(
+            id: "5NV6Rdv1a3I",
+            title: "Get Lucky",
+            artist: "Daft Punk ft. Pharrell Williams",
+            album: "Random Access Memories",
+            duration: 248,
+            artworkURL: URL(string: "https://i.ytimg.com/vi/5NV6Rdv1a3I/hqdefault.jpg"),
+            isLossless: true
         )
     ]
     
@@ -69,149 +170,25 @@ public struct ExploreView: View {
     public var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 26) {
-                    // Charts Section
-                    VStack(alignment: .leading, spacing: 14) {
-                        Text("Charts & Tangga Lagu")
-                            .font(.system(size: 20, weight: .bold))
-                            .padding(.horizontal, 16)
-                        
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 14) {
-                                ForEach(charts, id: \.title) { chart in
-                                    Button {
-                                        playChart(chart.title)
-                                    } label: {
-                                        VStack(alignment: .leading, spacing: 8) {
-                                            ZStack {
-                                                RoundedRectangle(cornerRadius: 14)
-                                                    .fill(chart.color.gradient)
-                                                
-                                                if loadingChartTitle == chart.title {
-                                                    ProgressView()
-                                                        .scaleEffect(1.2)
-                                                        .tint(.white)
-                                                } else {
-                                                    Image(systemName: chart.image)
-                                                        .font(.system(size: 32, weight: .bold))
-                                                        .foregroundColor(.white.opacity(0.85))
-                                                }
-                                            }
-                                            .frame(width: 140, height: 140)
-                                            
-                                            Text(chart.title)
-                                                .font(.system(size: 14, weight: .semibold))
-                                                .foregroundColor(.primary)
-                                                .lineLimit(1)
-                                            Text(chart.subtitle)
-                                                .font(.system(size: 11))
-                                                .foregroundColor(.secondary)
-                                                .lineLimit(1)
-                                        }
-                                        .frame(width: 140)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-                            .padding(.horizontal, 16)
-                        }
-                    }
+                VStack(alignment: .leading, spacing: 28) {
+                    // MARK: - 1. Top 3 YouTube Music Category Cards (New releases, Charts, Moods & genres)
+                    topNavigationCardsSection
                     
-                    // Trending Tracks List
-                    VStack(alignment: .leading, spacing: 14) {
-                        Text("Trending Musik Indonesia")
-                            .font(.system(size: 20, weight: .bold))
-                            .padding(.horizontal, 16)
-                        
-                        VStack(spacing: 6) {
-                            ForEach(exploreSongs) { track in
-                                HStack(spacing: 12) {
-                                    Button {
-                                        engine.setQueue(exploreSongs, startIndex: exploreSongs.firstIndex(where: { $0.id == track.id }) ?? 0)
-                                        library.recordPlayback(track: track)
-                                    } label: {
-                                        HStack(spacing: 12) {
-                                            if let artURL = track.artworkURL {
-                                                AsyncImage(url: artURL) { phase in
-                                                    if let img = phase.image {
-                                                        img.resizable().aspectRatio(contentMode: .fill)
-                                                    } else {
-                                                        Color.gray.opacity(0.3)
-                                                    }
-                                                }
-                                                .frame(width: 48, height: 48)
-                                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                                            } else {
-                                                BitChordLogoView(size: 48, cornerRadius: 8)
-                                            }
-                                            
-                                            VStack(alignment: .leading, spacing: 3) {
-                                                Text(track.title)
-                                                    .font(.system(size: 15, weight: .semibold))
-                                                    .foregroundColor(engine.currentTrack?.id == track.id ? .red : .primary)
-                                                    .lineLimit(1)
-                                                Text(track.artist)
-                                                    .font(.system(size: 13))
-                                                    .foregroundColor(.secondary)
-                                                    .lineLimit(1)
-                                            }
-                                            
-                                            Spacer()
-                                            
-                                            if engine.currentTrack?.id == track.id {
-                                                Image(systemName: "waveform")
-                                                    .font(.system(size: 14, weight: .bold))
-                                                    .foregroundColor(.red)
-                                                    .padding(.trailing, 4)
-                                            }
-                                        }
-                                    }
-                                    .buttonStyle(.plain)
-                                    .simultaneousGesture(
-                                        LongPressGesture(minimumDuration: 0.45).onEnded { _ in
-                                            selectedTrackForMenu = track
-                                        }
-                                    )
-                                    
-                                    // 3-dots menu button (Matching Car HU Photo 2 & 3)
-                                    Button {
-                                        selectedTrackForMenu = track
-                                    } label: {
-                                        Image(systemName: "ellipsis")
-                                            .font(.system(size: 16, weight: .medium))
-                                            .foregroundColor(.secondary)
-                                            .frame(width: 36, height: 36)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 6)
-                                .contentShape(Rectangle())
-                                .contextMenu {
-                                    Button {
-                                        engine.insertNextInQueue(track)
-                                    } label: {
-                                        Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
-                                    }
-                                    Button {
-                                        engine.appendToQueue(track)
-                                    } label: {
-                                        Label("Add to Queue", systemImage: "text.badge.plus")
-                                    }
-                                    Button {
-                                        library.toggleLike(track: track)
-                                    } label: {
-                                        Label(library.isLiked(trackId: track.id) ? "Unlike" : "Like",
-                                              systemImage: library.isLiked(trackId: track.id) ? "star.fill" : "star")
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    // MARK: - 2. New Albums & Singles
+                    newAlbumsSection
                     
-                    Spacer(minLength: 80)
+                    // MARK: - 3. Trending (Ranked 4-row horizontal paging list like YT Music)
+                    trendingRankedSection
+                    
+                    // MARK: - 4. Moods & Genres Grid (Colored left accent bar like YT Music)
+                    moodsAndGenresSection
+                    
+                    // MARK: - 5. Charts & Tangga Lagu
+                    chartsSection
+                    
+                    Spacer(minLength: 110)
                 }
-                .padding(.top, 12)
+                .padding(.top, 10)
             }
             .navigationTitle("Explore")
             .toolbar {
@@ -239,18 +216,353 @@ public struct ExploreView: View {
         }
     }
     
-    private func playChart(_ title: String) {
-        loadingChartTitle = title
+    // MARK: - 1. Top 3 YT Music Category Cards
+    private var topNavigationCardsSection: some View {
+        HStack(spacing: 10) {
+            ForEach(topCategoryCards, id: \.title) { card in
+                Button {
+                    playSearchQuery(card.query, displayTitle: card.title)
+                } label: {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Image(systemName: card.icon)
+                                .font(.system(size: 20, weight: .semibold))
+                                .foregroundColor(card.color)
+                            Spacer()
+                            if loadingQueryTitle == card.title {
+                                ProgressView()
+                                    .scaleEffect(0.75)
+                            }
+                        }
+                        
+                        Text(card.title)
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.primary)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(14)
+                    .frame(maxWidth: .infinity, minHeight: 84, alignment: .topLeading)
+                    .background(Color.secondary.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 16)
+    }
+    
+    // MARK: - 2. New Albums & Singles
+    private var newAlbumsSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("New albums & singles")
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundColor(.primary)
+                Spacer()
+                Button {
+                    engine.setQueue(newAlbumsAndSingles, startIndex: 0)
+                    if let first = newAlbumsAndSingles.first {
+                        library.recordPlayback(track: first)
+                    }
+                } label: {
+                    Text("More")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.primary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color.secondary.opacity(0.15))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 16)
+            
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 14) {
+                    ForEach(newAlbumsAndSingles) { track in
+                        Button {
+                            let idx = newAlbumsAndSingles.firstIndex(where: { $0.id == track.id }) ?? 0
+                            engine.setQueue(newAlbumsAndSingles, startIndex: idx)
+                            library.recordPlayback(track: track)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 8) {
+                                ZStack(alignment: .bottomTrailing) {
+                                    if let artURL = track.artworkURL {
+                                        AsyncImage(url: artURL) { phase in
+                                            if let img = phase.image {
+                                                img.resizable().aspectRatio(contentMode: .fill)
+                                            } else {
+                                                Color.gray.opacity(0.25)
+                                            }
+                                        }
+                                        .frame(width: 155, height: 155)
+                                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                    } else {
+                                        BitChordLogoView(size: 155, cornerRadius: 12)
+                                    }
+                                    
+                                    Circle()
+                                        .fill(Color.black.opacity(0.65))
+                                        .frame(width: 34, height: 34)
+                                        .overlay(
+                                            Image(systemName: engine.currentTrack?.id == track.id && engine.status == .playing ? "pause.fill" : "play.fill")
+                                                .font(.system(size: 13, weight: .bold))
+                                                .foregroundColor(.white)
+                                        )
+                                        .padding(8)
+                                }
+                                
+                                Text(track.title)
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(.primary)
+                                    .lineLimit(1)
+                                
+                                Text("\(track.album) • \(track.artist)")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(1)
+                            }
+                            .frame(width: 155)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+        }
+    }
+    
+    // MARK: - 3. Trending Ranked Songs (YouTube Music 4-row numbered shelf)
+    private var trendingRankedSection: some View {
+        let columns = stride(from: 0, to: trendingSongs.count, by: 4).map {
+            Array(trendingSongs.enumerated())[($0)..<min($0 + 4, trendingSongs.count)]
+        }
+        
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("Trending")
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundColor(.primary)
+                Spacer()
+                Button {
+                    engine.setQueue(trendingSongs, startIndex: 0)
+                    if let first = trendingSongs.first {
+                        library.recordPlayback(track: first)
+                    }
+                } label: {
+                    Text("Play all")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.primary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color.secondary.opacity(0.15))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 16)
+            
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .top, spacing: 16) {
+                    ForEach(0..<columns.count, id: \.self) { colIdx in
+                        VStack(spacing: 10) {
+                            ForEach(Array(columns[colIdx]), id: \.element.id) { item in
+                                let rank = item.offset + 1
+                                let track = item.element
+                                
+                                HStack(spacing: 10) {
+                                    Button {
+                                        engine.setQueue(trendingSongs, startIndex: item.offset)
+                                        library.recordPlayback(track: track)
+                                    } label: {
+                                        HStack(spacing: 10) {
+                                            if let artURL = track.artworkURL {
+                                                AsyncImage(url: artURL) { phase in
+                                                    if let img = phase.image {
+                                                        img.resizable().aspectRatio(contentMode: .fill)
+                                                    } else {
+                                                        Color.gray.opacity(0.3)
+                                                    }
+                                                }
+                                                .frame(width: 48, height: 48)
+                                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                            } else {
+                                                BitChordLogoView(size: 48, cornerRadius: 8)
+                                            }
+                                            
+                                            // Rank Number + Green Trend Dot
+                                            VStack(spacing: 2) {
+                                                Text("\(rank)")
+                                                    .font(.system(size: 15, weight: .bold))
+                                                    .foregroundColor(.primary)
+                                                Circle()
+                                                    .fill(Color.green)
+                                                    .frame(width: 5, height: 5)
+                                            }
+                                            .frame(width: 24)
+                                            
+                                            VStack(alignment: .leading, spacing: 3) {
+                                                Text(track.title)
+                                                    .font(.system(size: 15, weight: .semibold))
+                                                    .foregroundColor(engine.currentTrack?.id == track.id ? .red : .primary)
+                                                    .lineLimit(1)
+                                                Text("\(track.artist) • \(track.album)")
+                                                    .font(.system(size: 13))
+                                                    .foregroundColor(.secondary)
+                                                    .lineLimit(1)
+                                            }
+                                            
+                                            Spacer(minLength: 4)
+                                            
+                                            if engine.currentTrack?.id == track.id {
+                                                Image(systemName: "waveform")
+                                                    .font(.system(size: 14, weight: .bold))
+                                                    .foregroundColor(.red)
+                                            }
+                                        }
+                                    }
+                                    .buttonStyle(.plain)
+                                    
+                                    Button {
+                                        selectedTrackForMenu = track
+                                    } label: {
+                                        Image(systemName: "ellipsis")
+                                            .font(.system(size: 16, weight: .medium))
+                                            .foregroundColor(.secondary)
+                                            .frame(width: 30, height: 30)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                                .frame(width: 305)
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+        }
+    }
+    
+    // MARK: - 4. Moods & Genres Section (YouTube Music colored left-border strips)
+    private var moodsAndGenresSection: some View {
+        let rows = stride(from: 0, to: moodsAndGenres.count, by: 3).map {
+            Array(moodsAndGenres[$0..<min($0 + 3, moodsAndGenres.count)])
+        }
+        
+        return VStack(alignment: .leading, spacing: 14) {
+            Text("Moods & genres")
+                .font(.system(size: 22, weight: .bold))
+                .foregroundColor(.primary)
+                .padding(.horizontal, 16)
+            
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .top, spacing: 12) {
+                    ForEach(0..<rows.count, id: \.self) { colIdx in
+                        VStack(spacing: 10) {
+                            ForEach(rows[colIdx], id: \.name) { item in
+                                Button {
+                                    playSearchQuery("\(item.name) music playlist", displayTitle: item.name)
+                                } label: {
+                                    HStack(spacing: 0) {
+                                        Rectangle()
+                                            .fill(item.stripeColor)
+                                            .frame(width: 6)
+                                        
+                                        HStack {
+                                            Text(item.name)
+                                                .font(.system(size: 14, weight: .semibold))
+                                                .foregroundColor(.primary)
+                                                .lineLimit(1)
+                                            Spacer()
+                                            if loadingQueryTitle == item.name {
+                                                ProgressView()
+                                                    .scaleEffect(0.75)
+                                            }
+                                        }
+                                        .padding(.horizontal, 14)
+                                    }
+                                    .frame(width: 175, height: 48)
+                                    .background(Color.secondary.opacity(0.12))
+                                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+        }
+    }
+    
+    // MARK: - 5. Charts Section
+    private var chartsSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Charts")
+                .font(.system(size: 22, weight: .bold))
+                .padding(.horizontal, 16)
+            
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 14) {
+                    ForEach(charts, id: \.title) { chart in
+                        Button {
+                            playSearchQuery(chart.title, displayTitle: chart.title)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 8) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                        .fill(chart.color.gradient)
+                                    
+                                    if loadingQueryTitle == chart.title {
+                                        ProgressView()
+                                            .scaleEffect(1.2)
+                                            .tint(.white)
+                                    } else {
+                                        VStack(spacing: 8) {
+                                            Image(systemName: chart.image)
+                                                .font(.system(size: 32, weight: .bold))
+                                                .foregroundColor(.white.opacity(0.9))
+                                            Text("TOP 100")
+                                                .font(.system(size: 10, weight: .heavy))
+                                                .foregroundColor(.white.opacity(0.8))
+                                        }
+                                    }
+                                }
+                                .frame(width: 145, height: 145)
+                                
+                                Text(chart.title)
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(.primary)
+                                    .lineLimit(1)
+                                Text(chart.subtitle)
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(1)
+                            }
+                            .frame(width: 145)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+        }
+    }
+    
+    private func playSearchQuery(_ query: String, displayTitle: String) {
+        loadingQueryTitle = displayTitle
         Task {
-            let results = (try? await YTMusicClient.shared.search(query: title)) ?? []
+            let results = (try? await YTMusicClient.shared.search(query: query)) ?? []
             await MainActor.run {
-                self.loadingChartTitle = nil
+                self.loadingQueryTitle = nil
                 if !results.isEmpty {
                     engine.setQueue(results, startIndex: 0)
                     library.recordPlayback(track: results[0])
                 } else {
-                    engine.setQueue(exploreSongs, startIndex: 0)
-                    library.recordPlayback(track: exploreSongs[0])
+                    engine.setQueue(trendingSongs, startIndex: 0)
+                    library.recordPlayback(track: trendingSongs[0])
                 }
             }
         }

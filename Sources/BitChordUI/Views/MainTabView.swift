@@ -20,7 +20,7 @@ public enum BitChordTab: Int, CaseIterable, Identifiable {
     public var iconName: String {
         switch self {
         case .home: return "house.fill"
-        case .explore: return "square.grid.2x2.fill"
+        case .explore: return "safari.fill"
         case .library: return "square.stack.fill"
         case .search: return "magnifyingglass"
         }

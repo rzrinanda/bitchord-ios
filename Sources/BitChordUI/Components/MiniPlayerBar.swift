@@ -35,10 +35,18 @@ public struct MiniPlayerBar: View {
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundColor(.primary)
                             .lineLimit(1)
-                        Text(track.artist)
-                            .font(.system(size: 12))
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
+                        HStack(spacing: 5) {
+                            Text(track.artist)
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                            if engine.currentTime > 0 || engine.duration > 0 {
+                                Text("• \(formatTime(engine.currentTime))/\(formatTime(engine.duration > 0 ? engine.duration : track.duration))")
+                                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                    .foregroundColor(.cyan)
+                                    .lineLimit(1)
+                            }
+                        }
                     }
                     
                     Spacer()
@@ -90,5 +98,12 @@ public struct MiniPlayerBar: View {
                     }
             )
         }
+    }
+    
+    private func formatTime(_ seconds: TimeInterval) -> String {
+        guard seconds.isFinite && seconds >= 0 else { return "0:00" }
+        let mins = Int(seconds) / 60
+        let secs = Int(seconds) % 60
+        return String(format: "%d:%02d", mins, secs)
     }
 }

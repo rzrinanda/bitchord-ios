@@ -4,6 +4,7 @@ public struct LibraryView: View {
     @ObservedObject var engine = AudioPlayerEngine.shared
     @ObservedObject var library = LibraryDatabase.shared
     @ObservedObject var accountManager = AccountManager.shared
+    @ObservedObject var settings = BitChordSettings.shared
     
     @State private var offlineLyricsCount: Int = 0
     @State private var offlineLyricsSize: String = ""
@@ -268,23 +269,19 @@ public struct LibraryView: View {
                                 .foregroundColor(.cyan)
                                 .frame(width: 28)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Offline Lyrics Storage")
+                                Text("Auto-Download Lyrics")
                                     .font(.system(size: 16, weight: .medium))
-                                Text(offlineLyricsCount > 0 ? "\(offlineLyricsCount) Tracks (\(offlineLyricsSize))" : "Active")
+                                Text(offlineLyricsCount > 0 ? "\(offlineLyricsCount) Tracks (\(offlineLyricsSize))" : (settings.autoDownloadLyricsToStorage ? "Active • Offline storage enabled" : "Disabled"))
                                     .font(.system(size: 12))
                                     .foregroundColor(.secondary)
                             }
                             Spacer()
-                            NavigationLink {
-                                SettingsView()
-                            } label: {
-                                Text("Settings")
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundColor(.red)
-                            }
+                            Toggle("", isOn: $settings.autoDownloadLyricsToStorage)
+                                .labelsHidden()
+                                .tint(.cyan)
                         }
                         .padding(.horizontal, 16)
-                        .padding(.vertical, 14)
+                        .padding(.vertical, 12)
                     }
                     .background(Color.secondary.opacity(0.08))
                     .clipShape(RoundedRectangle(cornerRadius: 16))
@@ -602,48 +599,219 @@ public struct DownloadedSongsView: View {
 
 public struct SpotifyImporterSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject var library = LibraryDatabase.shared
+    @ObservedObject var engine = AudioPlayerEngine.shared
     @State private var linkText: String = ""
     @State private var isImporting: Bool = false
-    @State private var statusMessage: String?
+    @State private var statusMessage: String? = nil
+    @State private var isSuccess: Bool = false
+    @State private var importedTracks: [Track] = []
+    @State private var importedTitle: String = ""
+    
+    private let quickSamples: [(name: String, url: String)] = [
+        ("Top Hits Indonesia", "https://open.spotify.com/playlist/37i9dQZF1DXdPec7aLTmlC"),
+        ("NOAH Best Tracks", "NOAH Official Top Songs"),
+        ("Dewa 19 Classics", "Dewa 19 Terbaik"),
+        ("Global Top 50", "https://open.spotify.com/playlist/37i9dQZEVXbMDoHDwVN2tF")
+    ]
     
     public var body: some View {
         NavigationStack {
-            VStack(spacing: 20) {
-                Text("Paste any public Spotify track or playlist URL to import and match high-res audio on BitChord.")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
-                
-                TextField("https://open.spotify.com/track/...", text: $linkText)
-                    .textFieldStyle(.roundedBorder)
-                    .padding(.horizontal)
-                
-                if let msg = statusMessage {
-                    Text(msg)
-                        .font(.footnote)
-                        .foregroundColor(.secondary)
-                }
-                
-                Button {
-                    importLink()
-                } label: {
-                    if isImporting {
-                        ProgressView()
-                    } else {
-                        Text("Import Music")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    // Header Banner
+                    HStack(spacing: 14) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.green.opacity(0.2))
+                                .frame(width: 48, height: 48)
+                            Image(systemName: "arrow.down.doc.fill")
+                                .font(.system(size: 22, weight: .bold))
+                                .foregroundColor(.green)
+                        }
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Import from Spotify")
+                                .font(.system(size: 18, weight: .bold))
+                            Text("Paste any Spotify Track, Album, or Playlist URL (or search name) to import & match Lossless audio.")
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding()
+                    .background(Color.secondary.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    
+                    // URL / Query Input
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("SPOTIFY URL OR PLAYLIST NAME")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(.secondary)
+                        
+                        HStack(spacing: 8) {
+                            TextField("https://open.spotify.com/playlist/... or Track", text: $linkText)
+                                .textFieldStyle(.roundedBorder)
+                                .autocapitalization(.none)
+                                .disableAutocorrection(true)
+                            
+                            if !linkText.isEmpty {
+                                Button {
+                                    linkText = ""
+                                    statusMessage = nil
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundColor(.secondary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            
+                            #if canImport(UIKit)
+                            Button {
+                                if let pasted = UIPasteboard.general.string {
+                                    linkText = pasted.trimmingCharacters(in: .whitespacesAndNewlines)
+                                }
+                            } label: {
+                                Label("Paste", systemImage: "doc.on.clipboard")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 7)
+                                    .background(Color.green.opacity(0.2))
+                                    .foregroundColor(.green)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                            }
+                            .buttonStyle(.plain)
+                            #endif
+                        }
+                    }
+                    
+                    // Quick Presets
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("QUICK IMPORT PRESETS")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(.secondary)
+                        
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(quickSamples, id: \.name) { sample in
+                                    Button {
+                                        linkText = sample.url
+                                        importLink()
+                                    } label: {
+                                        HStack(spacing: 6) {
+                                            Image(systemName: "sparkles")
+                                                .font(.system(size: 11))
+                                            Text(sample.name)
+                                                .font(.system(size: 12, weight: .medium))
+                                        }
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 7)
+                                        .background(Color.secondary.opacity(0.14))
+                                        .foregroundColor(.primary)
+                                        .clipShape(Capsule())
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                    }
+                    
+                    if let msg = statusMessage {
+                        HStack(spacing: 8) {
+                            Image(systemName: isSuccess ? "checkmark.circle.fill" : (isImporting ? "hourglass" : "exclamationmark.triangle.fill"))
+                                .foregroundColor(isSuccess ? .green : (isImporting ? .cyan : .orange))
+                            Text(msg)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(isSuccess ? .green : .secondary)
+                        }
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.secondary.opacity(0.08))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                    }
+                    
+                    Button {
+                        importLink()
+                    } label: {
+                        HStack(spacing: 10) {
+                            Spacer()
+                            if isImporting {
+                                ProgressView()
+                                    .tint(.black)
+                                Text("Matching High-Res Catalog...")
+                                    .font(.system(size: 15, weight: .bold))
+                                    .foregroundColor(.black)
+                            } else {
+                                Image(systemName: "square.and.arrow.down.fill")
+                                    .foregroundColor(.black)
+                                Text("Import to Library & Play")
+                                    .font(.system(size: 15, weight: .bold))
+                                    .foregroundColor(.black)
+                            }
+                            Spacer()
+                        }
+                        .padding(.vertical, 13)
+                        .background(linkText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isImporting ? Color.green.opacity(0.4) : Color.green)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(linkText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isImporting)
+                    
+                    // Imported Results Preview
+                    if !importedTracks.isEmpty {
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack {
+                                Text("IMPORTED: \(importedTitle.uppercased()) (\(importedTracks.count))")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Button("Play All") {
+                                    engine.setQueue(importedTracks, startIndex: 0)
+                                    if let first = importedTracks.first {
+                                        library.recordPlayback(track: first)
+                                    }
+                                    dismiss()
+                                }
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(.green)
+                            }
+                            
+                            ForEach(importedTracks) { track in
+                                HStack(spacing: 12) {
+                                    if let art = track.artworkURL {
+                                        AsyncImage(url: art) { phase in
+                                            if let img = phase.image {
+                                                img.resizable().aspectRatio(contentMode: .fill)
+                                            } else {
+                                                Color.gray.opacity(0.25)
+                                            }
+                                        }
+                                        .frame(width: 42, height: 42)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    } else {
+                                        BitChordLogoView(size: 42, cornerRadius: 8)
+                                    }
+                                    
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(track.title)
+                                            .font(.system(size: 14, weight: .semibold))
+                                            .lineLimit(1)
+                                        Text(track.artist)
+                                            .font(.system(size: 12))
+                                            .foregroundColor(.secondary)
+                                            .lineLimit(1)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundColor(.green)
+                                }
+                                .padding(8)
+                                .background(Color.secondary.opacity(0.08))
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                            }
+                        }
                     }
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(.red)
-                .disabled(linkText.isEmpty || isImporting)
-                .padding(.horizontal)
-                
-                Spacer()
+                .padding()
             }
-            .padding(.top, 20)
             .navigationTitle("Import from Spotify")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -660,22 +828,44 @@ public struct SpotifyImporterSheet: View {
         let trimmed = linkText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         isImporting = true
-        statusMessage = "Resolving track metadata..."
+        isSuccess = false
+        statusMessage = "Resolving Spotify metadata & matching full-length tracks..."
         
         Task {
             do {
                 let result = try await SpotifyImporter.shared.importFromURL(urlString: trimmed)
                 await MainActor.run {
-                    if let first = result.tracks.first {
-                        AudioPlayerEngine.shared.setQueue(result.tracks)
-                        LibraryDatabase.shared.toggleLike(track: first)
+                    self.importedTitle = result.playlistTitle
+                    self.importedTracks = result.tracks
+                    
+                    // Save as a playlist in LibraryDatabase and also like if single track
+                    if result.tracks.count == 1, let single = result.tracks.first {
+                        if !library.isLiked(trackId: single.id) {
+                            library.toggleLike(track: single)
+                        }
+                        library.recordPlayback(track: single)
+                    } else if !result.tracks.isEmpty {
+                        library.createPlaylist(title: result.playlistTitle, description: "Imported from Spotify")
+                        if let created = library.userPlaylists.last {
+                            for track in result.tracks {
+                                library.addTrackToPlaylist(playlistId: created.id, track: track)
+                            }
+                        }
                     }
+                    
+                    if let first = result.tracks.first {
+                        engine.setQueue(result.tracks, startIndex: 0)
+                        library.recordPlayback(track: first)
+                    }
+                    
                     isImporting = false
-                    dismiss()
+                    isSuccess = true
+                    statusMessage = "Successfully imported '\(result.playlistTitle)' (\(result.tracks.count) track\(result.tracks.count == 1 ? "" : "s")) to Library!"
                 }
             } catch {
                 await MainActor.run {
-                    statusMessage = "Could not resolve Spotify URL. Check link and try again."
+                    isSuccess = false
+                    statusMessage = "Could not resolve Spotify URL. Please check the link or try pasting a song/playlist title."
                     isImporting = false
                 }
             }
