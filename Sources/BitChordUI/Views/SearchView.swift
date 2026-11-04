@@ -238,69 +238,26 @@ public struct SearchView: View {
                             VStack(spacing: 4) {
                                 ForEach(searchResults) { item in
                                     HStack(spacing: 12) {
-                                        Button {
-                                            handleItemTap(item)
-                                        } label: {
-                                            HStack(spacing: 12) {
-                                                // Artwork or Logo
-                                                ZStack {
-                                                    if let artURL = item.artworkURL {
-                                                        AsyncImage(url: artURL) { phase in
-                                                            if let img = phase.image {
-                                                                img.resizable().aspectRatio(contentMode: .fill)
-                                                            } else {
-                                                                Color.gray.opacity(0.3)
-                                                            }
-                                                        }
-                                                        .frame(width: 48, height: 48)
-                                                        .clipShape(item.type == .artist ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: 8)))
-                                                    } else {
-                                                        BitChordLogoView(size: 48, cornerRadius: item.type == .artist ? 24 : 8)
-                                                    }
-                                                    
-                                                    if loadingItemId == item.id {
-                                                        Color.black.opacity(0.55)
-                                                             .frame(width: 48, height: 48)
-                                                             .clipShape(item.type == .artist ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: 8)))
-                                                        ProgressView()
-                                                            .scaleEffect(0.8)
-                                                            .tint(.white)
-                                                    }
-                                                }
-                                                
-                                                VStack(alignment: .leading, spacing: 3) {
-                                                    Text(item.title)
-                                                        .font(.system(size: 15, weight: .semibold))
-                                                        .foregroundColor(isCurrentlyPlaying(item) ? .red : .primary)
-                                                        .lineLimit(1)
-                                                    
-                                                    HStack(spacing: 5) {
-                                                        categoryIcon(for: item.type)
-                                                            .font(.system(size: 11))
-                                                            .foregroundColor(.secondary)
-                                                        
-                                                        Text(item.subtitle)
-                                                            .font(.system(size: 12))
-                                                            .foregroundColor(.secondary)
-                                                            .lineLimit(1)
-                                                    }
-                                                }
-                                                Spacer()
-                                                
-                                                if isCurrentlyPlaying(item) {
-                                                    Image(systemName: "waveform")
-                                                        .font(.system(size: 14, weight: .bold))
-                                                        .foregroundColor(.red)
-                                                        .padding(.trailing, 4)
-                                                }
+                                        if item.type == .album || item.type == .playlist {
+                                            NavigationLink {
+                                                PlaylistOrAlbumDetailView(item: item)
+                                            } label: {
+                                                searchResultRowContent(for: item)
                                             }
+                                            .buttonStyle(.plain)
+                                        } else {
+                                            Button {
+                                               handleItemTap(item)
+                                            } label: {
+                                                searchResultRowContent(for: item)
+                                            }
+                                            .buttonStyle(.plain)
+                                            .simultaneousGesture(
+                                                LongPressGesture(minimumDuration: 0.45).onEnded { _ in
+                                                    selectedTrackForMenu = item.asTrack
+                                                }
+                                            )
                                         }
-                                        .buttonStyle(.plain)
-                                        .simultaneousGesture(
-                                            LongPressGesture(minimumDuration: 0.45).onEnded { _ in
-                                                selectedTrackForMenu = item.asTrack
-                                            }
-                                        )
                                         
                                         // 3-dots Menu Button (Matching Car HU Photo 2 & 3)
                                         Button {
@@ -354,6 +311,62 @@ public struct SearchView: View {
     }
     
     // MARK: - Actions & Helpers
+    private func searchResultRowContent(for item: SearchResultItem) -> some View {
+        HStack(spacing: 12) {
+            // Artwork or Logo
+            ZStack {
+                if let artURL = item.artworkURL {
+                    AsyncImage(url: artURL) { phase in
+                        if let img = phase.image {
+                            img.resizable().aspectRatio(contentMode: .fill)
+                        } else {
+                            Color.gray.opacity(0.3)
+                        }
+                    }
+                    .frame(width: 48, height: 48)
+                    .clipShape(item.type == .artist ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: 8)))
+                } else {
+                    BitChordLogoView(size: 48, cornerRadius: item.type == .artist ? 24 : 8)
+                }
+                
+                if loadingItemId == item.id {
+                    Color.black.opacity(0.55)
+                        .frame(width: 48, height: 48)
+                        .clipShape(item.type == .artist ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: 8)))
+                    ProgressView()
+                        .scaleEffect(0.8)
+                        .tint(.white)
+                }
+            }
+            
+            VStack(alignment: .leading, spacing: 3) {
+                Text(item.title)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(isCurrentlyPlaying(item) ? .red : .primary)
+                    .lineLimit(1)
+                
+                HStack(spacing: 5) {
+                    categoryIcon(for: item.type)
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                    
+                    Text(item.subtitle)
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer()
+            
+            if isCurrentlyPlaying(item) {
+                Image(systemName: "waveform")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(.red)
+                    .padding(.trailing, 4)
+            }
+        }
+    }
+    
     private func isCurrentlyPlaying(_ item: SearchResultItem) -> Bool {
         guard let current = engine.currentTrack else { return false }
         if let vId = item.videoId, vId == current.id { return true }

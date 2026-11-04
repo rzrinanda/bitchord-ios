@@ -5,7 +5,6 @@ public struct ExploreView: View {
     @ObservedObject var library = LibraryDatabase.shared
     @State private var showingAccountMenu: Bool = false
     @State private var selectedTrackForMenu: Track? = nil
-    @State private var loadingQueryTitle: String? = nil
     
     // Top 3 YT Music Navigation Cards
     private let topCategoryCards: [(title: String, icon: String, query: String, color: Color)] = [
@@ -216,12 +215,12 @@ public struct ExploreView: View {
         }
     }
     
-    // MARK: - 1. Top 3 YT Music Category Cards
+    // MARK: - 1. Top 3 YT Music Category Cards (Opens Category Playlists Browser)
     private var topNavigationCardsSection: some View {
         HStack(spacing: 10) {
             ForEach(topCategoryCards, id: \.title) { card in
-                Button {
-                    playSearchQuery(card.query, displayTitle: card.title)
+                NavigationLink {
+                    CategoryPlaylistsBrowserView(categoryTitle: card.title)
                 } label: {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack {
@@ -229,10 +228,6 @@ public struct ExploreView: View {
                                 .font(.system(size: 20, weight: .semibold))
                                 .foregroundColor(card.color)
                             Spacer()
-                            if loadingQueryTitle == card.title {
-                                ProgressView()
-                                    .scaleEffect(0.75)
-                            }
                         }
                         
                         Text(card.title)
@@ -253,7 +248,7 @@ public struct ExploreView: View {
         .padding(.horizontal, 16)
     }
     
-    // MARK: - 2. New Albums & Singles
+    // MARK: - 2. New Albums & Singles (Opens Album / Single Tracklist)
     private var newAlbumsSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
@@ -261,11 +256,8 @@ public struct ExploreView: View {
                     .font(.system(size: 22, weight: .bold))
                     .foregroundColor(.primary)
                 Spacer()
-                Button {
-                    engine.setQueue(newAlbumsAndSingles, startIndex: 0)
-                    if let first = newAlbumsAndSingles.first {
-                        library.recordPlayback(track: first)
-                    }
+                NavigationLink {
+                    CategoryPlaylistsBrowserView(categoryTitle: "New releases")
                 } label: {
                     Text("More")
                         .font(.system(size: 13, weight: .semibold))
@@ -282,13 +274,21 @@ public struct ExploreView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 14) {
                     ForEach(newAlbumsAndSingles) { track in
-                        Button {
-                            let idx = newAlbumsAndSingles.firstIndex(where: { $0.id == track.id }) ?? 0
-                            engine.setQueue(newAlbumsAndSingles, startIndex: idx)
-                            library.recordPlayback(track: track)
+                        NavigationLink {
+                            PlaylistOrAlbumDetailView(
+                                item: SearchResultItem(
+                                    id: "album_\(track.id)",
+                                    title: track.title,
+                                    subtitle: "\(track.album) • \(track.artist)",
+                                    type: .album,
+                                    artist: track.artist,
+                                    album: track.album,
+                                    artworkURL: track.artworkURL
+                                )
+                            )
                         } label: {
                             VStack(alignment: .leading, spacing: 8) {
-                                ZStack(alignment: .bottomTrailing) {
+                                ZStack(alignment: .topLeading) {
                                     if let artURL = track.artworkURL {
                                         AsyncImage(url: artURL) { phase in
                                             if let img = phase.image {
@@ -304,12 +304,12 @@ public struct ExploreView: View {
                                     }
                                     
                                     Circle()
-                                        .fill(Color.black.opacity(0.65))
-                                        .frame(width: 34, height: 34)
+                                        .fill(Color.black.opacity(0.45))
+                                        .frame(width: 24, height: 24)
                                         .overlay(
-                                            Image(systemName: engine.currentTrack?.id == track.id && engine.status == .playing ? "pause.fill" : "play.fill")
-                                                .font(.system(size: 13, weight: .bold))
-                                                .foregroundColor(.white)
+                                            Image(systemName: "play.circle")
+                                                .font(.system(size: 14, weight: .semibold))
+                                                .foregroundColor(.white.opacity(0.9))
                                         )
                                         .padding(8)
                                 }
@@ -445,25 +445,40 @@ public struct ExploreView: View {
         }
     }
     
-    // MARK: - 4. Moods & Genres Section (YouTube Music colored left-border strips)
+    // MARK: - 4. Moods & Genres Section (Opens Category Playlists Browser)
     private var moodsAndGenresSection: some View {
         let rows = stride(from: 0, to: moodsAndGenres.count, by: 3).map {
             Array(moodsAndGenres[$0..<min($0 + 3, moodsAndGenres.count)])
         }
         
         return VStack(alignment: .leading, spacing: 14) {
-            Text("Moods & genres")
-                .font(.system(size: 22, weight: .bold))
-                .foregroundColor(.primary)
-                .padding(.horizontal, 16)
+            HStack {
+                Text("Moods & genres")
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundColor(.primary)
+                Spacer()
+                NavigationLink {
+                    CategoryPlaylistsBrowserView(categoryTitle: "Moods & genres")
+                } label: {
+                    Text("More")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.primary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color.secondary.opacity(0.15))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 16)
             
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .top, spacing: 12) {
                     ForEach(0..<rows.count, id: \.self) { colIdx in
                         VStack(spacing: 10) {
                             ForEach(rows[colIdx], id: \.name) { item in
-                                Button {
-                                    playSearchQuery("\(item.name) music playlist", displayTitle: item.name)
+                                NavigationLink {
+                                    CategoryPlaylistsBrowserView(categoryTitle: item.name)
                                 } label: {
                                     HStack(spacing: 0) {
                                         Rectangle()
@@ -476,10 +491,6 @@ public struct ExploreView: View {
                                                 .foregroundColor(.primary)
                                                 .lineLimit(1)
                                             Spacer()
-                                            if loadingQueryTitle == item.name {
-                                                ProgressView()
-                                                    .scaleEffect(0.75)
-                                            }
                                         }
                                         .padding(.horizontal, 14)
                                     }
@@ -497,37 +508,55 @@ public struct ExploreView: View {
         }
     }
     
-    // MARK: - 5. Charts Section
+    // MARK: - 5. Charts Section (Opens Chart Playlist Tracklist)
     private var chartsSection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Charts")
-                .font(.system(size: 22, weight: .bold))
-                .padding(.horizontal, 16)
+            HStack {
+                Text("Charts")
+                    .font(.system(size: 22, weight: .bold))
+                Spacer()
+                NavigationLink {
+                    CategoryPlaylistsBrowserView(categoryTitle: "Charts")
+                } label: {
+                    Text("More")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.primary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color.secondary.opacity(0.15))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 16)
             
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 14) {
                     ForEach(charts, id: \.title) { chart in
-                        Button {
-                            playSearchQuery(chart.title, displayTitle: chart.title)
+                        NavigationLink {
+                            PlaylistOrAlbumDetailView(
+                                item: SearchResultItem(
+                                    id: "chart_\(chart.title)",
+                                    title: chart.title,
+                                    subtitle: "Chart Playlist • \(chart.subtitle)",
+                                    type: .playlist,
+                                    artist: "YouTube Music"
+                                ),
+                                customGradient: [chart.color, chart.color.opacity(0.45)]
+                            )
                         } label: {
                             VStack(alignment: .leading, spacing: 8) {
                                 ZStack {
                                     RoundedRectangle(cornerRadius: 14, style: .continuous)
                                         .fill(chart.color.gradient)
                                     
-                                    if loadingQueryTitle == chart.title {
-                                        ProgressView()
-                                            .scaleEffect(1.2)
-                                            .tint(.white)
-                                    } else {
-                                        VStack(spacing: 8) {
-                                            Image(systemName: chart.image)
-                                                .font(.system(size: 32, weight: .bold))
-                                                .foregroundColor(.white.opacity(0.9))
-                                            Text("TOP 100")
-                                                .font(.system(size: 10, weight: .heavy))
-                                                .foregroundColor(.white.opacity(0.8))
-                                        }
+                                    VStack(spacing: 8) {
+                                        Image(systemName: chart.image)
+                                            .font(.system(size: 32, weight: .bold))
+                                            .foregroundColor(.white.opacity(0.9))
+                                        Text("TOP 100")
+                                            .font(.system(size: 10, weight: .heavy))
+                                            .foregroundColor(.white.opacity(0.8))
                                     }
                                 }
                                 .frame(width: 145, height: 145)
@@ -547,23 +576,6 @@ public struct ExploreView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-            }
-        }
-    }
-    
-    private func playSearchQuery(_ query: String, displayTitle: String) {
-        loadingQueryTitle = displayTitle
-        Task {
-            let results = (try? await YTMusicClient.shared.search(query: query)) ?? []
-            await MainActor.run {
-                self.loadingQueryTitle = nil
-                if !results.isEmpty {
-                    engine.setQueue(results, startIndex: 0)
-                    library.recordPlayback(track: results[0])
-                } else {
-                    engine.setQueue(trendingSongs, startIndex: 0)
-                    library.recordPlayback(track: trendingSongs[0])
-                }
             }
         }
     }
