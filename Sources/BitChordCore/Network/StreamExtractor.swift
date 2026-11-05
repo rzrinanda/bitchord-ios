@@ -169,9 +169,25 @@ public struct StreamInfo: Sendable, Equatable {
         return "lossy_low"
     }
     
+    /// Returns true if the stream format/codec is natively decodable by iOS AVFoundation (`AVPlayer`).
+    public var isIOSAVPlayerCompatible: Bool {
+        let lowerFormat = format.lowercased()
+        let lowerCodec = codec.lowercased()
+        if lowerFormat.contains("webm") || lowerFormat.contains("vorbis") || lowerCodec == "vorbis" {
+            return false
+        }
+        if lowerCodec == "opus" && !lowerFormat.contains("mp4") && !lowerFormat.contains("caf") {
+            return false
+        }
+        return true
+    }
+    
     /// Sorts candidate streams from highest to lowest objective quality and deduplicates into at most `maxLevels` distinct quality tiers.
     public static func selectTopDistinctQualityLevels(from streams: [StreamInfo], maxLevels: Int = 3) -> [StreamInfo] {
         let sorted = streams.sorted { a, b in
+            if a.isIOSAVPlayerCompatible != b.isIOSAVPlayerCompatible {
+                return a.isIOSAVPlayerCompatible && !b.isIOSAVPlayerCompatible
+            }
             if abs(a.qualityScore - b.qualityScore) > 0.01 {
                 return a.qualityScore > b.qualityScore
             }
@@ -283,39 +299,36 @@ public actor StreamExtractor {
             }
         }
         
-        // Source 1: Direct YouTube Innertube Player API (iOS Client - Full Length Official Audio)
+        // Fast concurrent extraction across primary & fallback YouTube/Piped/Invidious sources
         if sourceGroups.count < maxSources, effectiveVideoId.count == 11 {
-            let iosStreams = await extractTiersViaYouTubeInnertube(trackId: effectiveVideoId)
-            let ranked = StreamInfo.selectTopDistinctQualityLevels(from: iosStreams, maxLevels: maxQualityLevelsPerSource)
-            if !ranked.isEmpty {
-                sourceGroups.append(ranked)
+            let vId = effectiveVideoId
+            async let iosTask = extractTiersViaYouTubeInnertube(trackId: vId)
+            async let androidTask = extractTiersViaYouTubeAndroid(trackId: vId)
+            
+            let (iosStreams, androidStreams) = await (iosTask, androidTask)
+            let rankedIOS = StreamInfo.selectTopDistinctQualityLevels(from: iosStreams, maxLevels: maxQualityLevelsPerSource)
+            if !rankedIOS.isEmpty && sourceGroups.count < maxSources {
+                sourceGroups.append(rankedIOS)
             }
-        }
-        
-        // Source 2: Direct YouTube Innertube Player API (Android Client - Full Length Official Audio)
-        if sourceGroups.count < maxSources, effectiveVideoId.count == 11 {
-            let androidStreams = await extractTiersViaYouTubeAndroid(trackId: effectiveVideoId)
-            let ranked = StreamInfo.selectTopDistinctQualityLevels(from: androidStreams, maxLevels: maxQualityLevelsPerSource)
-            if !ranked.isEmpty {
-                sourceGroups.append(ranked)
+            let rankedAndroid = StreamInfo.selectTopDistinctQualityLevels(from: androidStreams, maxLevels: maxQualityLevelsPerSource)
+            if !rankedAndroid.isEmpty && sourceGroups.count < maxSources {
+                sourceGroups.append(rankedAndroid)
             }
-        }
-        
-        // Source 3: Piped Audio Streams (Full Length Audio)
-        if sourceGroups.count < maxSources, effectiveVideoId.count == 11 {
-            let pipedStreams = await extractTiersViaPiped(trackId: effectiveVideoId)
-            let ranked = StreamInfo.selectTopDistinctQualityLevels(from: pipedStreams, maxLevels: maxQualityLevelsPerSource)
-            if !ranked.isEmpty {
-                sourceGroups.append(ranked)
+            
+            // Only query third-party proxies (Piped / Invidious) if we still need alternative sources
+            if sourceGroups.count < maxSources {
+                let pipedStreams = await extractTiersViaPiped(trackId: vId)
+                let rankedPiped = StreamInfo.selectTopDistinctQualityLevels(from: pipedStreams, maxLevels: maxQualityLevelsPerSource)
+                if !rankedPiped.isEmpty && sourceGroups.count < maxSources {
+                    sourceGroups.append(rankedPiped)
+                }
             }
-        }
-        
-        // Source 4: Invidious Audio Streams (Full Length Audio)
-        if sourceGroups.count < maxSources, effectiveVideoId.count == 11 {
-            let invidiousStreams = await extractTiersViaInvidious(trackId: effectiveVideoId)
-            let ranked = StreamInfo.selectTopDistinctQualityLevels(from: invidiousStreams, maxLevels: maxQualityLevelsPerSource)
-            if !ranked.isEmpty {
-                sourceGroups.append(ranked)
+            if sourceGroups.count < maxSources {
+                let invidiousStreams = await extractTiersViaInvidious(trackId: vId)
+                let rankedInvidious = StreamInfo.selectTopDistinctQualityLevels(from: invidiousStreams, maxLevels: maxQualityLevelsPerSource)
+                if !rankedInvidious.isEmpty && sourceGroups.count < maxSources {
+                    sourceGroups.append(rankedInvidious)
+                }
             }
         }
         

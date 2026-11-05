@@ -736,7 +736,7 @@ public final class AudioPlayerEngine: ObservableObject {
             return
         }
         
-        // 2. If track already has a valid 11-char YouTube ID, play via YouTubeAudioBridge with bounded quality/source fallback
+        // 2. If track already has a valid 11-char YouTube ID, start YouTubeAudioBridge immediately AND extract direct high-quality stream in parallel
         if track.id.count == 11 && !track.id.hasPrefix("yt_") {
             self.stopAVPlayer()
             self.activeBackend = .youtubeBridge
@@ -759,7 +759,6 @@ public final class AudioPlayerEngine: ObservableObject {
                 guard self.currentTrack?.id == targetTrackId else { return }
                 var coordinator = PlaybackFallbackCoordinator(track: track, candidateSources: sourceGroups)
                 if let initialPlan = coordinator.beginInitialAttempt() {
-                    self.activeFallbackCoordinator = coordinator
                     let streamInfo = initialPlan.stream
                     var updated = track
                     updated.streamURL = streamInfo.streamURL
@@ -776,19 +775,24 @@ public final class AudioPlayerEngine: ObservableObject {
                     let isBackgrounded = false
                     #endif
                     
-                    if self.status != .playing || isBackgrounded || streamInfo.isGenuineLossless {
+                    // Switch to AVPlayer immediately so audio starts right away (without waiting for WebView iframe buffering)
+                    if self.activeBackend != .avPlayer || self.status != .playing || isBackgrounded || streamInfo.isGenuineLossless {
+                        self.activeFallbackCoordinator = coordinator
                         let currentPos = self.currentTime
                         self.startPlaying(url: streamInfo.streamURL, for: updated, initialSeek: currentPos)
+                    } else {
+                        // Keep candidate sources ready (with totalAttempts = 0) if we need fallback later
+                        self.activeFallbackCoordinator = PlaybackFallbackCoordinator(track: updated, candidateSources: sourceGroups)
                     }
                 }
             }
             
-            // Watchdog fallback: if YouTubeAudioBridge doesn't start producing audio within 6.0s, switch to bounded stream fallback
+            // Watchdog fallback: if neither YouTubeAudioBridge nor initial stream started playing within 4.0s, trigger stream fallback
             Task { @MainActor [weak self] in
-                try? await Task.sleep(nanoseconds: 6_000_000_000)
+                try? await Task.sleep(nanoseconds: 4_000_000_000)
                 guard let self = self, self.currentTrack?.id == targetTrackId else { return }
                 if self.status != .playing {
-                    print("[AudioEngine] YouTube Audio Bridge startup timed out for \(targetTrackId), switching to AVPlayer stream fallback")
+                    print("[AudioEngine] Startup timed out for \(targetTrackId), switching to AVPlayer stream fallback")
                     self.attemptStreamFallback(for: track, reason: .startupTimeoutExceeded)
                 }
             }
@@ -832,7 +836,6 @@ public final class AudioPlayerEngine: ObservableObject {
                         guard self.currentTrack?.id == targetTrackId else { return }
                         var coordinator = PlaybackFallbackCoordinator(track: updated, candidateSources: sourceGroups)
                         if let initialPlan = coordinator.beginInitialAttempt() {
-                            self.activeFallbackCoordinator = coordinator
                             let streamInfo = initialPlan.stream
                             var withStream = updated
                             withStream.streamURL = streamInfo.streamURL
@@ -844,19 +847,21 @@ public final class AudioPlayerEngine: ObservableObject {
                                 self.queue[self.queueIndex] = withStream
                             }
                             
-                            // Switch to AVPlayer if not playing yet, or if a genuine Lossless/Hi-Res stream was resolved
-                            if self.status != .playing || streamInfo.isGenuineLossless {
+                            if self.activeBackend != .avPlayer || self.status != .playing || streamInfo.isGenuineLossless {
+                                self.activeFallbackCoordinator = coordinator
                                 let currentPos = self.currentTime
                                 self.startPlaying(url: streamInfo.streamURL, for: withStream, initialSeek: currentPos)
+                            } else {
+                                self.activeFallbackCoordinator = PlaybackFallbackCoordinator(track: withStream, candidateSources: sourceGroups)
                             }
                         }
                     }
                     
                     Task { @MainActor [weak self] in
-                        try? await Task.sleep(nanoseconds: 6_000_000_000)
+                        try? await Task.sleep(nanoseconds: 4_000_000_000)
                         guard let self = self, self.currentTrack?.id == targetTrackId else { return }
                         if self.status != .playing {
-                            print("[AudioEngine] YouTube Audio Bridge startup timed out for \(targetTrackId), switching to AVPlayer stream fallback")
+                            print("[AudioEngine] Startup timed out for \(targetTrackId), switching to AVPlayer stream fallback")
                             self.attemptStreamFallback(for: updated, reason: .startupTimeoutExceeded)
                         }
                     }
@@ -1111,6 +1116,13 @@ public final class AudioPlayerEngine: ObservableObject {
             }
             
             guard var coordinator = self.activeFallbackCoordinator else { return }
+            if coordinator.totalAttempts == 0 {
+                if let firstPlan = coordinator.beginInitialAttempt() {
+                    self.activeFallbackCoordinator = coordinator
+                    self.applyFallbackAttemptPlan(firstPlan, for: track)
+                    return
+                }
+            }
             let effectiveFailedURL = failedURL ?? track.streamURL ?? URL(string: "https://invalid.bitchord.local/\(track.id)")!
             
             if let nextPlan = coordinator.recordFailureAndNextAttempt(

@@ -115,14 +115,23 @@ public actor YTMusicClient {
         album: String? = nil,
         duration: TimeInterval? = nil
     ) async -> String? {
-        let query = "\(title) \(artist ?? "")".trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanArtist: String
+        if let a = artist?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !a.isEmpty,
+           a.lowercased() != "youtube music",
+           !a.lowercased().contains("unknown") {
+            cleanArtist = a
+        } else {
+            cleanArtist = ""
+        }
+        let query = "\(title) \(cleanArtist)".trimmingCharacters(in: .whitespacesAndNewlines)
         
         // 1. Primary search with Songs filter (prioritizes official studio & exact version tracks)
         if let json = await performInnertubeSearchRequest(query: query, params: "EgWKAQIIAWoKEAkQChAFEAMQBA=="),
            let matchedId = extractBestMatchingSongVideoId(
                from: json,
                requestedTitle: title,
-               requestedArtist: artist ?? "",
+               requestedArtist: cleanArtist,
                requestedAlbum: album,
                requestedDuration: duration
            ) {
@@ -134,7 +143,7 @@ public actor YTMusicClient {
            let matchedId = extractBestMatchingSongVideoId(
                from: json,
                requestedTitle: title,
-               requestedArtist: artist ?? "",
+               requestedArtist: cleanArtist,
                requestedAlbum: album,
                requestedDuration: duration
            ) {
@@ -148,7 +157,7 @@ public actor YTMusicClient {
             for cand in pipedTracks where cand.id.count == 11 {
                 if let score = TrackVersionMatcher.matchScore(
                     requestedTitle: title,
-                    requestedArtist: artist ?? "",
+                    requestedArtist: cleanArtist,
                     requestedAlbum: album,
                     requestedDuration: duration,
                     candidateTitle: cand.title,

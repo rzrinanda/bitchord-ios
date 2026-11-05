@@ -760,7 +760,7 @@ func runAllTests() async {
             maxLevels: 3
         )
         assertTest(selectedTiers.count == 3, "Quality Selection: Capped at max 3 distinct quality levels per source")
-        assertTest(selectedTiers[0].bitrate == 320 && selectedTiers[1].bitrate == 256 && selectedTiers[2].bitrate == 160, "Quality Selection: Sorted highest quality first (320 -> 256 -> 160 Opus)")
+        assertTest(selectedTiers[0].bitrate == 320 && selectedTiers[1].bitrate == 256 && selectedTiers[2].bitrate == 128, "Quality Selection: Prioritizes iOS AVPlayer-compatible streams sorted highest quality first (320 -> 256 -> 128 AAC)")
     }
     
     // MARK: - Test 18: Playback Fallback Sequence & Explicit Retry Limits

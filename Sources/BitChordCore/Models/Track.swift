@@ -162,18 +162,21 @@ public struct TrackVersionMatcher: Sendable {
             .replacingOccurrences(of: " - topic", with: "")
             .replacingOccurrences(of: "vevo", with: "")
             .replacingOccurrences(of: "official", with: "")
-        let parts = lower.components(separatedBy: CharacterSet(charactersIn: ",;&/"))
+        let initialTokens = lower.components(separatedBy: CharacterSet(charactersIn: ",;&/•"))
+        let splitTokens = initialTokens
             .flatMap { $0.components(separatedBy: " feat.") }
             .flatMap { $0.components(separatedBy: " ft.") }
             .flatMap { $0.components(separatedBy: " featuring ") }
             .flatMap { $0.components(separatedBy: " x ") }
-            .map {
-                $0.replacingOccurrences(of: #"[^\p{L}\p{N}\s]"#, with: " ", options: .regularExpression)
-                    .split(whereSeparator: { $0.isWhitespace })
-                    .joined(separator: " ")
-            }
-            .filter { !$0.isEmpty && $0 != "youtube music" && $0 != "various artists" }
-        return parts
+        let cleanedTokens: [String] = splitTokens.map { token in
+            token.replacingOccurrences(of: #"[^\p{L}\p{N}\s]"#, with: " ", options: .regularExpression)
+                .split(whereSeparator: { $0.isWhitespace })
+                .joined(separator: " ")
+        }
+        let ignoredTokens: Set<String> = [
+            "youtube music", "unknown artist", "unknown", "various artists", "song", "lagu", "video"
+        ]
+        return cleanedTokens.filter { !$0.isEmpty && !ignoredTokens.contains($0) }
     }
     
     /// Strictly verifies whether a candidate track matches the requested track's title, artist, and exact version type.
@@ -274,14 +277,14 @@ public struct TrackVersionMatcher: Sendable {
             }
         }
         
-        // Duration proximity check (reject wildly different durations if known, e.g. > 90s difference on studio track)
-        if let reqDur = requestedDuration, reqDur >= 60, let candDur = candidateDuration, candDur >= 60 {
+        // Duration proximity check (only compare when requestedDuration is a real track duration, not the 180s placeholder)
+        if let reqDur = requestedDuration, reqDur >= 60, abs(reqDur - 180.0) > 0.1, let candDur = candidateDuration, candDur >= 60 {
             let diff = abs(reqDur - candDur)
             if diff <= 8 {
                 score += 10.0
             } else if diff <= 25 {
                 score += 4.0
-            } else if diff > 90 && targetVersion == .studio {
+            } else if diff > 120 && targetVersion == .studio {
                 return nil
             }
         }
