@@ -301,7 +301,7 @@ public struct SearchView: View {
                                             NavigationLink {
                                                 CategoryPlaylistsBrowserView(categoryTitle: item.title)
                                             } label: {
-                                                ZStack(alignment: .bottomLeading) {
+                                                ZStack(alignment: .topLeading) {
                                                     // Background Image or Gradient
                                                     if let url = item.imageURL {
                                                         AsyncImage(url: url) { phase in
@@ -326,9 +326,9 @@ public struct SearchView: View {
                                                     
                                                     // Dark Gradient Overlay for clean readability
                                                     LinearGradient(
-                                                        colors: [Color.clear, Color.black.opacity(0.8)],
-                                                        startPoint: .top,
-                                                        endPoint: .bottom
+                                                        colors: [Color.black.opacity(0.72), Color.black.opacity(0.35)],
+                                                        startPoint: .topLeading,
+                                                        endPoint: .bottomTrailing
                                                     )
                                                     
                                                     VStack(alignment: .leading, spacing: 3) {
@@ -338,7 +338,7 @@ public struct SearchView: View {
                                                             .lineLimit(1)
                                                         Text(item.subtitle)
                                                             .font(.system(size: 12, weight: .medium))
-                                                            .foregroundColor(.white.opacity(0.8))
+                                                            .foregroundColor(.white.opacity(0.85))
                                                             .lineLimit(1)
                                                     }
                                                     .padding(12)
@@ -353,7 +353,7 @@ public struct SearchView: View {
                                 }
                             }
                         }
-                        .padding(.bottom, 140)
+                        .padding(.bottom, engine.currentTrack != nil ? 220 : 150)
                     }
                     .scrollDismissesKeyboard(.interactively)
                 } else if searchResults.isEmpty && !query.isEmpty {
@@ -428,7 +428,7 @@ public struct SearchView: View {
                                 }
                             }
                         }
-                        .padding(.bottom, 140)
+                        .padding(.bottom, engine.currentTrack != nil ? 220 : 150)
                     }
                     .scrollDismissesKeyboard(.interactively)
                 }

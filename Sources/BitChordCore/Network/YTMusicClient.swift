@@ -903,6 +903,28 @@ public actor YTMusicClient {
                                     if let firstRun = runs.first, let aName = firstRun["text"] as? String {
                                         artist = aName
                                     }
+                                    
+                                    if extractedArtist == nil {
+                                        let badgeWords: Set<String> = ["lagu", "song", "video", "album", "artis", "artist", "playlist", "•", ""]
+                                        for run in runs {
+                                            let t = (run["text"] as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
+                                            if !badgeWords.contains(t.lowercased()) && !t.contains("views") && !t.contains("ditonton") && !t.contains("pemutaran") && !t.contains("penayangan") {
+                                                extractedArtist = t
+                                                break
+                                            }
+                                        }
+                                    }
+                                    if extractedArtist == nil {
+                                        for sep in [" - ", " – ", " — "] {
+                                            if let sepRange = title.range(of: sep) {
+                                                let cand = String(title[..<sepRange.lowerBound]).trimmingCharacters(in: .whitespaces)
+                                                if !cand.isEmpty {
+                                                    extractedArtist = cand
+                                                    break
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1166,8 +1188,24 @@ public actor YTMusicClient {
                     
                     let ownerRuns = ((vr["ownerText"] as? [String: Any])?["runs"] as? [[String: Any]])
                         ?? ((vr["longBylineText"] as? [String: Any])?["runs"] as? [[String: Any]])
-                    let channelName = (ownerRuns?.compactMap { $0["text"] as? String }.joined().trimmingCharacters(in: .whitespacesAndNewlines) ?? "YouTube")
+                        ?? ((vr["shortBylineText"] as? [String: Any])?["runs"] as? [[String: Any]])
+                    var channelName = (ownerRuns?.compactMap { $0["text"] as? String }.joined().trimmingCharacters(in: .whitespacesAndNewlines) ?? "")
                         .replacingOccurrences(of: " - Topic", with: "")
+                    
+                    if channelName.isEmpty || channelName.lowercased() == "youtube" {
+                        for sep in [" - ", " – ", " — "] {
+                            if let sepRange = title.range(of: sep) {
+                                let cand = String(title[..<sepRange.lowerBound]).trimmingCharacters(in: .whitespaces)
+                                if !cand.isEmpty {
+                                    channelName = cand
+                                    break
+                                }
+                            }
+                        }
+                    }
+                    if channelName.isEmpty {
+                        channelName = "YouTube"
+                    }
                     
                     var duration: TimeInterval = 210
                     var durationLabel = ""

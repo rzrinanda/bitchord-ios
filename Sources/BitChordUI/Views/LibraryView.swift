@@ -286,10 +286,9 @@ public struct LibraryView: View {
                     .background(Color.secondary.opacity(0.08))
                     .clipShape(RoundedRectangle(cornerRadius: 16))
                     .padding(.horizontal, 16)
-                    
-                    Spacer(minLength: 165)
                 }
                 .padding(.top, 10)
+                .padding(.bottom, engine.currentTrack != nil ? 220 : 150)
             }
             .navigationTitle("Library")
             .toolbar {

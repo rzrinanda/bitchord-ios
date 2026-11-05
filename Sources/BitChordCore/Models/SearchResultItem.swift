@@ -57,11 +57,28 @@ public struct SearchResultItem: Identifiable, Hashable, Codable, Sendable {
     }
     
     public var asTrack: Track {
-        let resolvedArtist: String
-        if let explicitArtist = artist, !explicitArtist.trimmingCharacters(in: .whitespaces).isEmpty {
+        var resolvedArtist: String
+        if let explicitArtist = artist, !explicitArtist.trimmingCharacters(in: .whitespaces).isEmpty, explicitArtist != "Unknown Artist" {
             resolvedArtist = explicitArtist.trimmingCharacters(in: .whitespaces)
         } else {
             resolvedArtist = SearchResultItem.extractArtist(from: subtitle, type: type)
+        }
+        
+        // Secondary title fallback: Extract "Artist - Title" (standard YouTube title naming)
+        if resolvedArtist == "Unknown Artist" || resolvedArtist.isEmpty {
+            for separator in [" - ", " – ", " — "] {
+                if let sepRange = title.range(of: separator) {
+                    let cand = String(title[..<sepRange.lowerBound]).trimmingCharacters(in: .whitespaces)
+                    if !cand.isEmpty && cand.count > 1 {
+                        resolvedArtist = cand
+                        break
+                    }
+                }
+            }
+        }
+        
+        if resolvedArtist == "Unknown Artist" && (source == .youtube || type == .video) {
+            resolvedArtist = "YouTube"
         }
         
         let resolvedAlbum: String
@@ -103,17 +120,23 @@ public struct SearchResultItem: Identifiable, Hashable, Codable, Sendable {
     }
     
     public static func extractArtist(from subtitle: String, type: SearchResultType) -> String {
-        let parts = subtitle.components(separatedBy: " • ").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        let normalized = subtitle
+            .replacingOccurrences(of: "\u{00A0}", with: " ")
+            .replacingOccurrences(of: "·", with: "•")
+            .replacingOccurrences(of: "•", with: " • ")
+            .replacingOccurrences(of: "  ", with: " ")
+            
+        let parts = normalized.components(separatedBy: " • ").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         guard !parts.isEmpty else { return "Unknown Artist" }
         
         let badgeKeywords: Set<String> = [
-            "lagu", "song", "video", "album", "artis", "artist", "playlist", "daftar putar", "single", "ep", "profil"
+            "lagu", "song", "video", "album", "artis", "artist", "playlist", "daftar putar", "single", "ep", "profil", "audio", "official"
         ]
         
         for candidate in parts {
             let lower = candidate.lowercased()
             if badgeKeywords.contains(lower) { continue }
-            if lower.contains("ditonton") || lower.contains("pemutaran") || lower.contains("views") || lower.contains("view") || lower.contains("audiens") { continue }
+            if lower.contains("ditonton") || lower.contains("pemutaran") || lower.contains("views") || lower.contains("view") || lower.contains("audiens") || lower.contains("penayangan") { continue }
             if candidate.range(of: #"^\d+[\.:]\d+$"#, options: .regularExpression) != nil { continue }
             if candidate.range(of: #"^\d{4}$"#, options: .regularExpression) != nil { continue }
             return candidate

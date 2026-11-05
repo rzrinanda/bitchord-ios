@@ -107,24 +107,24 @@ public struct MainTabView: View {
                     .padding(.horizontal, 16)
                     .padding(.bottom, 8)
                 }
-                .padding(.top, 14)
+                .padding(.top, 12)
                 .background(
-                    ZStack {
-                        Color(red: 0.05, green: 0.05, blue: 0.07)
-                            .ignoresSafeArea(edges: .bottom)
-                        
+                    VStack(spacing: 0) {
                         LinearGradient(
                             stops: [
-                                .init(color: Color(red: 0.05, green: 0.05, blue: 0.07).opacity(0.0), location: 0.0),
-                                .init(color: Color(red: 0.05, green: 0.05, blue: 0.07).opacity(0.85), location: 0.35),
+                                .init(color: Color.black.opacity(0.0), location: 0.0),
+                                .init(color: Color(red: 0.05, green: 0.05, blue: 0.07).opacity(0.75), location: 0.35),
                                 .init(color: Color(red: 0.05, green: 0.05, blue: 0.07), location: 0.7)
                             ],
                             startPoint: .top,
                             endPoint: .bottom
                         )
-                        .frame(height: 36)
-                        .offset(y: -18)
+                        .frame(height: 48)
+                        
+                        Color(red: 0.05, green: 0.05, blue: 0.07)
                     }
+                    .padding(.top, -24)
+                    .ignoresSafeArea(edges: .bottom)
                     .allowsHitTesting(false)
                 )
                 .transition(.opacity.combined(with: .move(edge: .bottom)))

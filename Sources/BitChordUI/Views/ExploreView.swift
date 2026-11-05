@@ -184,10 +184,9 @@ public struct ExploreView: View {
                     
                     // MARK: - 5. Charts & Tangga Lagu
                     chartsSection
-                    
-                    Spacer(minLength: 165)
                 }
                 .padding(.top, 10)
+                .padding(.bottom, engine.currentTrack != nil ? 220 : 150)
             }
             .navigationTitle("Explore")
             .toolbar {

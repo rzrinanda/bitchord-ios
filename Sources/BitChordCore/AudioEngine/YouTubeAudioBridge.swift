@@ -144,7 +144,8 @@ public final class YouTubeAudioBridge: NSObject {
         <body>
         <iframe id="player"
                 src=""
-                allow="autoplay; encrypted-media; picture-in-picture"
+                allow="autoplay *; encrypted-media *; picture-in-picture *"
+                allowfullscreen
                 playsinline>
         </iframe>
         <script>
@@ -152,6 +153,7 @@ public final class YouTubeAudioBridge: NSObject {
         var pendingId = null;
         var currentLoadedId = null;
         var isUserPlaying = false;
+        var playWatchdog = null;
 
         function postCommand(command, args) {
           var iframe = document.getElementById('player');
@@ -162,6 +164,27 @@ public final class YouTubeAudioBridge: NSObject {
               args: args || []
             }), '*');
           }
+        }
+
+        function startPlayWatchdog() {
+          if (playWatchdog) clearInterval(playWatchdog);
+          var attempts = 0;
+          playWatchdog = setInterval(function() {
+            if (!isUserPlaying) {
+              clearInterval(playWatchdog);
+              playWatchdog = null;
+              return;
+            }
+            attempts++;
+            if (attempts > 30) {
+              clearInterval(playWatchdog);
+              playWatchdog = null;
+              return;
+            }
+            postCommand('listening');
+            postCommand('unMute');
+            postCommand('playVideo');
+          }, 450);
         }
 
         function playVideoId(vId) {
@@ -182,28 +205,23 @@ public final class YouTubeAudioBridge: NSObject {
           }
           
           if (currentLoadedId === vId) {
+            postCommand('unMute');
             postCommand('playVideo');
+            startPlayWatchdog();
           } else {
             currentLoadedId = vId;
             var embedUrl = "https://www.youtube-nocookie.com/embed/" + vId + "?autoplay=1&playsinline=1&controls=0&rel=0&enablejsapi=1&iv_load_policy=3&widget_referrer=https%3A%2F%2Fwww.youtube.com";
             iframe.src = embedUrl;
+            startPlayWatchdog();
           }
-          
-          // Poll listening handshake to wake up YouTube embed API
-          var pingCount = 0;
-          var pingInterval = setInterval(function() {
-            pingCount++;
-            if (!isUserPlaying || pingCount > 10) {
-              clearInterval(pingInterval);
-              return;
-            }
-            postCommand('listening');
-            postCommand('playVideo');
-          }, 350);
         }
 
         function pauseVideo() {
           isUserPlaying = false;
+          if (playWatchdog) {
+            clearInterval(playWatchdog);
+            playWatchdog = null;
+          }
           if ('mediaSession' in navigator) {
             try { navigator.mediaSession.playbackState = 'paused'; } catch(e) {}
           }
@@ -220,7 +238,9 @@ public final class YouTubeAudioBridge: NSObject {
           if ('mediaSession' in navigator) {
             try { navigator.mediaSession.playbackState = 'playing'; } catch(e) {}
           }
+          postCommand('unMute');
           postCommand('playVideo');
+          startPlayWatchdog();
         }
 
         function seekTo(seconds) {
@@ -237,12 +257,38 @@ public final class YouTubeAudioBridge: NSObject {
             var data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
             if (!data) return;
 
-            // State changes: 1 = Playing, 2 = Paused, 3 = Buffering, 0 = Ended, -1 = Unstarted
+            // Handle YouTube player handshake / readiness
+            if (data.event === 'onReady' || data.event === 'initialDelivery') {
+              if (isUserPlaying) {
+                postCommand('unMute');
+                postCommand('setVolume', [100]);
+                postCommand('playVideo');
+              }
+            }
+
+            // State changes: 1 = Playing, 2 = Paused, 3 = Buffering, 0 = Ended, -1 = Unstarted, 5 = Cued
             if (data.event === 'onStateChange') {
               var st = data.info;
+              if (st === 1) {
+                if (playWatchdog) {
+                  clearInterval(playWatchdog);
+                  playWatchdog = null;
+                }
+              } else if ((st === 5 || st === -1 || st === 2) && isUserPlaying) {
+                postCommand('unMute');
+                postCommand('playVideo');
+              }
               window.webkit.messageHandlers.bridge.postMessage({ type: 'state', state: st });
             } else if (data.event === 'infoDelivery' && data.info) {
               if (data.info.playerState !== undefined) {
+                var st = data.info.playerState;
+                if (st === 1 && playWatchdog) {
+                  clearInterval(playWatchdog);
+                  playWatchdog = null;
+                } else if ((st === 5 || st === -1 || st === 2) && isUserPlaying) {
+                  postCommand('unMute');
+                  postCommand('playVideo');
+                }
                 window.webkit.messageHandlers.bridge.postMessage({ type: 'state', state: data.info.playerState });
               }
               if (data.info.currentTime !== undefined) {
@@ -254,6 +300,10 @@ public final class YouTubeAudioBridge: NSObject {
               }
             } else if (data.event === 'onError') {
               var err = data.info || -1;
+              if (playWatchdog) {
+                clearInterval(playWatchdog);
+                playWatchdog = null;
+              }
               window.webkit.messageHandlers.bridge.postMessage({ type: 'error', code: err });
             }
           } catch(e) {}

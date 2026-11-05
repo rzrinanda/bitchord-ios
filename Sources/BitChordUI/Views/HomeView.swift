@@ -245,10 +245,9 @@ public struct HomeView: View {
                             opensAlbumDetail: false
                         )
                     }
-                    
-                    Spacer(minLength: 165)
                 }
                 .padding(.top, 8)
+                .padding(.bottom, engine.currentTrack != nil ? 220 : 150)
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
