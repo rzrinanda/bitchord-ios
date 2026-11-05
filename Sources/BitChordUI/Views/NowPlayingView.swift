@@ -408,8 +408,8 @@ public struct NowPlayingView: View {
                             TrackArtworkView(track: track, size: 290, cornerRadius: 22)
                                 .shadow(color: .black.opacity(0.4), radius: 24, x: 0, y: 12)
                         }
-                        .scaleEffect(engine.status == .playing ? 1.0 : 0.92)
-                        .animation(.spring(response: 0.4, dampingFraction: 0.7), value: engine.status)
+                        .scaleEffect(engine.status == .playing ? 1.0 : 0.86)
+                        .animation(.spring(response: 0.85, dampingFraction: 0.75), value: engine.status)
                         
                         Spacer(minLength: 10)
                         
@@ -584,33 +584,31 @@ public struct NowPlayingView: View {
                             }
                         }()
                         
-                        Slider(
-                            value: Binding(
-                                get: { displayTime },
-                                set: { newValue in
-                                    isDraggingSlider = true
-                                    dragSliderValue = min(max(0, newValue), totalDuration)
-                                    lastSeekTime = Date()
-                                }
-                            ),
-                            in: 0...totalDuration,
-                            onEditingChanged: { editing in
-                                if editing {
-                                    isDraggingSlider = true
-                                    dragSliderValue = displayTime
-                                } else {
-                                    let seekTarget = min(max(0, dragSliderValue), totalDuration)
-                                    lastSeekTime = Date()
-                                    engine.seek(to: seekTarget)
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                                        if Date().timeIntervalSince(lastSeekTime) >= 2.0 {
-                                            isDraggingSlider = false
-                                        }
+                        ThinSlider(
+                            value: displayTime,
+                            maximum: totalDuration,
+                            onEditingChanged: { seekTarget in
+                                let target = min(max(0, seekTarget), totalDuration)
+                                lastSeekTime = Date()
+                                dragSliderValue = target
+                                engine.seek(to: target)
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                    if Date().timeIntervalSince(lastSeekTime) >= 1.5 {
+                                        isDraggingSlider = false
                                     }
                                 }
+                            },
+                            onDraggingChanged: { dragging in
+                                isDraggingSlider = dragging
+                                if dragging {
+                                    dragSliderValue = displayTime
+                                }
+                            },
+                            onDragValueChanged: { newDrag in
+                                dragSliderValue = min(max(0, newDrag), totalDuration)
+                                lastSeekTime = Date()
                             }
                         )
-                        .tint(.white)
                         
                         HStack {
                             Text(formatTime(displayTime))
@@ -695,14 +693,19 @@ public struct NowPlayingView: View {
                                 .font(.system(size: 12))
                                 .foregroundColor(.white.opacity(0.6))
                             
-                            Slider(
-                                value: Binding(
-                                    get: { Double(engine.volume) },
-                                    set: { engine.setVolume(Float($0)) }
-                                ),
-                                in: 0...1
+                            ThinSlider(
+                                value: Double(engine.volume),
+                                maximum: 1.0,
+                                label: "Volume",
+                                trackColor: Color.white.opacity(0.2),
+                                progressColor: Color.white.opacity(0.85),
+                                onEditingChanged: { newVol in
+                                    engine.setVolume(Float(min(max(0, newVol), 1.0)))
+                                },
+                                onDragValueChanged: { newVol in
+                                    engine.setVolume(Float(min(max(0, newVol), 1.0)))
+                                }
                             )
-                            .tint(.white)
                             
                             Image(systemName: "speaker.wave.3.fill")
                                 .font(.system(size: 13))

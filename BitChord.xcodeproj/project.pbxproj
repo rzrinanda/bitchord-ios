@@ -53,6 +53,7 @@
 		BC000042BLD000000000000 /* Sources/BitChordUI/Components/AudioPipelineSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000042FILE000000000000 /* Sources/BitChordUI/Components/AudioPipelineSheet.swift */; };
 		BC000043BLD000000000000 /* Sources/BitChordUI/Components/DownloadSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000043FILE000000000000 /* Sources/BitChordUI/Components/DownloadSheetView.swift */; };
 		BC000044BLD000000000000 /* Sources/BitChordCore/AudioEngine/CachingResourceLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000044FILE000000000000 /* Sources/BitChordCore/AudioEngine/CachingResourceLoader.swift */; };
+		BC000045BLD000000000000 /* Sources/BitChordUI/Components/ThinSlider.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000045FILE000000000000 /* Sources/BitChordUI/Components/ThinSlider.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -104,6 +105,7 @@
 		BC000042FILE000000000000 /* Sources/BitChordUI/Components/AudioPipelineSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordUI/Components/AudioPipelineSheet.swift; sourceTree = SOURCE_ROOT; };
 		BC000043FILE000000000000 /* Sources/BitChordUI/Components/DownloadSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordUI/Components/DownloadSheetView.swift; sourceTree = SOURCE_ROOT; };
 		BC000044FILE000000000000 /* Sources/BitChordCore/AudioEngine/CachingResourceLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordCore/AudioEngine/CachingResourceLoader.swift; sourceTree = SOURCE_ROOT; };
+		BC000045FILE000000000000 /* Sources/BitChordUI/Components/ThinSlider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordUI/Components/ThinSlider.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -165,6 +167,7 @@
 				BC000042FILE000000000000 /* Sources/BitChordUI/Components/AudioPipelineSheet.swift */,
 				BC000043FILE000000000000 /* Sources/BitChordUI/Components/DownloadSheetView.swift */,
 				BC000044FILE000000000000 /* Sources/BitChordCore/AudioEngine/CachingResourceLoader.swift */,
+				BC000045FILE000000000000 /* Sources/BitChordUI/Components/ThinSlider.swift */,
 				BC000000ASSETS000000000001 /* Assets.xcassets */,
 				BC000000PLIST000000000001 /* BitChord-Info.plist */,
 				BC000000GRP0000000000002 /* Products */,
@@ -293,6 +296,7 @@
 				BC000042BLD000000000000 /* Sources/BitChordUI/Components/AudioPipelineSheet.swift in Sources */,
 				BC000043BLD000000000000 /* Sources/BitChordUI/Components/DownloadSheetView.swift in Sources */,
 				BC000044BLD000000000000 /* Sources/BitChordCore/AudioEngine/CachingResourceLoader.swift in Sources */,
+				BC000045BLD000000000000 /* Sources/BitChordUI/Components/ThinSlider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
