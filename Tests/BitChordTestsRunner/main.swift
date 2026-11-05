@@ -1019,6 +1019,33 @@ func runAllTests() async {
         settings.statsForNerdsEnabled = false // Restore default
     }
     
+    // MARK: - Test 24: Scrubber Seek Accuracy & Seamless Radio Playback
+    do {
+        let engine = AudioPlayerEngine.shared
+        let radioTrack = Track(
+            id: "seamless_rad_1",
+            title: "Seamless Jam",
+            artist: "Groove",
+            duration: 300,
+            isLossless: false,
+            source: .youtube
+        )
+        engine.setQueue([radioTrack], startIndex: 0)
+        engine.seek(to: 75.0)
+        
+        // 1. Seek updates currentTime and engages seek guard
+        assertTest(engine.currentTime == 75.0, "Scrubber Seek: currentTime updated to exact seek target 75.0s")
+        assertTest(engine.isSeeking == true, "Scrubber Seek: isSeeking guard active to prevent stale packets from reverting position")
+        
+        // 2. Start radio on currently playing track: must be seamless without stopping audio
+        let currentPosBeforeRadio = engine.currentTime
+        engine.startRadio(for: radioTrack)
+        
+        assertTest(engine.currentTrack?.id == radioTrack.id, "Seamless Radio: Currently playing track is preserved")
+        assertTest(engine.queueIndex == 0, "Seamless Radio: Queue index stays on current track without resetting")
+        assertTest(engine.currentTime == currentPosBeforeRadio, "Seamless Radio: Track playback position is NOT stopped or reverted")
+    }
+    
     print("==================================================")
     print("🏁 Test Results: \(passed) Passed, \(failed) Failed")
     print("==================================================")

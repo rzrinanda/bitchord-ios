@@ -577,7 +577,7 @@ public struct NowPlayingView: View {
                         let displayTime: Double = {
                             if isDraggingSlider {
                                 return min(max(0, dragSliderValue), totalDuration)
-                            } else if Date().timeIntervalSince(lastSeekTime) < 0.35 {
+                            } else if Date().timeIntervalSince(lastSeekTime) < 1.2 || engine.isSeeking {
                                 return min(max(0, dragSliderValue), totalDuration)
                             } else {
                                 return min(max(0, engine.currentTime), totalDuration)
@@ -588,6 +588,7 @@ public struct NowPlayingView: View {
                             value: Binding(
                                 get: { displayTime },
                                 set: { newValue in
+                                    isDraggingSlider = true
                                     dragSliderValue = min(max(0, newValue), totalDuration)
                                 }
                             ),
@@ -600,7 +601,7 @@ public struct NowPlayingView: View {
                                     let seekTarget = min(max(0, dragSliderValue), totalDuration)
                                     lastSeekTime = Date()
                                     engine.seek(to: seekTarget)
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
                                         isDraggingSlider = false
                                     }
                                 }

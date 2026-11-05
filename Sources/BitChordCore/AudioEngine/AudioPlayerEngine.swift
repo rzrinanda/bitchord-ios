@@ -297,6 +297,9 @@ public final class AudioPlayerEngine: ObservableObject {
     private var playerItemEndObserver: NSObjectProtocol?
     private var pendingSeekTime: TimeInterval? = nil
     private var lastSavedProgressTimestamp: TimeInterval = 0
+    public private(set) var isSeeking: Bool = false
+    private var pendingSeekTarget: TimeInterval? = nil
+    private var lastUserSeekTimestamp: Date = Date.distantPast
     
     #if os(iOS)
     private var silencePlayer: AVAudioPlayer?
@@ -344,6 +347,22 @@ public final class AudioPlayerEngine: ObservableObject {
         YouTubeAudioBridge.shared.onTimeUpdated = { [weak self] cur, dur in
             Task { @MainActor [weak self] in
                 guard let self = self, self.activeBackend == .youtubeBridge else { return }
+                
+                // Seek guard for YouTube Audio Bridge
+                if let target = self.pendingSeekTarget, self.isSeeking {
+                    if Date().timeIntervalSince(self.lastUserSeekTimestamp) < 2.0 {
+                        if abs(cur - target) > 2.5 {
+                            return // Ignore stale pre-seek time packets from YouTube iframe
+                        } else {
+                            self.pendingSeekTarget = nil
+                            self.isSeeking = false
+                        }
+                    } else {
+                        self.pendingSeekTarget = nil
+                        self.isSeeking = false
+                    }
+                }
+                
                 // Guard against short clips/teasers (< 55s) when track is a full song
                 if dur > 0 && dur < 55, let track = self.currentTrack, track.duration >= 60 {
                     if let topicId = await YTMusicClient.shared.resolveTopicVideoId(title: track.title, artist: track.artist), topicId != track.id {
@@ -1576,7 +1595,26 @@ public final class AudioPlayerEngine: ObservableObject {
     
     public func startRadio(for track: Track) {
         self.sessionPlayedTrackIds.insert(track.id)
-        setQueue([track], startIndex: 0)
+        
+        let isCurrentTrackPlaying = (self.currentTrack?.id == track.id) && (self.status == .playing || self.status == .loading || self.status == .paused)
+        
+        if isCurrentTrackPlaying {
+            // Seamless radio: do NOT disrupt or restart currently playing track!
+            // Retain currently playing track in queue, remove stale upcoming items, and queue up new radio tracks
+            if self.queueIndex >= 0 && self.queueIndex < self.queue.count {
+                let current = self.queue[self.queueIndex]
+                self.queue = [current]
+                self.originalQueue = [current]
+                self.queueIndex = 0
+            } else {
+                self.queue = [track]
+                self.originalQueue = [track]
+                self.queueIndex = 0
+            }
+        } else {
+            setQueue([track], startIndex: 0)
+        }
+        
         Task { @MainActor [weak self] in
             guard let self = self else { return }
             let radioTracks = await YTMusicClient.shared.fetchRadioTracks(for: track, sessionHistoryIds: self.sessionPlayedTrackIds)
@@ -1687,14 +1725,27 @@ public final class AudioPlayerEngine: ObservableObject {
     }
     
     public func seek(to time: TimeInterval) {
-        currentTime = time
+        let clampedTime = max(0, time)
+        self.currentTime = clampedTime
+        self.pendingSeekTarget = clampedTime
+        self.lastUserSeekTimestamp = Date()
+        self.isSeeking = true
+        
         switch activeBackend {
         case .youtubeBridge:
-            YouTubeAudioBridge.shared.seek(to: time)
+            YouTubeAudioBridge.shared.seek(to: clampedTime)
         case .avPlayer:
-            let cmTime = CMTime(seconds: time, preferredTimescale: 600)
-            player?.seek(to: cmTime, toleranceBefore: .zero, toleranceAfter: .zero)
+            let cmTime = CMTime(seconds: clampedTime, preferredTimescale: 600)
+            player?.seek(to: cmTime, toleranceBefore: CMTime(seconds: 0.1, preferredTimescale: 600), toleranceAfter: CMTime(seconds: 0.1, preferredTimescale: 600)) { [weak self] finished in
+                Task { @MainActor [weak self] in
+                    guard let self = self, finished else { return }
+                    self.currentTime = clampedTime
+                    self.pendingSeekTarget = nil
+                    self.isSeeking = false
+                }
+            }
         case .none:
+            self.isSeeking = false
             break
         }
         updateNowPlayingInfo()
@@ -1726,6 +1777,24 @@ public final class AudioPlayerEngine: ObservableObject {
         timeObserverToken = player?.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             Task { @MainActor [weak self] in
                 guard let self = self, self.activeBackend == .avPlayer else { return }
+                let sec = time.seconds
+                guard sec.isFinite && !sec.isNaN && sec >= 0 else { return }
+                
+                // Seek guard for AVPlayer
+                if let target = self.pendingSeekTarget, self.isSeeking {
+                    if Date().timeIntervalSince(self.lastUserSeekTimestamp) < 1.5 {
+                        if abs(sec - target) > 1.5 {
+                            return // Ignore stale pre-seek time
+                        } else {
+                            self.pendingSeekTarget = nil
+                            self.isSeeking = false
+                        }
+                    } else {
+                        self.pendingSeekTarget = nil
+                        self.isSeeking = false
+                    }
+                }
+                
                 if self.pendingSeekTime == nil {
                     let sec = time.seconds
                     if sec.isFinite && !sec.isNaN && sec >= 0 {

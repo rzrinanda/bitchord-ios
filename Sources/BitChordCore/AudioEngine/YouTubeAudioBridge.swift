@@ -158,6 +158,8 @@ public final class YouTubeAudioBridge: NSObject {
         var lastKnownCurrentTime = 0;
         var lastTimeUpdateStamp = 0;
         var timeTicker = null;
+        var pendingSeekTarget = null;
+        var pendingSeekTime = 0;
 
         function startTimeTicker() {
           if (timeTicker) clearInterval(timeTicker);
@@ -272,9 +274,20 @@ public final class YouTubeAudioBridge: NSObject {
         }
 
         function seekTo(seconds) {
+          seconds = Math.max(0, Number(seconds) || 0);
           lastKnownCurrentTime = seconds;
           lastTimeUpdateStamp = Date.now();
+          pendingSeekTarget = seconds;
+          pendingSeekTime = Date.now();
+          
+          postCommand('listening');
           postCommand('seekTo', [seconds, true]);
+          window.webkit.messageHandlers.bridge.postMessage({ type: 'time', current: seconds, duration: lastDuration });
+          
+          if (isUserPlaying) {
+            postCommand('unMute');
+            postCommand('playVideo');
+          }
         }
 
         function setVolume(vol) {
@@ -335,7 +348,19 @@ public final class YouTubeAudioBridge: NSObject {
                 lastDuration = data.info.duration;
               }
               if (data.info.currentTime !== undefined) {
-                lastKnownCurrentTime = data.info.currentTime || 0;
+                var cur = Number(data.info.currentTime) || 0;
+                if (pendingSeekTarget !== null) {
+                  if (Date.now() - pendingSeekTime < 2000) {
+                    if (Math.abs(cur - pendingSeekTarget) > 2.5) {
+                      return; // Stale pre-seek packet from YouTube iframe; drop it
+                    } else {
+                      pendingSeekTarget = null;
+                    }
+                  } else {
+                    pendingSeekTarget = null;
+                  }
+                }
+                lastKnownCurrentTime = cur;
                 lastTimeUpdateStamp = Date.now();
                 window.webkit.messageHandlers.bridge.postMessage({ type: 'time', current: lastKnownCurrentTime, duration: lastDuration });
               }
