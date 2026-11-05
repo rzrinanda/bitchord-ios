@@ -369,40 +369,12 @@ public actor StreamExtractor {
             async let androidTask = extractTiersViaYouTubeAndroid(trackId: vId)
             
             let (iosStreams, androidStreams) = await (iosTask, androidTask)
-            
-            // Route all Google Video CDN streams through LocalStreamProxy so AVPlayer never receives HTTP 403 Forbidden
-            let proxiedIOS = iosStreams.map { s in
-                StreamInfo(
-                    streamURL: LocalStreamProxy.shared.proxyURL(for: s.streamURL),
-                    format: s.format,
-                    codec: s.codec,
-                    bitrate: s.bitrate,
-                    isLossless: s.isLossless,
-                    sampleRate: s.sampleRate,
-                    bitDepth: s.bitDepth,
-                    sourceId: s.sourceId,
-                    sourceIsDirect: s.sourceIsDirect
-                )
-            }
-            let rankedIOS = StreamInfo.selectTopDistinctQualityLevels(from: proxiedIOS, maxLevels: maxQualityLevelsPerSource)
+            let rankedIOS = StreamInfo.selectTopDistinctQualityLevels(from: iosStreams, maxLevels: maxQualityLevelsPerSource)
             if !rankedIOS.isEmpty && sourceGroups.count < maxSources {
                 sourceGroups.append(rankedIOS)
             }
             
-            let proxiedAndroid = androidStreams.map { s in
-                StreamInfo(
-                    streamURL: LocalStreamProxy.shared.proxyURL(for: s.streamURL),
-                    format: s.format,
-                    codec: s.codec,
-                    bitrate: s.bitrate,
-                    isLossless: s.isLossless,
-                    sampleRate: s.sampleRate,
-                    bitDepth: s.bitDepth,
-                    sourceId: s.sourceId,
-                    sourceIsDirect: s.sourceIsDirect
-                )
-            }
-            let rankedAndroid = StreamInfo.selectTopDistinctQualityLevels(from: proxiedAndroid, maxLevels: maxQualityLevelsPerSource)
+            let rankedAndroid = StreamInfo.selectTopDistinctQualityLevels(from: androidStreams, maxLevels: maxQualityLevelsPerSource)
             if !rankedAndroid.isEmpty && sourceGroups.count < maxSources {
                 sourceGroups.append(rankedAndroid)
             }

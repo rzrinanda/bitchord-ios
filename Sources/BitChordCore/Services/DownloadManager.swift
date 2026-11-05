@@ -49,7 +49,22 @@ public actor DownloadManager {
     }
     
     public func isDownloaded(trackId: String) -> Bool {
-        return downloadedTracksMap[trackId] != nil
+        return downloadedTracksMap[trackId] != nil || getLocalFileURL(for: trackId) != nil
+    }
+    
+    /// Synchronously checks if a track's audio file exists on device storage and returns its file URL.
+    nonisolated public func getLocalFileURL(for trackId: String) -> URL? {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
+        let downloadsDir = docs.appendingPathComponent("BitChord/Downloads", isDirectory: true)
+        
+        let invalidCharacters = CharacterSet(charactersIn: ":/\\?%*|\"<>")
+        let sanitized = trackId.components(separatedBy: invalidCharacters).joined(separator: "_")
+        let targetFileURL = downloadsDir.appendingPathComponent("\(sanitized).m4a")
+        
+        if FileManager.default.fileExists(atPath: targetFileURL.path) {
+            return targetFileURL
+        }
+        return nil
     }
     
     public func getDownloadedTracks() -> [Track] {

@@ -492,7 +492,7 @@ public struct NowPlayingView: View {
                         let displayTime: Double = {
                             if isDraggingSlider {
                                 return dragSliderValue
-                            } else if Date().timeIntervalSince(lastSeekTime) < 0.45 {
+                            } else if Date().timeIntervalSince(lastSeekTime) < 0.35 {
                                 return dragSliderValue
                             } else {
                                 return engine.currentTime
@@ -504,23 +504,18 @@ public struct NowPlayingView: View {
                                 get: { displayTime },
                                 set: { newValue in
                                     dragSliderValue = newValue
-                                    isDraggingSlider = true
                                 }
                             ),
                             in: 0...max(1, engine.duration),
                             onEditingChanged: { editing in
                                 if editing {
                                     isDraggingSlider = true
-                                    dragSliderValue = engine.currentTime
+                                    dragSliderValue = displayTime
                                 } else {
                                     let seekTarget = dragSliderValue
                                     lastSeekTime = Date()
                                     engine.seek(to: seekTarget)
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-                                        if !isDraggingSlider {
-                                            isDraggingSlider = false
-                                        }
-                                    }
+                                    isDraggingSlider = false
                                 }
                             }
                         )
@@ -770,6 +765,11 @@ public struct NowPlayingView: View {
                     }
                 }
             }
+        }
+        .onChange(of: engine.currentTrack?.id) { _, _ in
+            isDraggingSlider = false
+            dragSliderValue = 0
+            lastSeekTime = Date.distantPast
         }
         .onAppear {
             if settings.showFullLyrics {
