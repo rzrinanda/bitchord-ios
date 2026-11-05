@@ -573,13 +573,14 @@ public struct NowPlayingView: View {
                     
                     // MARK: - Scrubber Bar
                     VStack(spacing: 6) {
+                        let totalDuration = max(1, engine.duration > 0 ? engine.duration : (track.duration > 0 ? track.duration : 1))
                         let displayTime: Double = {
                             if isDraggingSlider {
-                                return dragSliderValue
+                                return min(max(0, dragSliderValue), totalDuration)
                             } else if Date().timeIntervalSince(lastSeekTime) < 0.35 {
-                                return dragSliderValue
+                                return min(max(0, dragSliderValue), totalDuration)
                             } else {
-                                return engine.currentTime
+                                return min(max(0, engine.currentTime), totalDuration)
                             }
                         }()
                         
@@ -587,19 +588,21 @@ public struct NowPlayingView: View {
                             value: Binding(
                                 get: { displayTime },
                                 set: { newValue in
-                                    dragSliderValue = newValue
+                                    dragSliderValue = min(max(0, newValue), totalDuration)
                                 }
                             ),
-                            in: 0...max(1, engine.duration),
+                            in: 0...totalDuration,
                             onEditingChanged: { editing in
                                 if editing {
                                     isDraggingSlider = true
                                     dragSliderValue = displayTime
                                 } else {
-                                    let seekTarget = dragSliderValue
+                                    let seekTarget = min(max(0, dragSliderValue), totalDuration)
                                     lastSeekTime = Date()
                                     engine.seek(to: seekTarget)
-                                    isDraggingSlider = false
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                                        isDraggingSlider = false
+                                    }
                                 }
                             }
                         )
@@ -634,7 +637,7 @@ public struct NowPlayingView: View {
                                 Spacer()
                             }
                             
-                            Text("-\(formatTime(max(0, engine.duration - displayTime)))")
+                            Text("-\(formatTime(max(0, totalDuration - displayTime)))")
                                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
                                 .foregroundColor(.white.opacity(0.6))
                         }

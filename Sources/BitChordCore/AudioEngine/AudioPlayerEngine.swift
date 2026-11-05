@@ -358,10 +358,12 @@ public final class AudioPlayerEngine: ObservableObject {
                     }
                 }
                 self.currentTime = cur
-                if dur >= 55 && abs(self.duration - dur) > 1.0 {
+                if dur >= 30 && abs(self.duration - dur) > 1.0 {
                     self.duration = dur
+                } else if self.duration == 0, let trk = self.currentTrack, trk.duration > 0 {
+                    self.duration = trk.duration
                 }
-                if let seekTarget = self.pendingSeekTime, seekTarget > 2, cur < 2.0, dur > seekTarget {
+                if let seekTarget = self.pendingSeekTime, seekTarget > 2, cur < 2.0, (dur > seekTarget || self.duration > seekTarget) {
                     self.pendingSeekTime = nil
                     YouTubeAudioBridge.shared.seek(to: seekTarget)
                     self.currentTime = seekTarget
@@ -931,65 +933,81 @@ public final class AudioPlayerEngine: ObservableObject {
             return
         }
         
-        // 5. Instant online playback for valid 11-char YouTube tracks
+        // 5. Online track playback (Check Addon FIRST according to user quality settings & network; fallback to YouTube Music)
         if track.id.count == 11 && !track.id.hasPrefix("yt_") {
-            self.stopAVPlayer()
-            self.activeBackend = .youtubeBridge
-            YouTubeAudioBridge.shared.play(videoId: track.id)
-            self.status = .loading
-            self.updateNowPlayingInfo()
+            let activeStreamAddons = BitChordSettings.shared.addonSources.filter { $0.isEnabled && $0.resources.contains("stream") }
+            let isCellular = NetworkMonitor.shared.isCellular
+            let qualitySetting = isCellular ? BitChordSettings.shared.cellularAudioQuality : BitChordSettings.shared.wifiAudioQuality
+            let wantsLossless = qualitySetting.lowercased().contains("lossless")
             
             let targetTrack = track
             let targetTrackId = track.id
             
-            // Asynchronously check configured addons for higher quality (Lossless FLAC / Hi-Res)
-            // When found, prompts the user with an "Upgrade Quality" button instead of hijacking playback
-            let activeStreamAddons = BitChordSettings.shared.addonSources.filter { $0.isEnabled && $0.resources.contains("stream") }
-            if !activeStreamAddons.isEmpty {
-                addonQualitySearchTask = Task { @MainActor [weak self] in
-                    guard let self = self, self.playbackRequestId == requestId else { return }
-                    for addon in activeStreamAddons {
-                        let tiers = await AddonService.shared.resolveStreamTiers(
-                            trackTitle: targetTrack.title,
-                            artist: targetTrack.artist,
-                            album: targetTrack.album,
-                            duration: targetTrack.duration,
-                            addon: addon
-                        )
-                        if let addonStream = tiers.first,
-                           !(addonStream.streamURL.host?.lowercased().contains("googlevideo.com") ?? false) {
-                            guard self.playbackRequestId == requestId, self.currentTrack?.id == targetTrackId else { return }
-                            
-                            let badge: String
-                            if addonStream.isGenuineLossless {
-                                if let depth = addonStream.bitDepth, let rate = addonStream.sampleRate, rate > 48000 {
-                                    badge = String(format: "Hi-Res %d-bit/%.1f kHz", depth, rate / 1000.0)
-                                } else {
-                                    badge = "Lossless FLAC"
-                                }
-                            } else {
-                                badge = "\(addonStream.bitrate) kbps \(addonStream.codec.uppercased())"
-                            }
-                            
-                            self.availableQualityUpgrade = QualityUpgradeInfo(
-                                addonId: addon.id,
-                                addonName: addon.name,
-                                streamInfo: addonStream,
-                                badge: badge
-                            )
-                            return
-                        }
-                    }
-                }
+            if activeStreamAddons.isEmpty {
+                // No active addons: play directly from YouTube Music
+                self.playViaYouTubeBridge(videoId: targetTrack.id, startPos: startPos, requestId: requestId)
+                return
             }
             
-            // Watchdog fallback: if YouTubeAudioBridge does not start playing within 8.0s, trigger stream fallback
-            Task { @MainActor [weak self] in
-                try? await Task.sleep(nanoseconds: 8_000_000_000)
+            // Active addons present: check Addon FIRST with priority matching network & quality settings
+            self.stopAVPlayer()
+            self.status = .loading
+            self.updateNowPlayingInfo()
+            
+            addonQualitySearchTask = Task { @MainActor [weak self] in
                 guard let self = self, self.playbackRequestId == requestId else { return }
-                if self.status != .playing, let cur = self.currentTrack {
-                    print("[AudioEngine] Startup timed out for \(cur.id), switching to stream fallback")
-                    self.attemptStreamFallback(for: cur, reason: .startupTimeoutExceeded)
+                
+                var chosenStream: StreamInfo? = nil
+                var chosenAddonId: String? = nil
+                
+                for addon in activeStreamAddons {
+                    let tiers = await AddonService.shared.resolveStreamTiers(
+                        trackTitle: targetTrack.title,
+                        artist: targetTrack.artist,
+                        album: targetTrack.album,
+                        duration: targetTrack.duration,
+                        addon: addon
+                    )
+                    
+                    let candidate: StreamInfo?
+                    if wantsLossless {
+                        candidate = tiers.first(where: { $0.isGenuineLossless }) ?? tiers.first
+                    } else {
+                        // User specifically configured non-lossless (High / Normal)
+                        candidate = tiers.first(where: { !$0.isGenuineLossless })
+                    }
+                    
+                    if let s = candidate, !(s.streamURL.host?.lowercased().contains("googlevideo.com") ?? false) {
+                        chosenStream = s
+                        chosenAddonId = addon.id
+                        break
+                    }
+                }
+                
+                guard self.playbackRequestId == requestId, self.currentTrack?.id == targetTrackId else { return }
+                
+                if let stream = chosenStream, let addonId = chosenAddonId {
+                    // Track found in Addon in highest quality: play via AVPlayer seamlessly!
+                    var updated = targetTrack
+                    updated.streamURL = stream.streamURL
+                    updated.isLossless = stream.isGenuineLossless
+                    updated.sampleRate = stream.sampleRate
+                    updated.bitDepth = stream.bitDepth
+                    updated.source = .addon
+                    updated.sourceId = addonId
+                    
+                    self.currentTrack = updated
+                    if self.queueIndex < self.queue.count && self.queue[self.queueIndex].id == targetTrackId {
+                        self.queue[self.queueIndex] = updated
+                    }
+                    
+                    // Track is playing in the highest quality available -> Upgrade Quality is HIDDEN!
+                    self.availableQualityUpgrade = nil
+                    
+                    self.startPlaying(url: stream.streamURL, for: updated, initialSeek: startPos)
+                } else {
+                    // Not found in Addon (or addon only has FLAC while user requested non-lossless) -> Play from YouTube Music seamlessly!
+                    self.playViaYouTubeBridge(videoId: targetTrack.id, startPos: startPos, requestId: requestId)
                 }
             }
             return
@@ -1053,6 +1071,30 @@ public final class AudioPlayerEngine: ObservableObject {
                     duration: adjTrack.duration,
                     preferredQuality: quality
                 )
+            }
+        }
+    }
+    
+    private func playViaYouTubeBridge(videoId: String, startPos: TimeInterval, requestId: UInt64) {
+        guard playbackRequestId == requestId else { return }
+        self.stopAVPlayer()
+        self.activeBackend = .youtubeBridge
+        self.availableQualityUpgrade = nil
+        if startPos > 2 {
+            self.pendingSeekTime = startPos
+            self.currentTime = startPos
+        }
+        YouTubeAudioBridge.shared.play(videoId: videoId)
+        self.status = .loading
+        self.updateNowPlayingInfo()
+        
+        // Watchdog fallback: if YouTubeAudioBridge does not start playing within 8.0s, trigger stream fallback
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 8_000_000_000)
+            guard let self = self, self.playbackRequestId == requestId else { return }
+            if self.status != .playing, let cur = self.currentTrack {
+                print("[AudioEngine] Startup timed out for \(cur.id), switching to stream fallback")
+                self.attemptStreamFallback(for: cur, reason: .startupTimeoutExceeded)
             }
         }
     }

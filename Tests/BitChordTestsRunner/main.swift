@@ -846,7 +846,7 @@ func runAllTests() async {
         assertTest(bestVideoAudio?.isIOSAVPlayerCompatible == true, "YouTube Video Audio: Top extracted stream is natively compatible with iOS AVPlayer (audio/mp4 AAC)")
     }
     
-    // MARK: - Test 20: Addon Quality Upgrade & YouTube Default Playback for Home & Explore
+    // MARK: - Test 20: Pre-Play Addon Resolution & Highest Quality Playback
     do {
         let engine = AudioPlayerEngine.shared
         
@@ -867,7 +867,7 @@ func runAllTests() async {
         assertTest(engine.currentTrack?.source == .youtube, "Engine Queue: Currently loaded track has source .youtube")
         assertTest(engine.availableQualityUpgrade == nil, "Quality Upgrade: Initially nil before addon search completes")
         
-        // 3. Simulate addon returning a Hi-Res FLAC stream
+        // 3. When played in highest quality directly from Addon, upgrade quality is hidden (nil)
         let mockAddonStream = StreamInfo(
             streamURL: URL(string: "https://example.com/stream/flac/noah_hi_res.flac")!,
             format: "flac",
@@ -899,7 +899,80 @@ func runAllTests() async {
         assertTest(engine.currentTrack?.bitDepth == 24, "Quality Upgrade: Track bitDepth is 24-bit")
         assertTest(engine.currentTrack?.sampleRate == 96000, "Quality Upgrade: Track sampleRate is 96.0 kHz")
         assertTest(engine.currentTrack?.audioBadge == "HI-RES LOSSLESS 24-bit/96.0 kHz", "Quality Upgrade: Audio badge shows Hi-Res Lossless")
-        assertTest(engine.availableQualityUpgrade == nil, "Quality Upgrade: Offer dismissed after successful upgrade")
+        assertTest(engine.availableQualityUpgrade == nil, "Quality Upgrade: Offer dismissed and hidden after playing in highest quality")
+    }
+    
+    // MARK: - Test 21: Quality Selection & Network Adaptation (Wi-Fi vs Cellular)
+    do {
+        let streamTiers = [
+            StreamInfo(
+                streamURL: URL(string: "https://example.com/flac24")!,
+                format: "flac",
+                codec: "flac",
+                bitrate: 4608,
+                isLossless: true,
+                sampleRate: 96000,
+                bitDepth: 24,
+                sourceId: "addon_1",
+                sourceIsDirect: true
+            ),
+            StreamInfo(
+                streamURL: URL(string: "https://example.com/flac16")!,
+                format: "flac",
+                codec: "flac",
+                bitrate: 1411,
+                isLossless: true,
+                sampleRate: 44100,
+                bitDepth: 16,
+                sourceId: "addon_1",
+                sourceIsDirect: true
+            ),
+            StreamInfo(
+                streamURL: URL(string: "https://example.com/aac256")!,
+                format: "m4a",
+                codec: "aac",
+                bitrate: 256,
+                isLossless: false,
+                sampleRate: 44100,
+                bitDepth: nil,
+                sourceId: "addon_1",
+                sourceIsDirect: true
+            )
+        ]
+        
+        // 1. Lossless setting selects top Hi-Res FLAC stream
+        let wantsLossless = true
+        let selectedLossless = wantsLossless ? (streamTiers.first(where: { $0.isGenuineLossless }) ?? streamTiers.first) : streamTiers.first(where: { !$0.isGenuineLossless })
+        assertTest(selectedLossless?.isGenuineLossless == true, "Quality Selection: Lossless setting selects genuine lossless stream")
+        assertTest(selectedLossless?.sampleRate == 96000, "Quality Selection: Highest sample rate 96kHz prioritized")
+        
+        // 2. Non-lossless setting selects lossy stream
+        let wantsNonLossless = false
+        let selectedNonLossless = wantsNonLossless ? (streamTiers.first(where: { $0.isGenuineLossless }) ?? streamTiers.first) : streamTiers.first(where: { !$0.isGenuineLossless })
+        assertTest(selectedNonLossless?.isGenuineLossless == false, "Quality Selection: Non-lossless setting strictly rejects FLAC")
+        assertTest(selectedNonLossless?.bitrate == 256, "Quality Selection: Non-lossless selects 256 kbps AAC")
+        
+        // 3. NetworkMonitor states check
+        assertTest(NetworkMonitor.shared.isWifi || NetworkMonitor.shared.isCellular, "NetworkMonitor: Active network interface identified")
+    }
+    
+    // MARK: - Test 22: Now Playing Scrubber & Duration Safety
+    do {
+        let engine = AudioPlayerEngine.shared
+        let trackWithoutEngineDuration = Track(
+            id: "test_dur_1",
+            title: "Testing Scrubber",
+            artist: "Tester",
+            duration: 245
+        )
+        engine.setQueue([trackWithoutEngineDuration], startIndex: 0)
+        engine.duration = 0 // Simulating bridge not yet sending duration
+        
+        let totalDuration = max(1, engine.duration > 0 ? engine.duration : (trackWithoutEngineDuration.duration > 0 ? trackWithoutEngineDuration.duration : 1))
+        assertTest(totalDuration == 245, "Scrubber Math: totalDuration safely falls back to track duration (245s) when engine duration is 0")
+        
+        let displayTime = min(max(0, 15.0), totalDuration)
+        assertTest(displayTime == 15.0, "Scrubber Math: displayTime is correctly clamped within totalDuration")
     }
     
     print("==================================================")

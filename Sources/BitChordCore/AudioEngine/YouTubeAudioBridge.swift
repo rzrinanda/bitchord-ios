@@ -154,6 +154,31 @@ public final class YouTubeAudioBridge: NSObject {
         var currentLoadedId = null;
         var isUserPlaying = false;
         var playWatchdog = null;
+        var lastDuration = 0;
+        var lastKnownCurrentTime = 0;
+        var lastTimeUpdateStamp = 0;
+        var timeTicker = null;
+
+        function startTimeTicker() {
+          if (timeTicker) clearInterval(timeTicker);
+          timeTicker = setInterval(function() {
+            if (!isUserPlaying) return;
+            postCommand('listening');
+            if (lastTimeUpdateStamp > 0) {
+              var elapsed = (Date.now() - lastTimeUpdateStamp) / 1000.0;
+              var est = lastKnownCurrentTime + elapsed;
+              if (lastDuration > 0 && est > lastDuration) est = lastDuration;
+              window.webkit.messageHandlers.bridge.postMessage({ type: 'time', current: est, duration: lastDuration });
+            }
+          }, 250);
+        }
+
+        function stopTimeTicker() {
+          if (timeTicker) {
+            clearInterval(timeTicker);
+            timeTicker = null;
+          }
+        }
 
         function postCommand(command, args) {
           var iframe = document.getElementById('player');
@@ -189,6 +214,8 @@ public final class YouTubeAudioBridge: NSObject {
 
         function playVideoId(vId) {
           isUserPlaying = true;
+          lastKnownCurrentTime = 0;
+          lastTimeUpdateStamp = 0;
           try {
             if (window._aCtx && window._aCtx.state === 'suspended') {
               window._aCtx.resume();
@@ -218,6 +245,7 @@ public final class YouTubeAudioBridge: NSObject {
 
         function pauseVideo() {
           isUserPlaying = false;
+          stopTimeTicker();
           if (playWatchdog) {
             clearInterval(playWatchdog);
             playWatchdog = null;
@@ -244,6 +272,8 @@ public final class YouTubeAudioBridge: NSObject {
         }
 
         function seekTo(seconds) {
+          lastKnownCurrentTime = seconds;
+          lastTimeUpdateStamp = Date.now();
           postCommand('seekTo', [seconds, true]);
         }
 
@@ -274,7 +304,11 @@ public final class YouTubeAudioBridge: NSObject {
                   clearInterval(playWatchdog);
                   playWatchdog = null;
                 }
-              } else if ((st === 5 || st === -1 || st === 2) && isUserPlaying) {
+                startTimeTicker();
+              } else if (st === 2 || st === 0) {
+                stopTimeTicker();
+              }
+              if ((st === 5 || st === -1 || st === 2) && isUserPlaying) {
                 postCommand('unMute');
                 postCommand('playVideo');
               }
@@ -282,21 +316,28 @@ public final class YouTubeAudioBridge: NSObject {
             } else if (data.event === 'infoDelivery' && data.info) {
               if (data.info.playerState !== undefined) {
                 var st = data.info.playerState;
-                if (st === 1 && playWatchdog) {
-                  clearInterval(playWatchdog);
-                  playWatchdog = null;
-                } else if ((st === 5 || st === -1 || st === 2) && isUserPlaying) {
+                if (st === 1) {
+                  if (playWatchdog) {
+                    clearInterval(playWatchdog);
+                    playWatchdog = null;
+                  }
+                  startTimeTicker();
+                } else if (st === 2 || st === 0) {
+                  stopTimeTicker();
+                }
+                if ((st === 5 || st === -1 || st === 2) && isUserPlaying) {
                   postCommand('unMute');
                   postCommand('playVideo');
                 }
                 window.webkit.messageHandlers.bridge.postMessage({ type: 'state', state: data.info.playerState });
               }
+              if (data.info.duration !== undefined && data.info.duration > 0) {
+                lastDuration = data.info.duration;
+              }
               if (data.info.currentTime !== undefined) {
-                var cur = data.info.currentTime || 0;
-                var dur = data.info.duration || 0;
-                if (dur > 0) {
-                  window.webkit.messageHandlers.bridge.postMessage({ type: 'time', current: cur, duration: dur });
-                }
+                lastKnownCurrentTime = data.info.currentTime || 0;
+                lastTimeUpdateStamp = Date.now();
+                window.webkit.messageHandlers.bridge.postMessage({ type: 'time', current: lastKnownCurrentTime, duration: lastDuration });
               }
             } else if (data.event === 'onError') {
               var err = data.info || -1;
