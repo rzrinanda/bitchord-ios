@@ -313,7 +313,35 @@ public actor StreamExtractor {
         let maxSources = 3 // Primary source + maximum 2 alternative sources
         let maxQualityLevelsPerSource = 3
         
-        // Source 0: Custom Addon Stream (e.g. SoundFean Qobuz Hi-Res FLAC) for exact matching version
+        // Source 0: BitChord High-Speed Backend Server (if enabled and reachable)
+        let backendConfig = await MainActor.run {
+            (
+                enabled: BitChordSettings.shared.useBackendServer,
+                url: BitChordSettings.shared.backendServerURL,
+                isReachable: BitChordSettings.shared.isBackendServerReachable
+            )
+        }
+        if backendConfig.enabled && effectiveVideoId.count == 11 {
+            let cleanBase = backendConfig.url.trimmingCharacters(in: .whitespacesAndNewlines)
+            let base = cleanBase.hasSuffix("/") ? String(cleanBase.dropLast()) : cleanBase
+            if let backendStreamURL = URL(string: "\(base)/stream/\(effectiveVideoId)") {
+                let backendStream = StreamInfo(
+                    streamURL: backendStreamURL,
+                    format: "audio/mp4",
+                    codec: "aac",
+                    bitrate: 256,
+                    isLossless: false,
+                    sampleRate: 44100,
+                    sourceId: "bitchord_backend_server",
+                    sourceIsDirect: true
+                )
+                if backendConfig.isReachable {
+                    sourceGroups.append([backendStream])
+                }
+            }
+        }
+        
+        // Source 1: Custom Addon Stream (e.g. SoundFean Qobuz Hi-Res FLAC) for exact matching version
         let activeAddons = await MainActor.run {
             BitChordSettings.shared.addonSources.filter { $0.isEnabled && $0.resources.contains("stream") }
         }
@@ -341,11 +369,40 @@ public actor StreamExtractor {
             async let androidTask = extractTiersViaYouTubeAndroid(trackId: vId)
             
             let (iosStreams, androidStreams) = await (iosTask, androidTask)
-            let rankedIOS = StreamInfo.selectTopDistinctQualityLevels(from: iosStreams, maxLevels: maxQualityLevelsPerSource)
+            
+            // Route all Google Video CDN streams through LocalStreamProxy so AVPlayer never receives HTTP 403 Forbidden
+            let proxiedIOS = iosStreams.map { s in
+                StreamInfo(
+                    streamURL: LocalStreamProxy.shared.proxyURL(for: s.streamURL),
+                    format: s.format,
+                    codec: s.codec,
+                    bitrate: s.bitrate,
+                    isLossless: s.isLossless,
+                    sampleRate: s.sampleRate,
+                    bitDepth: s.bitDepth,
+                    sourceId: s.sourceId,
+                    sourceIsDirect: s.sourceIsDirect
+                )
+            }
+            let rankedIOS = StreamInfo.selectTopDistinctQualityLevels(from: proxiedIOS, maxLevels: maxQualityLevelsPerSource)
             if !rankedIOS.isEmpty && sourceGroups.count < maxSources {
                 sourceGroups.append(rankedIOS)
             }
-            let rankedAndroid = StreamInfo.selectTopDistinctQualityLevels(from: androidStreams, maxLevels: maxQualityLevelsPerSource)
+            
+            let proxiedAndroid = androidStreams.map { s in
+                StreamInfo(
+                    streamURL: LocalStreamProxy.shared.proxyURL(for: s.streamURL),
+                    format: s.format,
+                    codec: s.codec,
+                    bitrate: s.bitrate,
+                    isLossless: s.isLossless,
+                    sampleRate: s.sampleRate,
+                    bitDepth: s.bitDepth,
+                    sourceId: s.sourceId,
+                    sourceIsDirect: s.sourceIsDirect
+                )
+            }
+            let rankedAndroid = StreamInfo.selectTopDistinctQualityLevels(from: proxiedAndroid, maxLevels: maxQualityLevelsPerSource)
             if !rankedAndroid.isEmpty && sourceGroups.count < maxSources {
                 sourceGroups.append(rankedAndroid)
             }

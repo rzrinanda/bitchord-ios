@@ -610,6 +610,57 @@ private struct AudioSourcesDetailView: View {
             }
             
             Section {
+                Toggle(isOn: $settings.useBackendServer) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("High-Speed Streaming Backend")
+                            .font(.system(size: 15, weight: .semibold))
+                        Text(settings.isBackendServerReachable ? "Connected & Active • Zero Latency" : "Standalone Local Proxy Active")
+                            .font(.system(size: 12))
+                            .foregroundColor(settings.isBackendServerReachable ? .green : .secondary)
+                    }
+                }
+                .tint(.cyan)
+                
+                if settings.useBackendServer {
+                    HStack {
+                        Text("Server URL")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.secondary)
+                        TextField("http://localhost:3000", text: $settings.backendServerURL)
+                            .font(.system(size: 14))
+                            .multilineTextAlignment(.trailing)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled(true)
+                    }
+                    
+                    Button {
+                        Task {
+                            await settings.checkBackendHealth()
+                        }
+                    } label: {
+                        HStack {
+                            Text("Test Connection")
+                                .font(.system(size: 14, weight: .medium))
+                            Spacer()
+                            if settings.isBackendServerReachable {
+                                Label("Online", systemImage: "checkmark.circle.fill")
+                                    .font(.caption.bold())
+                                    .foregroundColor(.green)
+                            } else {
+                                Label("Check Health", systemImage: "arrow.clockwise")
+                                    .font(.caption)
+                                    .foregroundColor(.cyan)
+                            }
+                        }
+                    }
+                }
+            } header: {
+                Text("BITCHORD STREAMING BACKEND")
+            } footer: {
+                Text("Connects to your local or self-hosted BitChord backend (in the server/ folder) for ultra-fast audio streaming, deciphering, and caching. When offline, BitChord seamlessly uses the built-in native streaming proxy.")
+            }
+            
+            Section {
                 NavigationLink("WebDAV Server Setup") {
                     Text("WebDAV configuration")
                 }

@@ -87,6 +87,11 @@ public final class BitChordSettings: ObservableObject {
     // Sources & Streaming
     @AppStorage("BitChord.Source.JioSaavn") public var jiosaavnSourceEnabled: Bool = false
     
+    // High-Speed Streaming Backend Server
+    @AppStorage("BitChord.Backend.ServerURL") public var backendServerURL: String = "http://localhost:3000"
+    @AppStorage("BitChord.Backend.UseBackendServer") public var useBackendServer: Bool = true
+    @Published public var isBackendServerReachable: Bool = false
+    
     // Addon Sources (Dynamic fallback sources e.g. SoundFean Qobuz)
     @Published public var addonSources: [AddonSource] = [] {
         didSet {
@@ -181,6 +186,29 @@ public final class BitChordSettings: ObservableObject {
     
     public init() {
         loadAddonSources()
+        Task {
+            await checkBackendHealth()
+        }
+    }
+    
+    public func checkBackendHealth() async {
+        guard useBackendServer else {
+            self.isBackendServerReachable = false
+            return
+        }
+        let trimmed = backendServerURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed.hasSuffix("/") ? "\(trimmed)health" : "\(trimmed)/health") else {
+            self.isBackendServerReachable = false
+            return
+        }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 1.5
+        if let (_, resp) = try? await URLSession.shared.data(for: req),
+           let http = resp as? HTTPURLResponse, http.statusCode == 200 {
+            self.isBackendServerReachable = true
+        } else {
+            self.isBackendServerReachable = false
+        }
     }
     
     public func addAddonSource(_ source: AddonSource) {
