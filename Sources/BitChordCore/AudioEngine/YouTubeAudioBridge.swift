@@ -185,11 +185,15 @@ public final class YouTubeAudioBridge: NSObject {
         function postCommand(command, args) {
           var iframe = document.getElementById('player');
           if (iframe && iframe.contentWindow) {
-            iframe.contentWindow.postMessage(JSON.stringify({
-              event: 'command',
-              func: command,
-              args: args || []
-            }), '*');
+            if (command === 'listening') {
+              iframe.contentWindow.postMessage(JSON.stringify({ event: 'listening', id: 1 }), '*');
+            } else {
+              iframe.contentWindow.postMessage(JSON.stringify({
+                event: 'command',
+                func: command,
+                args: args || []
+              }), '*');
+            }
           }
         }
 
@@ -302,10 +306,14 @@ public final class YouTubeAudioBridge: NSObject {
 
             // Handle YouTube player handshake / readiness
             if (data.event === 'onReady' || data.event === 'initialDelivery') {
+              postCommand('listening');
               if (isUserPlaying) {
                 postCommand('unMute');
                 postCommand('setVolume', [100]);
                 postCommand('playVideo');
+              }
+              if (pendingSeekTarget !== null) {
+                postCommand('seekTo', [pendingSeekTarget, true]);
               }
             }
 

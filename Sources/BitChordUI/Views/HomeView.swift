@@ -1012,10 +1012,22 @@ public struct HomeView: View {
 }
 
 // MARK: - 1. Category Playlists Browser View (Matches YouTube Music Category Screen e.g. "Commute", "Relax", "Moods & Genres")
+public struct CategoryBrowserSection: Identifiable {
+    public let id: String
+    public let sectionTitle: String
+    public let playlists: [SearchResultItem]
+    
+    public init(sectionTitle: String, playlists: [SearchResultItem]) {
+        self.id = sectionTitle
+        self.sectionTitle = sectionTitle
+        self.playlists = playlists
+    }
+}
+
 public struct CategoryPlaylistsBrowserView: View {
     public let categoryTitle: String
     @ObservedObject var accountManager = AccountManager.shared
-    @State private var sections: [(sectionTitle: String, playlists: [SearchResultItem])] = []
+    @State private var sections: [CategoryBrowserSection] = []
     @State private var isLoading: Bool = true
     @State private var showingAccountMenu: Bool = false
     
@@ -1044,8 +1056,7 @@ public struct CategoryPlaylistsBrowserView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 80)
                 } else {
-                    ForEach(0..<sections.count, id: \.self) { idx in
-                        let section = sections[idx]
+                    ForEach(sections) { section in
                         VStack(alignment: .leading, spacing: 12) {
                             // Section Header + "Show all >" matching screenshot
                             HStack {
@@ -1197,36 +1208,42 @@ public struct CategoryPlaylistsBrowserView: View {
     
     private func loadCategorySections() async {
         let configs = subSectionQueries(for: categoryTitle)
-        var builtSections: [(sectionTitle: String, playlists: [SearchResultItem])] = []
+        var builtSections: [CategoryBrowserSection] = []
         
         for cfg in configs {
             var items = (try? await YTMusicClient.shared.searchItems(query: cfg.query, filter: cfg.filter)) ?? []
             if items.isEmpty {
                 items = fallbackPlaylists(for: cfg.heading, category: categoryTitle)
             } else {
-                items = items.map { item in
-                    let formattedSub: String
-                    if cfg.filter == "Albums" || item.type == .album {
-                        formattedSub = item.subtitle.lowercased().contains("album") ? item.subtitle : "Album • \(item.artist ?? "YouTube Music")"
-                    } else {
-                        formattedSub = "Playlist • YouTube Music"
+                var seenIds = Set<String>()
+                var uniqueItems: [SearchResultItem] = []
+                for item in items {
+                    if !seenIds.contains(item.id) {
+                        seenIds.insert(item.id)
+                        let formattedSub: String
+                        if cfg.filter == "Albums" || item.type == .album {
+                            formattedSub = item.subtitle.lowercased().contains("album") ? item.subtitle : "Album • \(item.artist ?? "YouTube Music")"
+                        } else {
+                            formattedSub = "Playlist • YouTube Music"
+                        }
+                        uniqueItems.append(SearchResultItem(
+                            id: item.id,
+                            title: item.title,
+                            subtitle: formattedSub,
+                            type: cfg.filter == "Albums" ? .album : .playlist,
+                            artist: item.artist,
+                            album: item.album,
+                            artworkURL: item.artworkURL,
+                            videoId: item.videoId,
+                            browseId: item.browseId,
+                            playlistId: item.playlistId ?? item.id,
+                            duration: item.duration
+                        ))
                     }
-                    return SearchResultItem(
-                        id: item.id,
-                        title: item.title,
-                        subtitle: formattedSub,
-                        type: cfg.filter == "Albums" ? .album : .playlist,
-                        artist: item.artist,
-                        album: item.album,
-                        artworkURL: item.artworkURL,
-                        videoId: item.videoId,
-                        browseId: item.browseId,
-                        playlistId: item.playlistId ?? item.id,
-                        duration: item.duration
-                    )
                 }
+                items = uniqueItems
             }
-            builtSections.append((sectionTitle: cfg.heading, playlists: Array(items.prefix(8))))
+            builtSections.append(CategoryBrowserSection(sectionTitle: cfg.heading, playlists: Array(items.prefix(8))))
         }
         
         await MainActor.run {

@@ -32,7 +32,7 @@ public enum SearchCategory: String, CaseIterable, Identifiable {
 }
 
 private struct BrowseCategoryCard: Identifiable {
-    let id = UUID()
+    var id: String { title }
     let title: String
     let subtitle: String
     let gradientColors: [Color]
@@ -56,7 +56,7 @@ public struct SearchView: View {
     @State private var selectedTrackForMenu: Track? = nil
     @State private var loadingItemId: String? = nil
     
-    private let browseCategories: [BrowseCategoryCard] = [
+    private static let browseCategories: [BrowseCategoryCard] = [
         BrowseCategoryCard(
             title: "Hits Cafe",
             subtitle: "Chill",
@@ -67,13 +67,13 @@ public struct SearchView: View {
             title: "Commute",
             subtitle: "Feel-good music",
             gradientColors: [Color(red: 0.22, green: 0.22, blue: 0.24), Color(red: 0.12, green: 0.12, blue: 0.14)],
-            imageURL: URL(string: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=400&q=80")
+            imageURL: URL(string: "https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?w=400&q=80")
         ),
         BrowseCategoryCard(
             title: "Energize",
             subtitle: "Workout & Vibes",
             gradientColors: [Color(red: 0.35, green: 0.18, blue: 0.40), Color(red: 0.12, green: 0.15, blue: 0.35)],
-            imageURL: URL(string: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&q=80")
+            imageURL: URL(string: "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=400&q=80")
         ),
         BrowseCategoryCard(
             title: "Sunshine Indie",
@@ -297,52 +297,53 @@ public struct SearchView: View {
                                         ],
                                         spacing: 12
                                     ) {
-                                        ForEach(browseCategories) { item in
+                                        ForEach(Self.browseCategories) { item in
                                             NavigationLink {
                                                 CategoryPlaylistsBrowserView(categoryTitle: item.title)
                                             } label: {
-                                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                                    .fill(
-                                                        LinearGradient(
-                                                            colors: item.gradientColors,
-                                                            startPoint: .topLeading,
-                                                            endPoint: .bottomTrailing
-                                                        )
+                                                ZStack(alignment: .topLeading) {
+                                                    // 1. Base Gradient
+                                                    LinearGradient(
+                                                        colors: item.gradientColors,
+                                                        startPoint: .topLeading,
+                                                        endPoint: .bottomTrailing
                                                     )
-                                                    .frame(height: 104)
-                                                    .overlay {
-                                                        if let url = item.imageURL {
-                                                            AsyncImage(url: url) { phase in
-                                                                if let img = phase.image {
-                                                                    img.resizable()
-                                                                        .scaledToFill()
-                                                                        .frame(height: 104)
-                                                                        .clipped()
-                                                                }
+                                                    
+                                                    // 2. Cover image (safe aspect fill & clipped)
+                                                    if let url = item.imageURL {
+                                                        AsyncImage(url: url) { phase in
+                                                            if let img = phase.image {
+                                                                img.resizable()
+                                                                    .aspectRatio(contentMode: .fill)
                                                             }
                                                         }
                                                     }
-                                                    .overlay {
-                                                        LinearGradient(
-                                                            colors: [Color.black.opacity(0.72), Color.black.opacity(0.35)],
-                                                            startPoint: .topLeading,
-                                                            endPoint: .bottomTrailing
-                                                        )
+                                                    
+                                                    // 3. Dark gradient overlay for high-contrast legibility
+                                                    LinearGradient(
+                                                        colors: [Color.black.opacity(0.72), Color.black.opacity(0.35)],
+                                                        startPoint: .topLeading,
+                                                        endPoint: .bottomTrailing
+                                                    )
+                                                    
+                                                    // 4. Texts anchored strictly to topLeading
+                                                    VStack(alignment: .leading, spacing: 3) {
+                                                        Text(item.title)
+                                                            .font(.system(size: 16, weight: .bold))
+                                                            .foregroundColor(.white)
+                                                            .lineLimit(1)
+                                                        Text(item.subtitle)
+                                                            .font(.system(size: 12, weight: .medium))
+                                                            .foregroundColor(.white.opacity(0.85))
+                                                            .lineLimit(1)
                                                     }
-                                                    .overlay(alignment: .topLeading) {
-                                                        VStack(alignment: .leading, spacing: 3) {
-                                                            Text(item.title)
-                                                                .font(.system(size: 16, weight: .bold))
-                                                                .foregroundColor(.white)
-                                                                .lineLimit(1)
-                                                            Text(item.subtitle)
-                                                                .font(.system(size: 12, weight: .medium))
-                                                                .foregroundColor(.white.opacity(0.85))
-                                                                .lineLimit(1)
-                                                        }
-                                                        .padding(12)
-                                                    }
-                                                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                                    .padding(12)
+                                                }
+                                                .frame(height: 104)
+                                                .frame(maxWidth: .infinity)
+                                                .clipped()
+                                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                                .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                                             }
                                             .buttonStyle(.plain)
                                         }

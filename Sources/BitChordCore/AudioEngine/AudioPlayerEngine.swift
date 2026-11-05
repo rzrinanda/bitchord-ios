@@ -1731,14 +1731,23 @@ public final class AudioPlayerEngine: ObservableObject {
         self.lastUserSeekTimestamp = Date()
         self.isSeeking = true
         
+        // Auto-release isSeeking guard after 1.5s
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            guard let self = self else { return }
+            if self.pendingSeekTarget == clampedTime {
+                self.pendingSeekTarget = nil
+                self.isSeeking = false
+            }
+        }
+        
         switch activeBackend {
         case .youtubeBridge:
             YouTubeAudioBridge.shared.seek(to: clampedTime)
         case .avPlayer:
             let cmTime = CMTime(seconds: clampedTime, preferredTimescale: 600)
-            player?.seek(to: cmTime, toleranceBefore: CMTime(seconds: 0.1, preferredTimescale: 600), toleranceAfter: CMTime(seconds: 0.1, preferredTimescale: 600)) { [weak self] finished in
+            player?.seek(to: cmTime, toleranceBefore: .positiveInfinity, toleranceAfter: .positiveInfinity) { [weak self] _ in
                 Task { @MainActor [weak self] in
-                    guard let self = self, finished else { return }
+                    guard let self = self else { return }
                     self.currentTime = clampedTime
                     self.pendingSeekTarget = nil
                     self.isSeeking = false

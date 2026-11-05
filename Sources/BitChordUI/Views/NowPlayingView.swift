@@ -573,11 +573,11 @@ public struct NowPlayingView: View {
                     
                     // MARK: - Scrubber Bar
                     VStack(spacing: 6) {
-                        let totalDuration = max(1, engine.duration > 0 ? engine.duration : (track.duration > 0 ? track.duration : 1))
+                        let totalDuration = max(1, engine.duration > 0 ? engine.duration : (track.duration > 0 ? track.duration : 210))
                         let displayTime: Double = {
                             if isDraggingSlider {
                                 return min(max(0, dragSliderValue), totalDuration)
-                            } else if Date().timeIntervalSince(lastSeekTime) < 1.2 || engine.isSeeking {
+                            } else if Date().timeIntervalSince(lastSeekTime) < 1.0 {
                                 return min(max(0, dragSliderValue), totalDuration)
                             } else {
                                 return min(max(0, engine.currentTime), totalDuration)
@@ -590,6 +590,7 @@ public struct NowPlayingView: View {
                                 set: { newValue in
                                     isDraggingSlider = true
                                     dragSliderValue = min(max(0, newValue), totalDuration)
+                                    lastSeekTime = Date()
                                 }
                             ),
                             in: 0...totalDuration,
@@ -601,7 +602,7 @@ public struct NowPlayingView: View {
                                     let seekTarget = min(max(0, dragSliderValue), totalDuration)
                                     lastSeekTime = Date()
                                     engine.seek(to: seekTarget)
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                                         isDraggingSlider = false
                                     }
                                 }
