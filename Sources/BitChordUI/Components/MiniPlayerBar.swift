@@ -40,7 +40,12 @@ public struct MiniPlayerBar: View {
                                 .font(.system(size: 12))
                                 .foregroundColor(.secondary)
                                 .lineLimit(1)
-                            if engine.currentTime > 0 || engine.duration > 0 {
+                            if engine.status == .loading {
+                                Text("• Memuat...")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundColor(.cyan)
+                                    .lineLimit(1)
+                            } else if engine.currentTime > 0 || engine.duration > 0 {
                                 Text("• \(formatTime(engine.currentTime))/\(formatTime(engine.duration > 0 ? engine.duration : track.duration))")
                                     .font(.system(size: 11, weight: .medium, design: .monospaced))
                                     .foregroundColor(.cyan)

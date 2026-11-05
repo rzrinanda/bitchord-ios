@@ -190,9 +190,9 @@ public struct NowPlayingView: View {
                                     .frame(width: 36, height: 4)
                                 
                                 if !settings.hideSongStatus {
-                                    Text(headerPlayingFromText(for: track))
+                                    Text(engine.status == .loading ? "Memuat audio..." : headerPlayingFromText(for: track))
                                         .font(.system(size: 12, weight: .medium))
-                                        .foregroundColor(.white.opacity(0.75))
+                                        .foregroundColor(engine.status == .loading ? .cyan : .white.opacity(0.75))
                                         .padding(.top, 2)
                                 }
                             }

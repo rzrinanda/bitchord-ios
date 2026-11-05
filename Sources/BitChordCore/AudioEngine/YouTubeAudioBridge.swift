@@ -159,7 +159,7 @@ public final class YouTubeAudioBridge: NSObject {
               'fs': 0,
               'disablekb': 1,
               'enablejsapi': 1,
-              'origin': 'https://bitchord.app'
+              'origin': 'https://www.youtube.com'
             },
             events: {
               'onReady': onPlayerReady,
@@ -181,8 +181,14 @@ public final class YouTubeAudioBridge: NSObject {
           }
         }
 
+        var retryPlayTimer = null;
+
         function playVideoId(vId) {
           isUserPlaying = true;
+          if (retryPlayTimer) {
+            clearInterval(retryPlayTimer);
+            retryPlayTimer = null;
+          }
           try {
             if (window._aCtx && window._aCtx.state === 'suspended') {
               window._aCtx.resume();
@@ -201,10 +207,32 @@ public final class YouTubeAudioBridge: NSObject {
           } catch(e) {}
           player.loadVideoById(vId);
           player.playVideo();
+          var attempts = 0;
+          retryPlayTimer = setInterval(function() {
+            attempts++;
+            if (!isUserPlaying || attempts > 8) {
+              clearInterval(retryPlayTimer);
+              retryPlayTimer = null;
+              return;
+            }
+            if (player && player.getPlayerState) {
+              var st = player.getPlayerState();
+              if (st === 1) {
+                clearInterval(retryPlayTimer);
+                retryPlayTimer = null;
+              } else if (st === -1 || st === 2 || st === 5) {
+                try { player.playVideo(); } catch(e) {}
+              }
+            }
+          }, 300);
         }
 
         function pauseVideo() {
           isUserPlaying = false;
+          if (retryPlayTimer) {
+            clearInterval(retryPlayTimer);
+            retryPlayTimer = null;
+          }
           if ('mediaSession' in navigator) {
             try { navigator.mediaSession.playbackState = 'paused'; } catch(e) {}
           }
@@ -250,7 +278,7 @@ public final class YouTubeAudioBridge: NSObject {
 
         function onPlayerStateChange(event) {
           window.webkit.messageHandlers.bridge.postMessage({ type: 'state', state: event.data });
-          if (event.data === 5 && player && player.playVideo && isUserPlaying) {
+          if ((event.data === 5 || event.data === -1) && player && player.playVideo && isUserPlaying) {
             player.playVideo();
           }
         }
@@ -273,7 +301,7 @@ public final class YouTubeAudioBridge: NSObject {
         </html>
         """
         
-        webView?.loadHTMLString(html, baseURL: URL(string: "https://bitchord.app"))
+        webView?.loadHTMLString(html, baseURL: URL(string: "https://www.youtube.com"))
     }
     #endif
     
@@ -353,7 +381,12 @@ extension YouTubeAudioBridge: WKScriptMessageHandler {
                         self.onPlaybackStateChanged?(.playing)
                     }
                 case 2: // Paused
-                    self.onPlaybackStateChanged?(.paused)
+                    if self.isPausedByUser {
+                        self.onPlaybackStateChanged?(.paused)
+                    } else {
+                        // Transient pause during video cueing/switching: resume instead of flipping UI to paused
+                        self.resume()
+                    }
                 case 3: // Buffering
                     if !self.isPausedByUser {
                         self.onPlaybackStateChanged?(.loading)

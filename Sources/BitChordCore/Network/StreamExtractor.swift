@@ -231,6 +231,28 @@ public actor StreamExtractor {
     
     public init() {}
     
+    private var streamCache: [String: [[StreamInfo]]] = [:]
+    private var videoIdCache: [String: String] = [:]
+    
+    /// Prefetches video ID and ranked stream candidates for a track in the background so Next/Previous playback is instantaneous.
+    public func prefetch(
+        trackId: String,
+        title: String,
+        artist: String?,
+        album: String?,
+        duration: TimeInterval?,
+        preferredQuality: AudioQuality = .high
+    ) async {
+        _ = await extractRankedStreamCandidates(
+            trackId: trackId,
+            title: title,
+            artist: artist,
+            album: album,
+            duration: duration,
+            preferredQuality: preferredQuality
+        )
+    }
+    
     /// Resolves direct audio stream URL for a track/video ID with multi-source fallback
     public func extractAudioStream(
         trackId: String,
@@ -265,13 +287,26 @@ public actor StreamExtractor {
         duration: TimeInterval? = nil,
         preferredQuality: AudioQuality = .high
     ) async -> [[StreamInfo]] {
+        let cacheKey = "\(trackId)|\(title ?? "")|\(artist ?? "")"
+        if let cached = streamCache[cacheKey], !cached.isEmpty {
+            return cached
+        }
+        
         var effectiveVideoId = trackId
         
         // If trackId is an alias or placeholder, resolve real YouTube 11-char videoId for the exact requested version first
         if effectiveVideoId.count != 11 || effectiveVideoId.hasPrefix("yt_") {
-            if let title = title, let resolvedId = await resolveYouTubeVideoId(title: title, artist: artist, album: album, duration: duration) {
+            if let cachedVId = videoIdCache[cacheKey] {
+                effectiveVideoId = cachedVId
+            } else if let title = title, let resolvedId = await resolveYouTubeVideoId(title: title, artist: artist, album: album, duration: duration) {
                 effectiveVideoId = resolvedId
+                videoIdCache[cacheKey] = resolvedId
             }
+        }
+        
+        if let cachedByVId = streamCache[effectiveVideoId], !cachedByVId.isEmpty {
+            streamCache[cacheKey] = cachedByVId
+            return cachedByVId
         }
         
         var sourceGroups: [[StreamInfo]] = []
@@ -299,7 +334,7 @@ public actor StreamExtractor {
             }
         }
         
-        // Fast concurrent extraction across primary & fallback YouTube/Piped/Invidious sources
+        // Fast concurrent extraction across primary & fallback YouTube sources (~200ms)
         if sourceGroups.count < maxSources, effectiveVideoId.count == 11 {
             let vId = effectiveVideoId
             async let iosTask = extractTiersViaYouTubeInnertube(trackId: vId)
@@ -315,16 +350,16 @@ public actor StreamExtractor {
                 sourceGroups.append(rankedAndroid)
             }
             
-            // Only query third-party proxies (Piped / Invidious) if we still need alternative sources
-            if sourceGroups.count < maxSources {
-                let pipedStreams = await extractTiersViaPiped(trackId: vId)
+            // Only query third-party proxies (Piped / Invidious) when both Innertube sources returned empty
+            if sourceGroups.isEmpty {
+                async let pipedTask = extractTiersViaPiped(trackId: vId)
+                async let invidiousTask = extractTiersViaInvidious(trackId: vId)
+                let (pipedStreams, invidiousStreams) = await (pipedTask, invidiousTask)
+                
                 let rankedPiped = StreamInfo.selectTopDistinctQualityLevels(from: pipedStreams, maxLevels: maxQualityLevelsPerSource)
                 if !rankedPiped.isEmpty && sourceGroups.count < maxSources {
                     sourceGroups.append(rankedPiped)
                 }
-            }
-            if sourceGroups.count < maxSources {
-                let invidiousStreams = await extractTiersViaInvidious(trackId: vId)
                 let rankedInvidious = StreamInfo.selectTopDistinctQualityLevels(from: invidiousStreams, maxLevels: maxQualityLevelsPerSource)
                 if !rankedInvidious.isEmpty && sourceGroups.count < maxSources {
                     sourceGroups.append(rankedInvidious)
@@ -332,7 +367,14 @@ public actor StreamExtractor {
             }
         }
         
-        return Array(sourceGroups.prefix(maxSources))
+        let finalGroups = Array(sourceGroups.prefix(maxSources))
+        if !finalGroups.isEmpty {
+            streamCache[cacheKey] = finalGroups
+            if effectiveVideoId.count == 11 {
+                streamCache[effectiveVideoId] = finalGroups
+            }
+        }
+        return finalGroups
     }
     
     // Resolve YouTube 11-char Video ID from search (Strict version matching + full-length official audio only)
@@ -353,21 +395,24 @@ public actor StreamExtractor {
             "context": [
                 "client": [
                     "clientName": "IOS",
-                    "clientVersion": "19.29.1",
+                    "clientVersion": "20.10.4",
+                    "deviceMake": "Apple",
                     "deviceModel": "iPhone16,2",
+                    "osName": "iPhone",
+                    "osVersion": "18.3.2.22D82",
                     "hl": "en",
                     "gl": "US"
                 ]
             ],
             "query": query
         ]
-        guard let url = URL(string: "https://www.youtube.com/youtubei/v1/search?key=\(innertubeKey)") else { return nil }
+        guard let url = URL(string: "https://www.youtube.com/youtubei/v1/search") else { return nil }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("com.google.ios.youtube/19.29.1", forHTTPHeaderField: "User-Agent")
+        request.setValue("com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)", forHTTPHeaderField: "User-Agent")
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        request.timeoutInterval = 4.0
+        request.timeoutInterval = 3.0
         
         guard let (data, resp) = try? await URLSession.shared.data(for: request),
               let http = resp as? HTTPURLResponse, http.statusCode == 200,
@@ -434,14 +479,17 @@ public actor StreamExtractor {
     }
     
     private func extractTiersViaYouTubeInnertube(trackId: String) async -> [StreamInfo] {
-        guard let url = URL(string: "https://www.youtube.com/youtubei/v1/player?key=\(innertubeKey)") else { return [] }
+        guard let url = URL(string: "https://www.youtube.com/youtubei/v1/player") else { return [] }
         
         let body: [String: Any] = [
             "context": [
                 "client": [
                     "clientName": "IOS",
-                    "clientVersion": "19.29.1",
+                    "clientVersion": "20.10.4",
+                    "deviceMake": "Apple",
                     "deviceModel": "iPhone16,2",
+                    "osName": "iPhone",
+                    "osVersion": "18.3.2.22D82",
                     "hl": "en",
                     "gl": "US"
                 ]
@@ -459,11 +507,11 @@ public actor StreamExtractor {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X; en_US)", forHTTPHeaderField: "User-Agent")
+        request.setValue("com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)", forHTTPHeaderField: "User-Agent")
         request.setValue("5", forHTTPHeaderField: "X-YouTube-Client-Name")
-        request.setValue("19.29.1", forHTTPHeaderField: "X-YouTube-Client-Version")
+        request.setValue("20.10.4", forHTTPHeaderField: "X-YouTube-Client-Version")
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        request.timeoutInterval = 6.0
+        request.timeoutInterval = 3.5
         
         guard let (data, response) = try? await URLSession.shared.data(for: request),
               let http = response as? HTTPURLResponse, http.statusCode == 200,
@@ -553,27 +601,31 @@ public actor StreamExtractor {
     }
     
     private func extractTiersViaYouTubeAndroid(trackId: String) async -> [StreamInfo] {
-        guard let url = URL(string: "https://www.youtube.com/youtubei/v1/player?key=\(innertubeKey)") else { return [] }
+        guard let url = URL(string: "https://www.youtube.com/youtubei/v1/player") else { return [] }
         
         let body: [String: Any] = [
             "context": [
                 "client": [
                     "clientName": "ANDROID",
-                    "clientVersion": "19.29.35",
+                    "clientVersion": "20.10.35",
                     "androidSdkVersion": 34,
+                    "osName": "Android",
+                    "osVersion": "14",
                     "hl": "en",
                     "gl": "US"
                 ]
             ],
-            "videoId": trackId
+            "videoId": trackId,
+            "contentCheckOk": true,
+            "racyCheckOk": true
         ]
         
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("com.google.android.youtube/19.29.35 (Linux; U; Android 14; en_US)", forHTTPHeaderField: "User-Agent")
+        request.setValue("com.google.android.youtube/20.10.35 (Linux; U; Android 14) gzip", forHTTPHeaderField: "User-Agent")
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        request.timeoutInterval = 6.0
+        request.timeoutInterval = 3.5
         
         guard let (data, response) = try? await URLSession.shared.data(for: request),
               let http = response as? HTTPURLResponse, http.statusCode == 200,
@@ -624,7 +676,7 @@ public actor StreamExtractor {
         for instance in pipedInstances {
             guard let url = URL(string: "\(instance)/streams/\(trackId)") else { continue }
             var request = URLRequest(url: url)
-            request.timeoutInterval = 6.0
+            request.timeoutInterval = 2.5
             
             guard let (data, response) = try? await URLSession.shared.data(for: request),
                   let http = response as? HTTPURLResponse, http.statusCode == 200,
@@ -681,7 +733,7 @@ public actor StreamExtractor {
         for instance in invidiousInstances {
             guard let url = URL(string: "\(instance)/api/v1/videos/\(trackId)") else { continue }
             var request = URLRequest(url: url)
-            request.timeoutInterval = 6.0
+            request.timeoutInterval = 2.5
             
             guard let (data, response) = try? await URLSession.shared.data(for: request),
                   let http = response as? HTTPURLResponse, http.statusCode == 200,
