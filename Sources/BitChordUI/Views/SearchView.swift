@@ -123,6 +123,7 @@ public struct SearchView: View {
                             Button {
                                 query = ""
                                 searchResults = []
+                                selectedCategory = .all
                                 searchTask?.cancel()
                             } label: {
                                 Image(systemName: "xmark.circle.fill")
@@ -193,35 +194,38 @@ public struct SearchView: View {
                 .padding(.horizontal, 22)
                 .padding(.vertical, 6)
                 
-                // MARK: - Category Filter Chips (Dynamic per Source)
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(SearchCategory.categories(for: selectedSource)) { category in
-                            Button {
-                                selectedCategory = category
-                                if !query.isEmpty {
-                                    performSearch()
-                                } else if selectedSource == .youtube {
-                                    loadDefaultCategoryContent(category)
+                // MARK: - Category Filter Chips (Hidden before search, shown after searching to filter results)
+                if !query.isEmpty || !searchResults.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(SearchCategory.categories(for: selectedSource)) { category in
+                                Button {
+                                    withAnimation(.easeInOut(duration: 0.15)) {
+                                        selectedCategory = category
+                                    }
+                                    if !query.isEmpty {
+                                        performSearch()
+                                    }
+                                } label: {
+                                    Text(category.rawValue)
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundColor(selectedCategory == category ? .white : .secondary)
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 6)
+                                        .background(
+                                            selectedCategory == category
+                                                ? Color.white.opacity(0.25)
+                                                : Color.secondary.opacity(0.12)
+                                        )
+                                        .clipShape(Capsule())
                                 }
-                            } label: {
-                                Text(category.rawValue)
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundColor(selectedCategory == category ? .white : .secondary)
-                                    .padding(.horizontal, 14)
-                                    .padding(.vertical, 6)
-                                    .background(
-                                        selectedCategory == category
-                                            ? Color.white.opacity(0.25)
-                                            : Color.secondary.opacity(0.12)
-                                    )
-                                    .clipShape(Capsule())
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 8)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
                 }
                 
                 Divider()
@@ -387,11 +391,6 @@ public struct SearchView: View {
                                                 searchResultRowContent(for: item)
                                             }
                                             .buttonStyle(.plain)
-                                            .simultaneousGesture(
-                                                LongPressGesture(minimumDuration: 0.45).onEnded { _ in
-                                                    selectedTrackForMenu = item.asTrack
-                                                }
-                                            )
                                         }
                                         
                                         // 3-dots Menu Button
@@ -720,6 +719,7 @@ public struct SearchView: View {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             searchResults = []
+            selectedCategory = .all
             return
         }
         searchTask = Task {

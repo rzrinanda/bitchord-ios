@@ -87,11 +87,6 @@ public final class BitChordSettings: ObservableObject {
     // Sources & Streaming
     @AppStorage("BitChord.Source.JioSaavn") public var jiosaavnSourceEnabled: Bool = false
     
-    // High-Speed Streaming Backend Server
-    @AppStorage("BitChord.Backend.ServerURL") public var backendServerURL: String = "http://localhost:3000"
-    @AppStorage("BitChord.Backend.UseBackendServer") public var useBackendServer: Bool = true
-    @Published public var isBackendServerReachable: Bool = false
-    
     // Addon Sources (Dynamic fallback sources e.g. SoundFean Qobuz)
     @Published public var addonSources: [AddonSource] = [] {
         didSet {
@@ -186,29 +181,6 @@ public final class BitChordSettings: ObservableObject {
     
     public init() {
         loadAddonSources()
-        Task {
-            await checkBackendHealth()
-        }
-    }
-    
-    public func checkBackendHealth() async {
-        guard useBackendServer else {
-            self.isBackendServerReachable = false
-            return
-        }
-        let trimmed = backendServerURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = URL(string: trimmed.hasSuffix("/") ? "\(trimmed)health" : "\(trimmed)/health") else {
-            self.isBackendServerReachable = false
-            return
-        }
-        var req = URLRequest(url: url)
-        req.timeoutInterval = 1.5
-        if let (_, resp) = try? await URLSession.shared.data(for: req),
-           let http = resp as? HTTPURLResponse, http.statusCode == 200 {
-            self.isBackendServerReachable = true
-        } else {
-            self.isBackendServerReachable = false
-        }
     }
     
     public func addAddonSource(_ source: AddonSource) {
@@ -406,8 +378,7 @@ public actor AddonService {
                 let artist = (item["artist"] as? String) ?? ((item["artist"] as? [String: Any])?["name"] as? String) ?? "Unknown Artist"
                 let album = (item["album"] as? String) ?? ((item["album"] as? [String: Any])?["title"] as? String) ?? ""
                 let dur = (item["duration"] as? Double) ?? (item["duration"] as? Int).map(Double.init) ?? 210
-                let coverStr = (item["cover"] as? String) ?? (item["artwork"] as? String) ?? (item["image"] as? String)
-                let coverURL = coverStr != nil ? URL(string: coverStr!) : nil
+                let coverURL = extractCoverURL(from: item, trackId: tId, baseURL: addon.baseURL)
                 
                 let result = SearchResultItem(
                     id: "addon_\(addon.id)_\(tId)",
@@ -429,6 +400,50 @@ public actor AddonService {
             }
         }
         return allResults
+    }
+    
+    private func extractCoverURL(from item: [String: Any], trackId: String, baseURL: String) -> URL? {
+        var rawString: String? = nil
+        
+        let directKeys = [
+            "cover", "artwork", "image", "thumbnail", "picture",
+            "cover_url", "artwork_url", "coverUrl", "artworkUrl", "coverArt", "albumArt", "album_art"
+        ]
+        for key in directKeys {
+            if let val = item[key] as? String, !val.isEmpty {
+                rawString = val
+                break
+            }
+        }
+        
+        // Nested album dictionary (Qobuz / SoundFean standard format)
+        if rawString == nil, let albDict = item["album"] as? [String: Any] {
+            if let imgDict = albDict["image"] as? [String: Any] {
+                rawString = (imgDict["large"] as? String)
+                    ?? (imgDict["medium"] as? String)
+                    ?? (imgDict["small"] as? String)
+                    ?? (imgDict["thumbnail"] as? String)
+            }
+            if rawString == nil {
+                for key in directKeys {
+                    if let val = albDict[key] as? String, !val.isEmpty {
+                        rawString = val
+                        break
+                    }
+                }
+            }
+        }
+        
+        guard let s = rawString?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty else {
+            return nil
+        }
+        
+        if s.hasPrefix("http://") || s.hasPrefix("https://") {
+            return URL(string: s)
+        }
+        let cleanBase = baseURL.hasSuffix("/") ? String(baseURL.dropLast()) : baseURL
+        let path = s.hasPrefix("/") ? s : "/\(s)"
+        return URL(string: "\(cleanBase)\(path)")
     }
     
     /// Attempts to resolve direct stream via configured addon

@@ -867,20 +867,11 @@ public final class AudioPlayerEngine: ObservableObject {
                         self.queue[self.queueIndex] = updated
                     }
                     
-                    #if os(iOS)
-                    let isBackgrounded = UIApplication.shared.applicationState != .active
-                    #else
-                    let isBackgrounded = false
-                    #endif
-                    
-                    // Upgrade to AVPlayer if backend server or genuine lossless/addon is available or app is backgrounded
-                    if isBackgrounded || streamInfo.isGenuineLossless || streamInfo.sourceId == "bitchord_backend_server" || streamInfo.sourceId.hasPrefix("addon") {
-                        self.activeFallbackCoordinator = coordinator
-                        let currentPos = self.currentTime
-                        self.startPlaying(url: streamInfo.streamURL, for: updated, initialSeek: currentPos)
-                    } else {
-                        self.activeFallbackCoordinator = PlaybackFallbackCoordinator(track: updated, candidateSources: sourceGroups)
-                    }
+                    // Upgrade to native AVPlayer immediately with ranked native stream
+                    self.activeFallbackCoordinator = coordinator
+                    let currentPos = self.currentTime
+                    self.startPlaying(url: streamInfo.streamURL, for: updated, initialSeek: currentPos > 0 ? currentPos : startPos)
+                    YouTubeAudioBridge.shared.pause()
                 }
             }
             
@@ -937,11 +928,34 @@ public final class AudioPlayerEngine: ObservableObject {
                 if self.queueIndex == index {
                     self.currentTrack = updated
                     if index < self.queue.count { self.queue[index] = updated }
-                    self.stopAVPlayer()
-                    self.activeBackend = .youtubeBridge
-                    YouTubeAudioBridge.shared.play(videoId: vId)
-                    self.status = .loading
-                    self.updateNowPlayingInfo()
+                    
+                    let sourceGroups = await StreamExtractor.shared.extractRankedStreamCandidates(
+                        trackId: vId,
+                        title: updated.title,
+                        artist: updated.artist,
+                        album: updated.album,
+                        duration: updated.duration,
+                        preferredQuality: BitChordSettings.shared.audioQuality
+                    )
+                    guard self.playbackRequestId == requestId else { return }
+                    var coordinator = PlaybackFallbackCoordinator(track: updated, candidateSources: sourceGroups)
+                    if let initialPlan = coordinator.beginInitialAttempt() {
+                        let streamInfo = initialPlan.stream
+                        updated.streamURL = streamInfo.streamURL
+                        updated.isLossless = streamInfo.isGenuineLossless
+                        updated.sampleRate = streamInfo.sampleRate
+                        updated.bitDepth = streamInfo.bitDepth
+                        self.currentTrack = updated
+                        if index < self.queue.count { self.queue[index] = updated }
+                        self.activeFallbackCoordinator = coordinator
+                        self.startPlaying(url: streamInfo.streamURL, for: updated, initialSeek: startPos)
+                    } else {
+                        self.stopAVPlayer()
+                        self.activeBackend = .youtubeBridge
+                        YouTubeAudioBridge.shared.play(videoId: vId)
+                        self.status = .loading
+                        self.updateNowPlayingInfo()
+                    }
                 }
             } else {
                 self.attemptStreamFallback(for: track, reason: .unavailableOrExpiredStream)
