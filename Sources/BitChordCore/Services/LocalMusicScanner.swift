@@ -284,10 +284,26 @@ public final class LocalMusicScanner: ObservableObject {
     private static func loadIndex() -> [Track] {
         guard let data = try? Data(contentsOf: indexURL()),
               let list = try? JSONDecoder().decode([Track].self, from: data) else { return [] }
-        // Drop files that no longer exist on disk
-        return list.filter { track in
-            guard let url = track.streamURL, url.isFileURL else { return true }
-            return FileManager.default.fileExists(atPath: url.path)
+        // Update paths if app sandbox container UUID changed, and drop files that no longer exist
+        return list.compactMap { track in
+            guard let url = track.streamURL else { return track }
+            if url.scheme == "ipod-library" { return track }
+            if url.isFileURL {
+                if FileManager.default.fileExists(atPath: url.path) {
+                    return track
+                }
+                let filename = url.lastPathComponent
+                if let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+                    let docFile = docs.appendingPathComponent(filename)
+                    if FileManager.default.fileExists(atPath: docFile.path) {
+                        var updated = track
+                        updated.streamURL = docFile
+                        return updated
+                    }
+                }
+                return nil
+            }
+            return track
         }
     }
 }

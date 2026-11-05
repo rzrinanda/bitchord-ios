@@ -228,6 +228,9 @@ public final class CachingResourceLoader: NSObject, AVAssetResourceLoaderDelegat
     // MARK: - Asset Creation
     
     public func createAsset() -> AVURLAsset {
+        guard originalURL.scheme == "http" || originalURL.scheme == "https" else {
+            return AVURLAsset(url: originalURL)
+        }
         var components = URLComponents(url: originalURL, resolvingAgainstBaseURL: false)
         components?.scheme = Self.customScheme
         let customURL = components?.url ?? URL(string: "\(Self.customScheme)://audio/\(trackId)")!
@@ -245,6 +248,9 @@ public final class CachingResourceLoader: NSObject, AVAssetResourceLoaderDelegat
         _ resourceLoader: AVAssetResourceLoader,
         shouldWaitForLoadingOfRequestedResource loadingRequest: AVAssetResourceLoadingRequest
     ) -> Bool {
+        guard let url = loadingRequest.request.url, url.scheme == Self.customScheme else {
+            return false
+        }
         queue.async { [weak self] in
             guard let self = self else { return }
             self.handleLoadingRequest(loadingRequest)

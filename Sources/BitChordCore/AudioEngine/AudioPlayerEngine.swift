@@ -301,6 +301,8 @@ public final class AudioPlayerEngine: ObservableObject {
     private var pendingSeekTarget: TimeInterval? = nil
     private var lastUserSeekTimestamp: Date = Date.distantPast
     private var activeResourceLoader: CachingResourceLoader? = nil
+    private var securityScopedAccessURL: URL? = nil
+    private var lastExpirationHandledTimestamp: Date = Date.distantPast
     
     #if os(iOS)
     private var silencePlayer: AVAudioPlayer?
@@ -322,8 +324,16 @@ public final class AudioPlayerEngine: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self = self,
                       let trackId = expiredTrackId,
+                      self.activeBackend == .avPlayer,
                       self.currentTrack?.id == trackId,
-                      let cur = self.currentTrack else { return }
+                      let cur = self.currentTrack,
+                      !trackId.hasPrefix("local_"),
+                      cur.streamURL?.isFileURL != true,
+                      cur.streamURL?.scheme != "ipod-library" else { return }
+                
+                if Date().timeIntervalSince(self.lastExpirationHandledTimestamp) < 3.0 { return }
+                self.lastExpirationHandledTimestamp = Date()
+                
                 print("[BitChord AudioEngine] Stream URL expired for track \(trackId), refreshing stream...")
                 self.attemptStreamFallback(for: cur, reason: .unavailableOrExpiredStream)
             }
@@ -805,6 +815,67 @@ public final class AudioPlayerEngine: ObservableObject {
     
     // MARK: - Playback Control
     
+    private func resolvePlayableLocalURL(for track: Track) -> URL? {
+        // 1. Direct streamURL on track
+        if let url = track.streamURL {
+            if url.scheme == "ipod-library" {
+                return url
+            }
+            if url.isFileURL {
+                if FileManager.default.fileExists(atPath: url.path) {
+                    return url
+                }
+                let filename = url.lastPathComponent
+                if let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+                    let docFile = docs.appendingPathComponent(filename)
+                    if FileManager.default.fileExists(atPath: docFile.path) {
+                        return docFile
+                    }
+                }
+                if let custom = LocalMusicScanner.shared.customFolderURL {
+                    let folderFile = custom.appendingPathComponent(filename)
+                    if FileManager.default.fileExists(atPath: folderFile.path) {
+                        return folderFile
+                    }
+                }
+            }
+        }
+        
+        // 2. DownloadManager offline files
+        if let downloadedURL = DownloadManager.shared.getLocalFileURL(for: track.id) {
+            return downloadedURL
+        }
+        
+        // 3. LocalMusicScanner tracks list by ID
+        if track.id.hasPrefix("local_"),
+           let localTrack = LocalMusicScanner.shared.tracks.first(where: { $0.id == track.id }),
+           let localURL = localTrack.streamURL {
+            if localURL.scheme == "ipod-library" {
+                return localURL
+            }
+            if localURL.isFileURL {
+                if FileManager.default.fileExists(atPath: localURL.path) {
+                    return localURL
+                }
+                let filename = localURL.lastPathComponent
+                if let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+                    let docFile = docs.appendingPathComponent(filename)
+                    if FileManager.default.fileExists(atPath: docFile.path) {
+                        return docFile
+                    }
+                }
+                if let custom = LocalMusicScanner.shared.customFolderURL {
+                    let folderFile = custom.appendingPathComponent(filename)
+                    if FileManager.default.fileExists(atPath: folderFile.path) {
+                        return folderFile
+                    }
+                }
+            }
+        }
+        
+        return nil
+    }
+    
     public func playTrack(at index: Int, initialSeek: TimeInterval? = nil) {
         guard index >= 0 && index < queue.count else { return }
         playbackRequestId &+= 1
@@ -852,29 +923,13 @@ public final class AudioPlayerEngine: ObservableObject {
         // Prefetch adjacent tracks (Next & Previous) in background so skipping is instantaneous
         prefetchAdjacentQueueTracks(around: index)
         
-        // 1. Direct local file URL on track
-        if let directURL = track.streamURL, directURL.isFileURL, FileManager.default.fileExists(atPath: directURL.path) {
-            YouTubeAudioBridge.shared.pause()
-            startPlaying(url: directURL, for: track, initialSeek: startPos)
-            return
-        }
-        
-        // 2. Local storage / Downloaded track from DownloadManager (Instant 0ms offline playback)
-        if let localDownloadedURL = DownloadManager.shared.getLocalFileURL(for: track.id) {
+        // 1. Local or offline track (Local files, iPod MediaLibrary, or DownloadManager)
+        if let localURL = resolvePlayableLocalURL(for: track) {
             var updated = track
-            updated.streamURL = localDownloadedURL
-            self.currentTrack = updated
-            if index < self.queue.count { self.queue[index] = updated }
-            YouTubeAudioBridge.shared.pause()
-            startPlaying(url: localDownloadedURL, for: updated, initialSeek: startPos)
-            return
-        }
-        
-        // 3. Local music file from LocalMusicScanner
-        if track.id.hasPrefix("local_"),
-           let localTrack = LocalMusicScanner.shared.tracks.first(where: { $0.id == track.id }),
-           let localURL = localTrack.streamURL, localURL.isFileURL, FileManager.default.fileExists(atPath: localURL.path) {
-            let updated = localTrack
+            updated.streamURL = localURL
+            if updated.source == nil || updated.source == .youtube {
+                updated.source = .library
+            }
             self.currentTrack = updated
             if index < self.queue.count { self.queue[index] = updated }
             YouTubeAudioBridge.shared.pause()
@@ -882,9 +937,10 @@ public final class AudioPlayerEngine: ObservableObject {
             return
         }
         
-        // 4. Pre-resolved direct remote stream URL (exclude YouTube googlevideo.com raw URLs which return HTTP 403 in AVPlayer)
+        // 2. Pre-resolved direct remote stream URL (exclude YouTube googlevideo.com raw URLs which return HTTP 403 in AVPlayer)
         if let directURL = track.streamURL,
            !directURL.isFileURL,
+           directURL.scheme != "ipod-library",
            !directURL.absoluteString.contains("apple.com"),
            !(directURL.host?.lowercased().contains("googlevideo.com") ?? false) {
             YouTubeAudioBridge.shared.pause()
@@ -1113,8 +1169,6 @@ public final class AudioPlayerEngine: ObservableObject {
         requestId: UInt64
     ) {
         guard self.playbackRequestId == requestId else { return }
-        self.status = .loading
-        self.updateNowPlayingInfo()
         
         let qualityStr = BitChordSettings.shared.audioQuality.rawValue
         if let cachedURL = CachingResourceLoader.cachedFileURLIfComplete(trackId: videoId, quality: qualityStr) {
@@ -1130,37 +1184,7 @@ public final class AudioPlayerEngine: ObservableObject {
             return
         }
         
-        Task { @MainActor [weak self] in
-            guard let self = self, self.playbackRequestId == requestId else { return }
-            
-            // 1. Attempt to extract direct audio stream (AAC / M4A) via StreamExtractor
-            let directStream = try? await StreamExtractor.shared.extractAudioStream(
-                trackId: videoId,
-                title: track.title,
-                artist: track.artist,
-                album: track.album,
-                duration: track.duration,
-                preferredQuality: BitChordSettings.shared.audioQuality
-            )
-            
-            guard self.playbackRequestId == requestId else { return }
-            
-            if let stream = directStream, stream.isIOSAVPlayerCompatible {
-                print("[BitChord AudioEngine] Playing track via AVPlayer + CachingResourceLoader (backend: .avPlayer, format: \(stream.format))")
-                var updated = track
-                updated.id = videoId
-                updated.streamURL = stream.streamURL
-                self.currentTrack = updated
-                if self.queueIndex < self.queue.count && self.queue[self.queueIndex].id == track.id {
-                    self.queue[self.queueIndex] = updated
-                }
-                self.startPlaying(url: stream.streamURL, for: updated, initialSeek: startPos, sourceId: stream.sourceId)
-            } else {
-                // 2. Fallback to YouTubeAudioBridge iframe embed ONLY when direct stream is unreachable
-                print("[BitChord AudioEngine] Direct stream extraction unavailable, falling back to YouTubeAudioBridge iframe (backend: .youtubeBridge)")
-                self.playViaYouTubeBridge(videoId: videoId, startPos: startPos, requestId: requestId)
-            }
-        }
+        self.playViaYouTubeBridge(videoId: videoId, startPos: startPos, requestId: requestId)
     }
     
     private func playViaYouTubeBridge(videoId: String, startPos: TimeInterval, requestId: UInt64) {
@@ -1196,7 +1220,32 @@ public final class AudioPlayerEngine: ObservableObject {
             self.pendingSeekTime = initialSeek
             self.currentTime = initialSeek
         }
-        if !url.isFileURL {
+        
+        let isLocalAudio = url.isFileURL || url.scheme == "ipod-library" || track.id.hasPrefix("local_")
+        
+        #if os(iOS)
+        // Release previous security-scoped resource if any
+        securityScopedAccessURL?.stopAccessingSecurityScopedResource()
+        securityScopedAccessURL = nil
+        if url.isFileURL {
+            if url.startAccessingSecurityScopedResource() {
+                securityScopedAccessURL = url
+            }
+        }
+        
+        // Ensure AVAudioSession is active for playback
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .default, options: [.allowBluetoothHFP, .allowBluetoothA2DP, .allowAirPlay])
+            try session.setActive(true, options: [])
+        } catch {
+            print("[BitChord AudioEngine] Failed to activate AVAudioSession: \(error.localizedDescription)")
+        }
+        #endif
+        
+        if isLocalAudio {
+            self.status = .playing
+        } else {
             self.status = .loading
         }
         startupWatchdogTask?.cancel()
@@ -1214,7 +1263,7 @@ public final class AudioPlayerEngine: ObservableObject {
             ? "com.google.android.youtube/20.10.35 (Linux; U; Android 14) gzip"
             : "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)"
         let asset: AVURLAsset
-        if url.isFileURL {
+        if isLocalAudio {
             self.activeResourceLoader = nil
             asset = AVURLAsset(url: url)
         } else {
@@ -1249,12 +1298,19 @@ public final class AudioPlayerEngine: ObservableObject {
                         self.performAVSeek(to: seekTime, attempt: 0)
                     }
                     self.updateNowPlayingInfo()
-                    self.startReadyToPlayWatchdog(for: track, streamURL: url, initialTime: self.currentTime)
+                    if !isLocalAudio {
+                        self.startReadyToPlayWatchdog(for: track, streamURL: url, initialTime: self.currentTime)
+                    }
                 case .failed:
                     print("[BitChord AudioEngine] AVPlayerItem failed: \(String(describing: item.error))")
                     self.startupWatchdogTask?.cancel()
-                    let reason = Self.classifyAVPlayerError(item.error)
-                    self.attemptStreamFallback(for: track, failedURL: url, reason: reason)
+                    if isLocalAudio {
+                        self.status = .error
+                        self.playbackErrorMessage = "Cannot read local audio file"
+                    } else {
+                        let reason = Self.classifyAVPlayerError(item.error)
+                        self.attemptStreamFallback(for: track, failedURL: url, reason: reason)
+                    }
                 case .unknown:
                     break
                 @unknown default:
@@ -1276,7 +1332,7 @@ public final class AudioPlayerEngine: ObservableObject {
         attachTimeObserver()
         player?.rate = playbackSpeed
         player?.play()
-        if url.isFileURL {
+        if isLocalAudio {
             self.status = .playing
         }
         updateNowPlayingInfo()
@@ -1285,6 +1341,9 @@ public final class AudioPlayerEngine: ObservableObject {
     /// Enforces the 10-second playback startup watchdog after a stream reports `.readyToPlay`.
     /// Normal buffering that recovers within 10s is not treated as a failure.
     private func startReadyToPlayWatchdog(for track: Track, streamURL: URL, initialTime: TimeInterval) {
+        guard !streamURL.isFileURL, streamURL.scheme != "ipod-library", !track.id.hasPrefix("local_") else {
+            return
+        }
         startupWatchdogTask?.cancel()
         let timeoutNanoseconds = UInt64(PlaybackFallbackCoordinator.startupTimeoutSeconds * 1_000_000_000)
         startupWatchdogTask = Task { @MainActor [weak self] in
@@ -1400,6 +1459,13 @@ public final class AudioPlayerEngine: ObservableObject {
         failedURL: URL? = nil,
         reason: PlaybackFailureReason = .unavailableOrExpiredStream
     ) {
+        if track.id.hasPrefix("local_") || track.streamURL?.isFileURL == true || track.streamURL?.scheme == "ipod-library" {
+            self.status = .error
+            self.playbackErrorMessage = "Cannot read local audio file"
+            self.updateNowPlayingInfo()
+            return
+        }
+        
         Task { @MainActor [weak self] in
             guard let self = self else { return }
             guard self.currentTrack?.id == track.id else { return }
