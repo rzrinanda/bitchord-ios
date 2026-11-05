@@ -186,7 +186,7 @@ public struct ExploreView: View {
                     chartsSection
                 }
                 .padding(.top, 10)
-                .padding(.bottom, engine.currentTrack != nil ? 220 : 150)
+                .padding(.bottom, engine.currentTrack != nil ? 140 : 70)
             }
             .navigationTitle("Explore")
             .toolbar {

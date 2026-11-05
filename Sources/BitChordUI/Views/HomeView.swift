@@ -247,7 +247,7 @@ public struct HomeView: View {
                     }
                 }
                 .padding(.top, 8)
-                .padding(.bottom, engine.currentTrack != nil ? 220 : 150)
+                .padding(.bottom, engine.currentTrack != nil ? 140 : 70)
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

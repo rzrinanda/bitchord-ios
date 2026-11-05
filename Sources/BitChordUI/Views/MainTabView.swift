@@ -107,23 +107,18 @@ public struct MainTabView: View {
                     .padding(.horizontal, 16)
                     .padding(.bottom, 8)
                 }
-                .padding(.top, 12)
+                .padding(.top, 14)
                 .background(
-                    VStack(spacing: 0) {
-                        LinearGradient(
-                            stops: [
-                                .init(color: Color.black.opacity(0.0), location: 0.0),
-                                .init(color: Color(red: 0.05, green: 0.05, blue: 0.07).opacity(0.75), location: 0.35),
-                                .init(color: Color(red: 0.05, green: 0.05, blue: 0.07), location: 0.7)
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .frame(height: 48)
-                        
-                        Color(red: 0.05, green: 0.05, blue: 0.07)
-                    }
-                    .padding(.top, -24)
+                    LinearGradient(
+                        stops: [
+                            .init(color: Color.black.opacity(0.0), location: 0.0),
+                            .init(color: Color.black.opacity(0.75), location: 0.25),
+                            .init(color: Color.black.opacity(0.95), location: 0.6),
+                            .init(color: Color.black, location: 1.0)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
                     .ignoresSafeArea(edges: .bottom)
                     .allowsHitTesting(false)
                 )

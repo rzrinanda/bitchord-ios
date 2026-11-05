@@ -288,7 +288,7 @@ public struct LibraryView: View {
                     .padding(.horizontal, 16)
                 }
                 .padding(.top, 10)
-                .padding(.bottom, engine.currentTrack != nil ? 220 : 150)
+                .padding(.bottom, engine.currentTrack != nil ? 140 : 70)
             }
             .navigationTitle("Library")
             .toolbar {

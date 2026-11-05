@@ -301,50 +301,48 @@ public struct SearchView: View {
                                             NavigationLink {
                                                 CategoryPlaylistsBrowserView(categoryTitle: item.title)
                                             } label: {
-                                                ZStack(alignment: .topLeading) {
-                                                    // Background Image or Gradient
-                                                    if let url = item.imageURL {
-                                                        AsyncImage(url: url) { phase in
-                                                            if let img = phase.image {
-                                                                img.resizable()
-                                                                    .aspectRatio(contentMode: .fill)
-                                                            } else {
-                                                                LinearGradient(
-                                                                    colors: item.gradientColors,
-                                                                    startPoint: .topLeading,
-                                                                    endPoint: .bottomTrailing
-                                                                )
-                                                            }
-                                                        }
-                                                    } else {
+                                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                                    .fill(
                                                         LinearGradient(
                                                             colors: item.gradientColors,
                                                             startPoint: .topLeading,
                                                             endPoint: .bottomTrailing
                                                         )
-                                                    }
-                                                    
-                                                    // Dark Gradient Overlay for clean readability
-                                                    LinearGradient(
-                                                        colors: [Color.black.opacity(0.72), Color.black.opacity(0.35)],
-                                                        startPoint: .topLeading,
-                                                        endPoint: .bottomTrailing
                                                     )
-                                                    
-                                                    VStack(alignment: .leading, spacing: 3) {
-                                                        Text(item.title)
-                                                            .font(.system(size: 16, weight: .bold))
-                                                            .foregroundColor(.white)
-                                                            .lineLimit(1)
-                                                        Text(item.subtitle)
-                                                            .font(.system(size: 12, weight: .medium))
-                                                            .foregroundColor(.white.opacity(0.85))
-                                                            .lineLimit(1)
+                                                    .frame(height: 104)
+                                                    .overlay {
+                                                        if let url = item.imageURL {
+                                                            AsyncImage(url: url) { phase in
+                                                                if let img = phase.image {
+                                                                    img.resizable()
+                                                                        .scaledToFill()
+                                                                        .frame(height: 104)
+                                                                        .clipped()
+                                                                }
+                                                            }
+                                                        }
                                                     }
-                                                    .padding(12)
-                                                }
-                                                .frame(height: 104)
-                                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                                    .overlay {
+                                                        LinearGradient(
+                                                            colors: [Color.black.opacity(0.72), Color.black.opacity(0.35)],
+                                                            startPoint: .topLeading,
+                                                            endPoint: .bottomTrailing
+                                                        )
+                                                    }
+                                                    .overlay(alignment: .topLeading) {
+                                                        VStack(alignment: .leading, spacing: 3) {
+                                                            Text(item.title)
+                                                                .font(.system(size: 16, weight: .bold))
+                                                                .foregroundColor(.white)
+                                                                .lineLimit(1)
+                                                            Text(item.subtitle)
+                                                                .font(.system(size: 12, weight: .medium))
+                                                                .foregroundColor(.white.opacity(0.85))
+                                                                .lineLimit(1)
+                                                        }
+                                                        .padding(12)
+                                                    }
+                                                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                                             }
                                             .buttonStyle(.plain)
                                         }
@@ -353,7 +351,7 @@ public struct SearchView: View {
                                 }
                             }
                         }
-                        .padding(.bottom, engine.currentTrack != nil ? 220 : 150)
+                        .padding(.bottom, engine.currentTrack != nil ? 140 : 70)
                     }
                     .scrollDismissesKeyboard(.interactively)
                 } else if searchResults.isEmpty && !query.isEmpty {
@@ -428,7 +426,7 @@ public struct SearchView: View {
                                 }
                             }
                         }
-                        .padding(.bottom, engine.currentTrack != nil ? 220 : 150)
+                        .padding(.bottom, engine.currentTrack != nil ? 140 : 70)
                     }
                     .scrollDismissesKeyboard(.interactively)
                 }
@@ -595,6 +593,10 @@ public struct SearchView: View {
     
     // MARK: - Item Tap Action (Instant source-specific playback)
     private func handleItemTap(_ item: SearchResultItem) {
+        #if os(iOS)
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        #endif
+        
         switch item.type {
         case .song, .video:
             var track = item.asTrack
@@ -720,6 +722,10 @@ public struct SearchView: View {
     private func performSearch() {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        
+        #if os(iOS)
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        #endif
         
         isSearching = true
         Task {
