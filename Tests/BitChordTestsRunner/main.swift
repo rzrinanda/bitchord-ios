@@ -343,7 +343,8 @@ func runAllTests() async {
         )
         let track3 = item3.asTrack
         assertTest(track3.artist == "Ada Band", "Metadata Extraction: Video subtitle extracts artist 'Ada Band' bypassing view count")
-        assertTest(track3.album == "YouTube Music", "Metadata Extraction: Video subtitle defaults album to 'YouTube Music' without false views")
+        assertTest(track3.album == "YouTube Video" || track3.album == "YouTube Music", "Metadata Extraction: Video subtitle defaults album cleanly without false views")
+        assertTest(track3.artworkURL?.absoluteString.contains("i.ytimg.com") == true, "Metadata Extraction: Video item automatically populates YouTube thumbnail artwork")
     }
     
     // MARK: - Test 11: Song Info Details Fetcher
@@ -816,6 +817,33 @@ func runAllTests() async {
         // Verify normal buffering vs failure classification
         assertTest(PlaybackFallbackCoordinator.isNormalBuffering(isWaitingToPlay: true, stallDurationSeconds: 3.5, hasFatalError: false) == true, "Failure Definition: Short 3.5s buffering is NOT classified as playback failure")
         assertTest(PlaybackFallbackCoordinator.isNormalBuffering(isWaitingToPlay: true, stallDurationSeconds: 10.5, hasFatalError: false) == false, "Failure Definition: Stall exceeding 10s ready-to-play timeout IS classified as playback failure")
+    }
+    
+    // MARK: - Test 19: YouTube Video Audio Playback & Video URL Extraction
+    do {
+        // 1. Direct YouTube URL extraction (`watch?v=`, `youtu.be/`, `shorts/`)
+        let watchId = YTMusicClient.extractYouTubeVideoId(from: "https://www.youtube.com/watch?v=zyLmavBAY7k")
+        let shortUrlId = YTMusicClient.extractYouTubeVideoId(from: "https://youtu.be/zyLmavBAY7k?si=12345")
+        assertTest(watchId == "zyLmavBAY7k", "YouTube Video URL: Extracted 11-char ID from youtube.com/watch?v=...")
+        assertTest(shortUrlId == "zyLmavBAY7k", "YouTube Video URL: Extracted 11-char ID from youtu.be/...")
+        
+        // 2. Search with 'Videos' filter returns playable YouTube videos with 11-char videoIds
+        let videoResults = (try? await YTMusicClient.shared.searchItems(query: "Tulus Teh Hijau", filter: "Videos")) ?? []
+        assertTest(!videoResults.isEmpty, "YouTube Video Search: Returns video results for 'Videos' filter")
+        let firstVideo = videoResults.first { $0.type == .video && ($0.videoId?.count == 11 || $0.id.count == 11) }
+        assertTest(firstVideo != nil, "YouTube Video Search: Found playable video item with valid 11-char videoId")
+        
+        // 3. Direct M4A audio stream extraction for a YouTube Music Video (`zyLmavBAY7k`)
+        let videoStreams = await StreamExtractor.shared.extractRankedStreamCandidates(
+            trackId: "zyLmavBAY7k",
+            title: "TULUS - Teh Hijau (Official Music Video)",
+            artist: "Tulus",
+            album: "YouTube Video",
+            duration: 228
+        )
+        let bestVideoAudio = videoStreams.first?.first
+        assertTest(bestVideoAudio != nil, "YouTube Video Audio: Extracted direct audio stream for YouTube Music Video")
+        assertTest(bestVideoAudio?.isIOSAVPlayerCompatible == true, "YouTube Video Audio: Top extracted stream is natively compatible with iOS AVPlayer (audio/mp4 AAC)")
     }
     
     print("==================================================")

@@ -105,15 +105,25 @@ public actor DownloadManager {
         
         // 1. Resolve audio stream URL if not already present
         let streamURL: URL
+        var resolvedSourceId: String? = nil
         if let direct = track.streamURL {
             streamURL = direct
         } else {
-            let streamInfo = try await StreamExtractor.shared.extractAudioStream(trackId: track.id)
+            let streamInfo = try await StreamExtractor.shared.extractAudioStream(trackId: track.id, title: track.title, artist: track.artist, album: track.album, duration: track.duration)
             streamURL = streamInfo.streamURL
+            resolvedSourceId = streamInfo.sourceId
         }
         
-        // 2. Download file
-        let (tempURL, response) = try await URLSession.shared.download(from: streamURL)
+        // 2. Download file with matching User-Agent header so YouTube googlevideo.com streams return HTTP 200/206
+        var req = URLRequest(url: streamURL)
+        let isAndroid = (resolvedSourceId == "yt_innertube_android") || streamURL.absoluteString.lowercased().contains("c=android")
+        req.setValue(
+            isAndroid
+                ? "com.google.android.youtube/20.10.35 (Linux; U; Android 14) gzip"
+                : "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)",
+            forHTTPHeaderField: "User-Agent"
+        )
+        let (tempURL, response) = try await URLSession.shared.download(for: req)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             return false
         }

@@ -69,10 +69,23 @@ public struct SearchResultItem: Identifiable, Hashable, Codable, Sendable {
             resolvedAlbum = explicitAlbum.trimmingCharacters(in: .whitespaces)
         } else if type == .album {
             resolvedAlbum = title
+        } else if type == .video {
+            resolvedAlbum = "YouTube Video"
         } else if let extracted = SearchResultItem.extractAlbum(from: subtitle) {
             resolvedAlbum = extracted
         } else {
             resolvedAlbum = source == .library ? "Local Library" : "YouTube Music"
+        }
+        
+        let resolvedArtworkURL: URL?
+        if let art = artworkURL {
+            resolvedArtworkURL = art
+        } else if let vId = videoId, vId.count == 11, !vId.hasPrefix("yt_") {
+            resolvedArtworkURL = URL(string: "https://i.ytimg.com/vi/\(vId)/hqdefault.jpg")
+        } else if id.count == 11 && !id.hasPrefix("yt_") && !id.hasPrefix("local_") {
+            resolvedArtworkURL = URL(string: "https://i.ytimg.com/vi/\(id)/hqdefault.jpg")
+        } else {
+            resolvedArtworkURL = nil
         }
         
         return Track(
@@ -81,7 +94,7 @@ public struct SearchResultItem: Identifiable, Hashable, Codable, Sendable {
             artist: resolvedArtist,
             album: resolvedAlbum,
             duration: duration > 0 ? duration : 210,
-            artworkURL: artworkURL,
+            artworkURL: resolvedArtworkURL,
             streamURL: streamURL,
             isLossless: true,
             source: source,

@@ -62,13 +62,57 @@ public actor YTMusicClient {
     }
     
     /// Returns rich heterogeneous search items matching BitChord Android (Songs, Videos, Albums, Artists, Playlists)
+    /// Also supports direct YouTube video URLs (`youtube.com/watch?v=...`, `youtu.be/...`, `youtube.com/shorts/...`)
+    /// and standard YouTube videos so audio from any YouTube video can be played seamlessly.
     public func searchItems(query: String, filter: String? = nil) async throws -> [SearchResultItem] {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty else { return [] }
         
-        let ytMusicResults = await searchViaInnertube(query: trimmedQuery, filter: filter)
-        if !ytMusicResults.isEmpty {
-            return ytMusicResults
+        // 1. If the user pasted a direct YouTube Video URL or 11-char videoId, resolve its metadata and include it at the top
+        if let directVideoId = Self.extractYouTubeVideoId(from: trimmedQuery) {
+            if let directVideoItem = await fetchVideoSearchItem(videoId: directVideoId) {
+                let extra = await searchViaInnertube(query: directVideoItem.title, filter: filter)
+                var combined = [directVideoItem]
+                for item in extra where item.videoId != directVideoId && item.id != directVideoId {
+                    combined.append(item)
+                }
+                return combined
+            }
+        }
+        
+        let filterLower = filter?.lowercased() ?? "all"
+        let isVideosOrAll = (filterLower == "videos" || filterLower == "all")
+        
+        if isVideosOrAll {
+            async let ytMusicTask = searchViaInnertube(query: trimmedQuery, filter: filter)
+            async let ytStandardVideosTask = searchViaStandardYouTubeVideos(query: trimmedQuery)
+            let (ytMusicResults, standardVideos) = await (ytMusicTask, ytStandardVideosTask)
+            
+            var merged: [SearchResultItem] = []
+            var seenKeys = Set<String>()
+            
+            for item in ytMusicResults {
+                let k = item.videoId ?? item.id
+                if seenKeys.insert(k).inserted {
+                    merged.append(item)
+                }
+            }
+            
+            for video in standardVideos {
+                let k = video.videoId ?? video.id
+                if seenKeys.insert(k).inserted {
+                    merged.append(video)
+                }
+            }
+            
+            if !merged.isEmpty {
+                return merged
+            }
+        } else {
+            let ytMusicResults = await searchViaInnertube(query: trimmedQuery, filter: filter)
+            if !ytMusicResults.isEmpty {
+                return ytMusicResults
+            }
         }
         
         // Fallback to iTunes metadata if needed
@@ -925,7 +969,7 @@ public actor YTMusicClient {
                         itemType = .artist
                     } else if pageType.contains("PLAYLIST") || (browseId?.hasPrefix("VL") == true) || (playlistId != nil && videoId == nil) || subLower.hasPrefix("playlist") || filterLower == "playlists" {
                         itemType = .playlist
-                    } else if subLower.hasPrefix("video") || filterLower == "videos" {
+                    } else if pageType.contains("MUSIC_VIDEO_TYPE_OMV") || pageType.contains("MUSIC_VIDEO_TYPE_UGC") || pageType.contains("MUSIC_VIDEO_TYPE_OFFICIAL_SOURCE_MUSIC") || subLower.hasPrefix("video") || subLower.contains("ditonton") || subLower.contains("views") || filterLower == "videos" {
                         itemType = .video
                     } else {
                         itemType = .song
@@ -969,6 +1013,218 @@ public actor YTMusicClient {
         
         extract(from: json)
         return results
+    }
+    
+    // MARK: - 4b. Standard YouTube Video Search & URL Resolver (Play Audio from Any YouTube Video)
+    /// Extracts an 11-character YouTube videoId from a pasted URL (`youtube.com/watch?v=...`, `youtu.be/...`, `youtube.com/shorts/...`, `music.youtube.com/watch?v=...`)
+    public static func extractYouTubeVideoId(from rawInput: String) -> String? {
+        let trimmed = rawInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.contains("youtube.com/") || trimmed.contains("youtu.be/") else {
+            return nil
+        }
+        
+        if let url = URL(string: trimmed) {
+            if let host = url.host?.lowercased(), host.contains("youtu.be") {
+                let pathId = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                if pathId.count == 11 {
+                    return pathId
+                }
+            }
+            if let comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
+               let vParam = comps.queryItems?.first(where: { $0.name == "v" })?.value,
+               vParam.count == 11 {
+                return vParam
+            }
+            let parts = url.pathComponents
+            if let shortsIdx = parts.firstIndex(of: "shorts"), shortsIdx + 1 < parts.count {
+                let candidate = parts[shortsIdx + 1]
+                if candidate.count == 11 { return candidate }
+            }
+            if let liveIdx = parts.firstIndex(of: "live"), liveIdx + 1 < parts.count {
+                let candidate = parts[liveIdx + 1]
+                if candidate.count == 11 { return candidate }
+            }
+        }
+        
+        if let range = trimmed.range(of: #"(?:v=|youtu\.be/|shorts/|embed/)([A-Za-z0-9_-]{11})"#, options: .regularExpression) {
+            let match = String(trimmed[range])
+            let idPart = String(match.suffix(11))
+            if idPart.count == 11 {
+                return idPart
+            }
+        }
+        return nil
+    }
+    
+    /// Resolves metadata for a specific 11-character YouTube video ID so its audio can be played directly.
+    public func fetchVideoSearchItem(videoId: String) async -> SearchResultItem? {
+        guard videoId.count == 11,
+              let url = URL(string: "https://www.youtube.com/youtubei/v1/player") else { return nil }
+        
+        let body: [String: Any] = [
+            "context": [
+                "client": [
+                    "clientName": "IOS",
+                    "clientVersion": "20.10.4",
+                    "deviceMake": "Apple",
+                    "deviceModel": "iPhone16,2",
+                    "osName": "iPhone",
+                    "osVersion": "18.3.2.22D82",
+                    "hl": "id",
+                    "gl": "ID"
+                ]
+            ],
+            "videoId": videoId,
+            "contentCheckOk": true,
+            "racyCheckOk": true
+        ]
+        
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)", forHTTPHeaderField: "User-Agent")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        req.timeoutInterval = 5.0
+        
+        guard let (data, resp) = try? await session.data(for: req),
+              let http = resp as? HTTPURLResponse, http.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let details = json["videoDetails"] as? [String: Any] else {
+            return SearchResultItem(
+                id: videoId,
+                title: "YouTube Video (\(videoId))",
+                subtitle: "Video • YouTube",
+                type: .video,
+                artist: "YouTube",
+                album: "YouTube Video",
+                artworkURL: URL(string: "https://i.ytimg.com/vi/\(videoId)/hqdefault.jpg"),
+                videoId: videoId,
+                duration: 210,
+                source: .youtube
+            )
+        }
+        
+        let title = details["title"] as? String ?? "YouTube Video"
+        let author = (details["author"] as? String ?? "YouTube").replacingOccurrences(of: " - Topic", with: "")
+        let lengthSec = Double(details["lengthSeconds"] as? String ?? "210") ?? 210
+        let artworkURL = URL(string: "https://i.ytimg.com/vi/\(videoId)/hqdefault.jpg")
+        
+        return SearchResultItem(
+            id: videoId,
+            title: title,
+            subtitle: "Video • \(author)",
+            type: .video,
+            artist: author,
+            album: "YouTube Video",
+            artworkURL: artworkURL,
+            videoId: videoId,
+            duration: lengthSec > 0 ? lengthSec : 210,
+            source: .youtube
+        )
+    }
+    
+    /// Queries standard YouTube (`www.youtube.com/youtubei/v1/search`) so any YouTube video (official MV, live session, acoustic cover, podcast, etc.)
+    /// can be discovered and its audio played directly in BitChord.
+    private func searchViaStandardYouTubeVideos(query: String) async -> [SearchResultItem] {
+        let body: [String: Any] = [
+            "context": [
+                "client": [
+                    "clientName": "WEB",
+                    "clientVersion": "2.20250101.00.00",
+                    "hl": "id",
+                    "gl": "ID"
+                ]
+            ],
+            "query": query
+        ]
+        
+        guard let url = URL(string: "https://www.youtube.com/youtubei/v1/search") else { return [] }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
+        request.setValue("https://www.youtube.com", forHTTPHeaderField: "Origin")
+        request.setValue("https://www.youtube.com", forHTTPHeaderField: "Referer")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        request.timeoutInterval = 6.0
+        
+        guard let (data, resp) = try? await session.data(for: request),
+              let http = resp as? HTTPURLResponse, http.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return []
+        }
+        
+        var videos: [SearchResultItem] = []
+        var seen = Set<String>()
+        
+        func extractVideos(from obj: Any) {
+            if let dict = obj as? [String: Any] {
+                if let vr = dict["videoRenderer"] as? [String: Any],
+                   let vId = vr["videoId"] as? String, vId.count == 11 {
+                    let titleRuns = (vr["title"] as? [String: Any])?["runs"] as? [[String: Any]]
+                    let title = titleRuns?.compactMap { $0["text"] as? String }.joined().trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    
+                    let ownerRuns = ((vr["ownerText"] as? [String: Any])?["runs"] as? [[String: Any]])
+                        ?? ((vr["longBylineText"] as? [String: Any])?["runs"] as? [[String: Any]])
+                    let channelName = (ownerRuns?.compactMap { $0["text"] as? String }.joined().trimmingCharacters(in: .whitespacesAndNewlines) ?? "YouTube")
+                        .replacingOccurrences(of: " - Topic", with: "")
+                    
+                    var duration: TimeInterval = 210
+                    var durationLabel = ""
+                    if let lengthText = (vr["lengthText"] as? [String: Any])?["simpleText"] as? String {
+                        durationLabel = lengthText
+                        let parts = lengthText.replacingOccurrences(of: ".", with: ":").split(separator: ":")
+                        if parts.count == 2, let m = Double(parts[0]), let s = Double(parts[1]) {
+                            duration = m * 60 + s
+                        } else if parts.count == 3, let h = Double(parts[0]), let m = Double(parts[1]), let s = Double(parts[2]) {
+                            duration = h * 3600 + m * 60 + s
+                        }
+                    }
+                    
+                    // Skip YouTube Shorts (< 45s) unless explicitly searched
+                    if duration > 0 && duration < 45 && !query.lowercased().contains("short") {
+                        return
+                    }
+                    
+                    var artworkURL = URL(string: "https://i.ytimg.com/vi/\(vId)/hqdefault.jpg")
+                    if let thumbObj = vr["thumbnail"] as? [String: Any],
+                       let thumbs = thumbObj["thumbnails"] as? [[String: Any]],
+                       let last = thumbs.last,
+                       let u = last["url"] as? String,
+                       let parsedURL = URL(string: u) {
+                        artworkURL = parsedURL
+                    }
+                    
+                    let sub = durationLabel.isEmpty ? "Video • \(channelName)" : "Video • \(channelName) • \(durationLabel)"
+                    if !title.isEmpty && seen.insert(vId).inserted {
+                        videos.append(
+                            SearchResultItem(
+                                id: vId,
+                                title: title,
+                                subtitle: sub,
+                                type: .video,
+                                artist: channelName,
+                                album: "YouTube Video",
+                                artworkURL: artworkURL,
+                                videoId: vId,
+                                duration: duration,
+                                source: .youtube
+                            )
+                        )
+                    }
+                }
+                for (_, val) in dict {
+                    extractVideos(from: val)
+                }
+            } else if let arr = obj as? [Any] {
+                for it in arr {
+                    extractVideos(from: it)
+                }
+            }
+        }
+        
+        extractVideos(from: json)
+        return videos
     }
     
     // MARK: - 5. Album & Playlist Tracklist Fetcher

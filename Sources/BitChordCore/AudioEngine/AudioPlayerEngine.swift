@@ -360,9 +360,14 @@ public final class AudioPlayerEngine: ObservableObject {
                 guard let self = self, let track = self.currentTrack else { return }
                 print("[AudioEngine] YouTube Audio Bridge error (\(code)) - resolving topic or fallback stream")
                 
-                // If embedding is restricted (101, 150, 152), automatically try the official Topic track
+                // 1. If embedding is restricted (101, 150, 152), first try the official Topic / Audio track on YouTubeAudioBridge
                 if code == 101 || code == 150 || code == 152 {
-                    if let topicId = await YTMusicClient.shared.resolveTopicVideoId(title: track.title, artist: track.artist), topicId != track.id {
+                    if let topicId = await YTMusicClient.shared.resolveTopicVideoId(
+                        title: track.title,
+                        artist: track.artist,
+                        album: track.album == "YouTube Video" ? nil : track.album,
+                        duration: track.duration
+                    ), topicId != track.id {
                         print("[AudioEngine] Switching to Topic videoId: \(topicId)")
                         var updated = track
                         updated.id = topicId
@@ -370,8 +375,50 @@ public final class AudioPlayerEngine: ObservableObject {
                         if self.queueIndex < self.queue.count {
                             self.queue[self.queueIndex] = updated
                         }
+                        self.stopAVPlayer()
+                        self.activeBackend = .youtubeBridge
                         YouTubeAudioBridge.shared.play(videoId: topicId)
                         return
+                    }
+                }
+                
+                // 2. If no Topic track exists (or if it also failed), fall back to cached local stream or alternative source
+                if track.id.count == 11 && !track.id.hasPrefix("yt_") {
+                    let sourceGroups = await StreamExtractor.shared.extractRankedStreamCandidates(
+                        trackId: track.id,
+                        title: track.title,
+                        artist: track.artist,
+                        album: track.album,
+                        duration: track.duration,
+                        preferredQuality: BitChordSettings.shared.audioQuality
+                    )
+                    if let firstStream = sourceGroups.first?.first(where: { $0.isIOSAVPlayerCompatible }) ?? sourceGroups.first?.first {
+                        if firstStream.streamURL.host?.lowercased().contains("googlevideo.com") == true {
+                            if let cachedFileURL = await StreamExtractor.shared.cacheYouTubeAudioToLocalFile(trackId: track.id, streamInfo: firstStream) {
+                                guard self.currentTrack?.id == track.id else { return }
+                                var updated = track
+                                updated.streamURL = cachedFileURL
+                                self.currentTrack = updated
+                                if self.queueIndex < self.queue.count {
+                                    self.queue[self.queueIndex] = updated
+                                }
+                                self.startPlaying(url: cachedFileURL, for: updated, initialSeek: self.currentTime, sourceId: firstStream.sourceId)
+                                return
+                            }
+                        } else {
+                            guard self.currentTrack?.id == track.id else { return }
+                            var updated = track
+                            updated.streamURL = firstStream.streamURL
+                            updated.isLossless = firstStream.isGenuineLossless
+                            updated.sampleRate = firstStream.sampleRate
+                            updated.bitDepth = firstStream.bitDepth
+                            self.currentTrack = updated
+                            if self.queueIndex < self.queue.count {
+                                self.queue[self.queueIndex] = updated
+                            }
+                            self.startPlaying(url: firstStream.streamURL, for: updated, initialSeek: self.currentTime, sourceId: firstStream.sourceId)
+                            return
+                        }
                     }
                 }
                 
@@ -897,15 +944,17 @@ public final class AudioPlayerEngine: ObservableObject {
                 }
             }
             
-            // Fast 1.2s Topic Audio promotion if initial video ID is an embed-restricted Music Video or slow to start
+            // Fast Topic Audio promotion if initial video ID is an embed-restricted Music Video or slow to start:
+            // For songs, check after 1.2s; for explicit YouTube videos, give the video's own IFrame stream 2.2s to start first!
+            let topicCheckDelayNs: UInt64 = (track.album == "YouTube Video") ? 2_200_000_000 : 1_200_000_000
             Task { @MainActor [weak self] in
-                try? await Task.sleep(nanoseconds: 1_200_000_000)
+                try? await Task.sleep(nanoseconds: topicCheckDelayNs)
                 guard let self = self, self.playbackRequestId == requestId, self.currentTrack?.id == targetTrackId else { return }
                 if self.status != .playing {
                     if let topicId = await YTMusicClient.shared.resolveTopicVideoId(
                         title: track.title,
                         artist: track.artist,
-                        album: track.album,
+                        album: track.album == "YouTube Video" ? nil : track.album,
                         duration: track.duration
                     ), topicId != targetTrackId {
                         guard self.playbackRequestId == requestId, self.status != .playing else { return }
@@ -915,6 +964,7 @@ public final class AudioPlayerEngine: ObservableObject {
                         if self.queueIndex < self.queue.count {
                             self.queue[self.queueIndex] = updated
                         }
+                        self.stopAVPlayer()
                         self.activeBackend = .youtubeBridge
                         YouTubeAudioBridge.shared.play(videoId: topicId)
                         return
@@ -996,7 +1046,7 @@ public final class AudioPlayerEngine: ObservableObject {
         }
     }
     
-    private func startPlaying(url: URL, for track: Track, initialSeek: TimeInterval = 0) {
+    private func startPlaying(url: URL, for track: Track, initialSeek: TimeInterval = 0, sourceId: String? = nil) {
         self.activeBackend = .avPlayer
         self.hasRenderedAudioForCurrentAttempt = false
         self.playbackErrorMessage = nil
@@ -1018,9 +1068,13 @@ public final class AudioPlayerEngine: ObservableObject {
             playerItemEndObserver = nil
         }
         
+        let isAndroidSigned = (sourceId == "yt_innertube_android") || url.absoluteString.lowercased().contains("c=android")
+        let userAgent = isAndroidSigned
+            ? "com.google.android.youtube/20.10.35 (Linux; U; Android 14) gzip"
+            : "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)"
         let assetOptions: [String: Any] = [
             "AVURLAssetHTTPHeaderFieldsKey": [
-                "User-Agent": "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)"
+                "User-Agent": userAgent
             ]
         ]
         let asset = url.isFileURL ? AVURLAsset(url: url) : AVURLAsset(url: url, options: assetOptions)
@@ -1303,6 +1357,28 @@ public final class AudioPlayerEngine: ObservableObject {
     
     private func applyFallbackAttemptPlan(_ plan: PlaybackFallbackCoordinator.PlaybackAttemptPlan, for track: Track) {
         let streamInfo = plan.stream
+        let resumeTime = self.currentTime > 1.0 ? self.currentTime : 0
+        if streamInfo.streamURL.host?.lowercased().contains("googlevideo.com") == true {
+            Task { @MainActor [weak self] in
+                guard let self = self, self.currentTrack?.id == track.id else { return }
+                if let cachedFileURL = await StreamExtractor.shared.cacheYouTubeAudioToLocalFile(trackId: track.id, streamInfo: streamInfo) {
+                    guard self.currentTrack?.id == track.id else { return }
+                    var updatedTrack = track
+                    updatedTrack.streamURL = cachedFileURL
+                    updatedTrack.isLossless = streamInfo.isGenuineLossless
+                    updatedTrack.sampleRate = streamInfo.sampleRate
+                    updatedTrack.bitDepth = streamInfo.bitDepth
+                    self.currentTrack = updatedTrack
+                    if self.queueIndex < self.queue.count && self.queue[self.queueIndex].id == track.id {
+                        self.queue[self.queueIndex] = updatedTrack
+                    }
+                    self.startPlaying(url: cachedFileURL, for: updatedTrack, initialSeek: resumeTime, sourceId: streamInfo.sourceId)
+                } else {
+                    self.attemptStreamFallback(for: track, failedURL: streamInfo.streamURL, reason: .unavailableOrExpiredStream)
+                }
+            }
+            return
+        }
         var updatedTrack = track
         updatedTrack.streamURL = streamInfo.streamURL
         updatedTrack.isLossless = streamInfo.isGenuineLossless
@@ -1312,8 +1388,7 @@ public final class AudioPlayerEngine: ObservableObject {
         if self.queueIndex < self.queue.count && self.queue[self.queueIndex].id == track.id {
             self.queue[self.queueIndex] = updatedTrack
         }
-        let resumeTime = self.currentTime > 1.0 ? self.currentTime : 0
-        self.startPlaying(url: streamInfo.streamURL, for: updatedTrack, initialSeek: resumeTime)
+        self.startPlaying(url: streamInfo.streamURL, for: updatedTrack, initialSeek: resumeTime, sourceId: streamInfo.sourceId)
     }
     
     public func togglePlayPause() {

@@ -253,6 +253,50 @@ public actor StreamExtractor {
         )
     }
     
+    /// Resolves local cached audio file for a YouTube videoId by downloading its direct M4A stream with the required client User-Agent header.
+    /// Avoids CoreMedia/AVPlayer HTTP 403 Forbidden on googlevideo.com streams that enforce User-Agent header checks.
+    public func cacheYouTubeAudioToLocalFile(trackId: String, streamInfo: StreamInfo) async -> URL? {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("BitChordStreamCache", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: tempDir.path) {
+            try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        }
+        let invalidChars = CharacterSet(charactersIn: ":/\\?%*|\"<>")
+        let safeId = trackId.components(separatedBy: invalidChars).joined(separator: "_")
+        let ext = streamInfo.format.lowercased().contains("webm") ? "webm" : "m4a"
+        let destURL = tempDir.appendingPathComponent("\(safeId).\(ext)")
+        
+        if FileManager.default.fileExists(atPath: destURL.path),
+           let attrs = try? FileManager.default.attributesOfItem(atPath: destURL.path),
+           let size = (attrs[.size] as? NSNumber)?.int64Value, size > 16384 {
+            return destURL
+        }
+        
+        var req = URLRequest(url: streamInfo.streamURL)
+        let isAndroid = (streamInfo.sourceId == "yt_innertube_android") || streamInfo.streamURL.absoluteString.lowercased().contains("c=android")
+        req.setValue(
+            isAndroid
+                ? "com.google.android.youtube/20.10.35 (Linux; U; Android 14) gzip"
+                : "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)",
+            forHTTPHeaderField: "User-Agent"
+        )
+        req.timeoutInterval = 12.0
+        
+        guard let (tempDownloadURL, resp) = try? await URLSession.shared.download(for: req),
+              let http = resp as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            return nil
+        }
+        
+        if FileManager.default.fileExists(atPath: destURL.path) {
+            try? FileManager.default.removeItem(at: destURL)
+        }
+        do {
+            try FileManager.default.moveItem(at: tempDownloadURL, to: destURL)
+            return destURL
+        } catch {
+            return nil
+        }
+    }
+    
     /// Resolves direct audio stream URL for a track/video ID with multi-source fallback
     public func extractAudioStream(
         trackId: String,
@@ -547,7 +591,7 @@ public actor StreamExtractor {
             )
         }
         
-        // Parse adaptiveFormats
+        // Parse adaptiveFormats (Prioritize audio/mp4 M4A AAC which plays natively in AVPlayer with IOS User-Agent)
         if let adaptiveFormats = streamingData["adaptiveFormats"] as? [[String: Any]] {
             for fmt in adaptiveFormats {
                 let mime = fmt["mimeType"] as? String ?? ""
@@ -555,13 +599,15 @@ public actor StreamExtractor {
                       let urlString = fmt["url"] as? String,
                       let streamURL = URL(string: urlString) else { continue }
                 let rawBitrate = fmt["bitrate"] as? Int ?? fmt["averageBitrate"] as? Int ?? 128000
-                let bitrate = max(32, rawBitrate / 1000)
+                let baseBitrate = max(32, rawBitrate / 1000)
+                // Boost native iOS audio/mp4 (itag 140 AAC) so AVPlayer selects native M4A over WebM Opus
+                let effectiveBitrate = mime.lowercased().contains("mp4") ? max(baseBitrate, 256) : baseBitrate
                 let sampleRate = Double(fmt["audioSampleRate"] as? String ?? "44100") ?? 44100
                 candidates.append(
                     StreamInfo(
                         streamURL: streamURL,
                         format: mime,
-                        bitrate: bitrate,
+                        bitrate: effectiveBitrate,
                         isLossless: false,
                         sampleRate: sampleRate,
                         sourceId: "yt_innertube_ios",
@@ -650,13 +696,14 @@ public actor StreamExtractor {
                       let urlString = fmt["url"] as? String,
                       let streamURL = URL(string: urlString) else { continue }
                 let rawBitrate = fmt["bitrate"] as? Int ?? fmt["averageBitrate"] as? Int ?? 128000
-                let bitrate = max(32, rawBitrate / 1000)
+                let baseBitrate = max(32, rawBitrate / 1000)
+                let effectiveBitrate = mime.lowercased().contains("mp4") ? max(baseBitrate, 256) : baseBitrate
                 let sampleRate = Double(fmt["audioSampleRate"] as? String ?? "44100") ?? 44100
                 candidates.append(
                     StreamInfo(
                         streamURL: streamURL,
                         format: mime.isEmpty ? "audio/mp4" : mime,
-                        bitrate: bitrate,
+                        bitrate: effectiveBitrate,
                         isLossless: false,
                         sampleRate: sampleRate,
                         sourceId: "yt_innertube_android",
