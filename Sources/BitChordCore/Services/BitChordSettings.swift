@@ -348,13 +348,36 @@ public actor AddonService {
     }
     
     /// Attempts to resolve direct stream via configured addon
-    public func resolveStream(trackTitle: String, artist: String?, addon: AddonSource) async -> StreamInfo? {
-        guard addon.isEnabled, addon.resources.contains("stream") else { return nil }
+    public func resolveStream(
+        trackTitle: String,
+        artist: String?,
+        album: String? = nil,
+        duration: TimeInterval? = nil,
+        addon: AddonSource
+    ) async -> StreamInfo? {
+        return await resolveStreamTiers(
+            trackTitle: trackTitle,
+            artist: artist,
+            album: album,
+            duration: duration,
+            addon: addon
+        ).first
+    }
+    
+    /// Resolves ranked stream quality tiers for the exact requested track and version from a configured addon
+    public func resolveStreamTiers(
+        trackTitle: String,
+        artist: String?,
+        album: String? = nil,
+        duration: TimeInterval? = nil,
+        addon: AddonSource
+    ) async -> [StreamInfo] {
+        guard addon.isEnabled, addon.resources.contains("stream") else { return [] }
         
         let query = "\(trackTitle) \(artist ?? "")".trimmingCharacters(in: .whitespacesAndNewlines)
         guard let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
               let searchURL = URL(string: "\(addon.baseURL)/search?q=\(encodedQuery)") else {
-            return nil
+            return []
         }
         
         var searchReq = URLRequest(url: searchURL)
@@ -364,59 +387,140 @@ public actor AddonService {
               let http = resp as? HTTPURLResponse, http.statusCode == 200,
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let tracks = json["tracks"] as? [[String: Any]] else {
-            return nil
+            return []
         }
         
-        // Pick the best full-length track (never a 30s sample or short clip)
-        let validTrack = tracks.first { item in
-            if let isSample = item["sample"] as? Bool, isSample { return false }
-            if let dur = (item["duration"] as? Double) ?? (item["duration"] as? Int).map(Double.init), dur > 0 && dur < 60 {
-                return false
+        // Strictly match exact track title, artist, and version (never substitute Live/Acoustic/Remix/Cover for Studio or vice versa)
+        var bestCandidate: [String: Any]? = nil
+        var bestScore: Double = -1
+        for item in tracks {
+            if let isSample = item["sample"] as? Bool, isSample { continue }
+            let dur = (item["duration"] as? Double) ?? (item["duration"] as? Int).map(Double.init)
+            if let d = dur, d > 0 && d < 60 { continue }
+            
+            let candTitle = (item["title"] as? String) ?? (item["name"] as? String) ?? ""
+            let candArtist: String
+            if let a = item["artist"] as? String {
+                candArtist = a
+            } else if let aDict = item["artist"] as? [String: Any], let aName = aDict["name"] as? String {
+                candArtist = aName
+            } else if let performer = item["performer"] as? [String: Any], let pName = performer["name"] as? String {
+                candArtist = pName
+            } else {
+                candArtist = artist ?? ""
             }
-            return true
-        } ?? tracks.first
-        
-        guard let chosen = validTrack,
-              let trackId = (chosen["id"] as? String) ?? (chosen["id"] as? Int).map(String.init) else {
-            return nil
+            let candAlbum: String?
+            if let alb = item["album"] as? String {
+                candAlbum = alb
+            } else if let albDict = item["album"] as? [String: Any], let albTitle = albDict["title"] as? String {
+                candAlbum = albTitle
+            } else {
+                candAlbum = nil
+            }
+            let versionTag = item["version"] as? String
+            let fullCandTitle = versionTag != nil && !versionTag!.isEmpty ? "\(candTitle) (\(versionTag!))" : candTitle
+            
+            if let score = TrackVersionMatcher.matchScore(
+                requestedTitle: trackTitle,
+                requestedArtist: artist ?? "",
+                requestedAlbum: album,
+                requestedDuration: duration,
+                candidateTitle: fullCandTitle,
+                candidateArtist: candArtist,
+                candidateAlbum: candAlbum,
+                candidateSubtitle: versionTag,
+                candidateDuration: dur
+            ) {
+                if score > bestScore {
+                    bestScore = score
+                    bestCandidate = item
+                }
+            }
         }
         
-        guard let streamURL = URL(string: "\(addon.baseURL)/stream/\(trackId)") else { return nil }
+        guard let chosen = bestCandidate,
+              let trackId = (chosen["id"] as? String) ?? (chosen["id"] as? Int).map(String.init) else {
+            return []
+        }
+        
+        guard let streamURL = URL(string: "\(addon.baseURL)/stream/\(trackId)") else { return [] }
         var streamReq = URLRequest(url: streamURL)
         streamReq.timeoutInterval = 8.0
         
         guard let (streamData, sResp) = try? await session.data(for: streamReq),
               let sHttp = sResp as? HTTPURLResponse, sHttp.statusCode == 200,
-              let streamJson = try? JSONSerialization.jsonObject(with: streamData) as? [String: Any],
-              let directURLString = streamJson["url"] as? String,
-              let directURL = URL(string: directURLString) else {
-            return nil
+              let streamJson = try? JSONSerialization.jsonObject(with: streamData) as? [String: Any] else {
+            return []
         }
         
         // Reject any 30-second sample/preview stream
         if let isSample = (streamJson["sample"] as? Bool) ?? (streamJson["isSample"] as? Bool), isSample {
-            return nil
+            return []
         }
         if let streamDur = (streamJson["duration"] as? Double) ?? (streamJson["duration"] as? Int).map(Double.init), streamDur > 0 && streamDur < 60 {
-            return nil
-        }
-        let lowerURL = directURLString.lowercased()
-        if lowerURL.contains("sample") || lowerURL.contains("preview") || lowerURL.contains("teaser") {
-            return nil
+            return []
         }
         
-        let sampleRate = (streamJson["sampleRate"] as? Double) ?? Double((streamJson["sampleRate"] as? Int) ?? 44100)
-        let isLossless = (streamJson["format"] as? String)?.lowercased() == "flac" || (streamJson["quality"] as? String)?.contains("FLAC") == true
-        let bitDepth = (streamJson["bitDepth"] as? Int) ?? (isLossless ? (sampleRate > 48000 ? 24 : 16) : nil)
+        var tiers: [StreamInfo] = []
+        if let streamsArray = streamJson["streams"] as? [[String: Any]] {
+            for s in streamsArray {
+                guard let uStr = s["url"] as? String,
+                      !uStr.lowercased().contains("sample"),
+                      !uStr.lowercased().contains("preview"),
+                      let u = URL(string: uStr) else { continue }
+                let fmt = (s["format"] as? String) ?? (s["mimeType"] as? String) ?? "flac"
+                let sr = (s["sampleRate"] as? Double) ?? Double((s["sampleRate"] as? Int) ?? 44100)
+                let codec = StreamInfo.detectCodec(from: fmt, explicitCodec: s["codec"] as? String)
+                let genuineLossless = StreamInfo.evaluateGenuineLossless(format: fmt, codec: codec, claimedLossless: true)
+                let depth = genuineLossless ? ((s["bitDepth"] as? Int) ?? (sr > 48000 ? 24 : 16)) : nil
+                let br = (s["bitrate"] as? Int) ?? (genuineLossless ? (sr > 48000 ? 4608 : 1411) : 320)
+                tiers.append(
+                    StreamInfo(
+                        streamURL: u,
+                        format: fmt,
+                        codec: codec,
+                        bitrate: br,
+                        isLossless: genuineLossless,
+                        sampleRate: sr,
+                        bitDepth: depth,
+                        sourceId: "addon_\(addon.id)",
+                        sourceIsDirect: true
+                    )
+                )
+            }
+        }
         
-        return StreamInfo(
-            streamURL: directURL,
-            format: (streamJson["format"] as? String) ?? "flac",
-            bitrate: sampleRate > 48000 ? 4608 : 1411,
-            isLossless: isLossless,
-            sampleRate: sampleRate,
-            bitDepth: bitDepth
-        )
+        if let directURLString = streamJson["url"] as? String,
+           let directURL = URL(string: directURLString) {
+            let lowerURL = directURLString.lowercased()
+            if !lowerURL.contains("sample") && !lowerURL.contains("preview") && !lowerURL.contains("teaser") {
+                let fmt = (streamJson["format"] as? String) ?? (streamJson["mimeType"] as? String) ?? "flac"
+                let codec = StreamInfo.detectCodec(from: fmt, explicitCodec: streamJson["codec"] as? String)
+                let sampleRate = (streamJson["sampleRate"] as? Double) ?? Double((streamJson["sampleRate"] as? Int) ?? 44100)
+                let claimed = (streamJson["format"] as? String)?.lowercased().contains("flac") == true
+                    || (streamJson["quality"] as? String)?.uppercased().contains("FLAC") == true
+                    || (streamJson["format"] as? String)?.lowercased().contains("alac") == true
+                let isLossless = StreamInfo.evaluateGenuineLossless(format: fmt, codec: codec, claimedLossless: claimed)
+                let bitDepth = isLossless ? ((streamJson["bitDepth"] as? Int) ?? (sampleRate > 48000 ? 24 : 16)) : nil
+                let bitrate = (streamJson["bitrate"] as? Int) ?? (isLossless ? (sampleRate > 48000 ? 4608 : 1411) : 320)
+                
+                tiers.append(
+                    StreamInfo(
+                        streamURL: directURL,
+                        format: fmt,
+                        codec: codec,
+                        bitrate: bitrate,
+                        isLossless: isLossless,
+                        sampleRate: sampleRate,
+                        bitDepth: bitDepth,
+                        sourceId: "addon_\(addon.id)",
+                        sourceIsDirect: true
+                    )
+                )
+            }
+        }
+        
+        return StreamInfo.selectTopDistinctQualityLevels(from: tiers, maxLevels: 3)
     }
 }
 

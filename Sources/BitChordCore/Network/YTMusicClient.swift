@@ -108,47 +108,91 @@ public actor YTMusicClient {
         return []
     }
     
-    /// Resolves direct YouTube 11-character videoId from track title and artist (Songs filter for official full-length studio audio)
-    public func resolveYouTubeVideoId(title: String, artist: String?) async -> String? {
+    /// Resolves direct YouTube 11-character videoId from track title, artist, album, and duration with strict version matching
+    public func resolveYouTubeVideoId(
+        title: String,
+        artist: String?,
+        album: String? = nil,
+        duration: TimeInterval? = nil
+    ) async -> String? {
         let query = "\(title) \(artist ?? "")".trimmingCharacters(in: .whitespacesAndNewlines)
-        let body: [String: Any] = [
-            "context": [
-                "client": [
-                    "clientName": "WEB_REMIX",
-                    "clientVersion": "1.20250101.01.00",
-                    "hl": "id",
-                    "gl": "ID"
-                ]
-            ],
-            "query": query,
-            "params": "EgWKAQIIAWoKEAkQChAFEAMQBA=="
-        ]
         
-        guard let url = URL(string: "https://music.youtube.com/youtubei/v1/search") else { return nil }
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
-        req.setValue("https://music.youtube.com", forHTTPHeaderField: "Origin")
-        req.setValue("https://music.youtube.com", forHTTPHeaderField: "Referer")
-        applyAuthHeaders(to: &req)
-        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        req.timeoutInterval = 4.0
-        
-        guard let (data, resp) = try? await session.data(for: req),
-              let http = resp as? HTTPURLResponse, http.statusCode == 200,
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return nil
+        // 1. Primary search with Songs filter (prioritizes official studio & exact version tracks)
+        if let json = await performInnertubeSearchRequest(query: query, params: "EgWKAQIIAWoKEAkQChAFEAMQBA=="),
+           let matchedId = extractBestMatchingSongVideoId(
+               from: json,
+               requestedTitle: title,
+               requestedArtist: artist ?? "",
+               requestedAlbum: album,
+               requestedDuration: duration
+           ) {
+            return matchedId
         }
         
-        return extractBestFullSongVideoId(from: json) ?? extractFirstVideoId(from: json)
+        // 2. Secondary general search on YouTube Music (catches explicit Acoustic / Live / Instrumental / Remix / Cover recordings)
+        if let json = await performInnertubeSearchRequest(query: query, params: nil),
+           let matchedId = extractBestMatchingSongVideoId(
+               from: json,
+               requestedTitle: title,
+               requestedArtist: artist ?? "",
+               requestedAlbum: album,
+               requestedDuration: duration
+           ) {
+            return matchedId
+        }
+        
+        // 3. Fallback to another reliable source (Piped / Invidious) with the same strict version verification
+        if let pipedTracks = await searchViaPiped(query: query) {
+            var bestId: String? = nil
+            var bestScore: Double = -1
+            for cand in pipedTracks where cand.id.count == 11 {
+                if let score = TrackVersionMatcher.matchScore(
+                    requestedTitle: title,
+                    requestedArtist: artist ?? "",
+                    requestedAlbum: album,
+                    requestedDuration: duration,
+                    candidateTitle: cand.title,
+                    candidateArtist: cand.artist,
+                    candidateAlbum: cand.album,
+                    candidateDuration: cand.duration
+                ), score > bestScore {
+                    bestScore = score
+                    bestId = cand.id
+                }
+            }
+            if let bestId = bestId {
+                return bestId
+            }
+        }
+        
+        return nil
     }
     
-    /// Resolves official YouTube Music Topic / Audio videoId which always has embedding allowed and is full length
-    public func resolveTopicVideoId(title: String, artist: String?) async -> String? {
+    /// Resolves official YouTube Music Topic / Audio videoId which always has embedding allowed and matches the exact version
+    public func resolveTopicVideoId(
+        title: String,
+        artist: String?,
+        album: String? = nil,
+        duration: TimeInterval? = nil
+    ) async -> String? {
         let cleanArtist = artist?.components(separatedBy: " ft.")[0].components(separatedBy: " feat.")[0].trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let query = "\(title) \(cleanArtist)"
-        let body: [String: Any] = [
+        let query = "\(title) \(cleanArtist)".trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        if let json = await performInnertubeSearchRequest(query: query, params: "EgWKAQIIAWoKEAkQChAFEAMQBA=="),
+           let matchedId = extractBestMatchingSongVideoId(
+               from: json,
+               requestedTitle: title,
+               requestedArtist: artist ?? cleanArtist,
+               requestedAlbum: album,
+               requestedDuration: duration
+           ) {
+            return matchedId
+        }
+        return nil
+    }
+    
+    private func performInnertubeSearchRequest(query: String, params: String?) async -> [String: Any]? {
+        var body: [String: Any] = [
             "context": [
                 "client": [
                     "clientName": "WEB_REMIX",
@@ -157,9 +201,11 @@ public actor YTMusicClient {
                     "gl": "ID"
                 ]
             ],
-            "query": query,
-            "params": "EgWKAQIIAWoKEAkQChAFEAMQBA=="
+            "query": query
         ]
+        if let params = params {
+            body["params"] = params
+        }
         
         guard let url = URL(string: "https://music.youtube.com/youtubei/v1/search") else { return nil }
         var req = URLRequest(url: url)
@@ -177,17 +223,26 @@ public actor YTMusicClient {
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return nil
         }
-        
-        return extractBestFullSongVideoId(from: json) ?? extractFirstVideoId(from: json)
+        return json
     }
     
-    /// Extracts the first full-length official song videoId (>= 60s, non-teaser/short) in deterministic shelf order
-    private func extractBestFullSongVideoId(from json: [String: Any]) -> String? {
+    /// Evaluates all shelf items using `TrackVersionMatcher.matchScore` and selects the highest-scoring exact version match.
+    /// Never substitutes a Live, Acoustic, Instrumental, Remix, Cover, Karaoke, Sped-Up, or Slowed version for a Studio version (or vice versa).
+    private func extractBestMatchingSongVideoId(
+        from json: [String: Any],
+        requestedTitle: String,
+        requestedArtist: String,
+        requestedAlbum: String?,
+        requestedDuration: TimeInterval?
+    ) -> String? {
         guard let contents = json["contents"] as? [String: Any],
               let tabbed = contents["tabbedSearchResultsRenderer"] as? [String: Any],
               let tabs = tabbed["tabs"] as? [[String: Any]] else {
             return nil
         }
+        
+        var bestVideoId: String? = nil
+        var bestScore: Double = -1
         
         for tab in tabs {
             guard let tabRenderer = tab["tabRenderer"] as? [String: Any],
@@ -201,27 +256,62 @@ public actor YTMusicClient {
                       let items = shelf["contents"] as? [[String: Any]] else {
                     continue
                 }
-                for item in items {
+                for (itemIndex, item) in items.enumerated() {
                     guard let renderer = item["musicResponsiveListItemRenderer"] as? [String: Any] else { continue }
                     let vId = (renderer["playlistItemData"] as? [String: Any])?["videoId"] as? String
                         ?? extractFirstVideoId(from: renderer)
                     guard let candidateId = vId, candidateId.count == 11, !candidateId.hasPrefix("yt_") else { continue }
                     
-                    // Inspect text runs to ensure it is not a short/teaser/preview (< 60s)
-                    var allText = ""
+                    var candidateTitle = ""
+                    var candidateArtist = ""
+                    var candidateAlbum: String? = nil
+                    var allSubtitleRuns: [String] = []
+                    var allTextLower = ""
                     var parsedDuration: Double? = nil
+                    
                     if let flexCols = renderer["flexColumns"] as? [[String: Any]] {
-                        for col in flexCols {
-                            if let textRenderer = col["musicResponsiveListItemFlexColumnRenderer"] as? [String: Any],
-                               let textObj = textRenderer["text"] as? [String: Any],
-                               let runs = textObj["runs"] as? [[String: Any]] {
+                        for (colIndex, col) in flexCols.enumerated() {
+                            guard let textRenderer = col["musicResponsiveListItemFlexColumnRenderer"] as? [String: Any],
+                                  let textObj = textRenderer["text"] as? [String: Any],
+                                  let runs = textObj["runs"] as? [[String: Any]] else { continue }
+                            if colIndex == 0 {
+                                candidateTitle = runs.compactMap { $0["text"] as? String }.joined()
+                                allTextLower += " " + candidateTitle.lowercased()
+                            } else {
+                                var groups: [[String]] = [[]]
                                 for run in runs {
-                                    if let t = run["text"] as? String {
-                                        allText += " " + t.lowercased()
-                                        let parts = t.split(separator: ":")
-                                        if parts.count == 2, let m = Double(parts[0]), let s = Double(parts[1]) {
-                                            parsedDuration = m * 60 + s
-                                        }
+                                    guard let t = run["text"] as? String else { continue }
+                                    allTextLower += " " + t.lowercased()
+                                    let parts = t.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: ":")
+                                    if parts.count == 2, let m = Double(parts[0]), let s = Double(parts[1]) {
+                                        parsedDuration = m * 60 + s
+                                    } else if parts.count == 3, let h = Double(parts[0]), let m = Double(parts[1]), let s = Double(parts[2]) {
+                                        parsedDuration = h * 3600 + m * 60 + s
+                                    }
+                                    if t.contains("•") {
+                                        groups.append([])
+                                    } else {
+                                        groups[groups.count - 1].append(t)
+                                    }
+                                }
+                                let cleanGroups = groups
+                                    .map { $0.joined().trimmingCharacters(in: .whitespacesAndNewlines) }
+                                    .filter { !$0.isEmpty }
+                                allSubtitleRuns.append(contentsOf: cleanGroups)
+                                
+                                let typeTokens: Set<String> = ["song", "lagu", "video", "album", "single", "ep"]
+                                var nonTypeGroups = cleanGroups
+                                if let first = nonTypeGroups.first, typeTokens.contains(first.lowercased()) {
+                                    nonTypeGroups.removeFirst()
+                                }
+                                if let firstArtist = nonTypeGroups.first {
+                                    candidateArtist = firstArtist
+                                }
+                                if nonTypeGroups.count > 1 {
+                                    let second = nonTypeGroups[1]
+                                    let lowerSecond = second.lowercased()
+                                    if !lowerSecond.contains("views") && !lowerSecond.contains("ditonton") && !lowerSecond.contains("plays") && second.range(of: #"^\d+[\.:]\d+$"#, options: .regularExpression) == nil {
+                                        candidateAlbum = second
                                     }
                                 }
                             }
@@ -231,14 +321,33 @@ public actor YTMusicClient {
                     if let dur = parsedDuration, dur > 0 && dur < 60 {
                         continue
                     }
-                    if allText.contains("teaser") || allText.contains("#shorts") || allText.contains("preview") || allText.contains(" snippet") {
+                    if allTextLower.contains("teaser") || allTextLower.contains("#shorts") || allTextLower.contains("preview") || allTextLower.contains(" snippet") {
                         continue
                     }
-                    return candidateId
+                    
+                    let subtitleJoined = allSubtitleRuns.joined(separator: " • ")
+                    if let rawScore = TrackVersionMatcher.matchScore(
+                        requestedTitle: requestedTitle,
+                        requestedArtist: requestedArtist,
+                        requestedAlbum: requestedAlbum,
+                        requestedDuration: requestedDuration,
+                        candidateTitle: candidateTitle,
+                        candidateArtist: candidateArtist,
+                        candidateAlbum: candidateAlbum,
+                        candidateSubtitle: subtitleJoined,
+                        candidateDuration: parsedDuration
+                    ) {
+                        // Slight shelf-order tie-breaker for equally matched official recordings
+                        let adjustedScore = rawScore - Double(min(itemIndex, 10)) * 0.25
+                        if adjustedScore > bestScore {
+                            bestScore = adjustedScore
+                            bestVideoId = candidateId
+                        }
+                    }
                 }
             }
         }
-        return nil
+        return bestVideoId
     }
     
     private func extractFirstVideoId(from json: Any) -> String? {
@@ -265,23 +374,34 @@ public actor YTMusicClient {
         return nil
     }
     
-    /// Generates radio / autoplay recommendations of similar full-length tracks (Same Vibe & Frequency)
-    public func fetchRadioTracks(for track: Track) async -> [Track] {
-        let cleanArtist: String
-        if !track.artist.isEmpty && track.artist != "YouTube Music" && !track.artist.contains("Unknown") {
-            cleanArtist = track.artist.components(separatedBy: " ft.")[0].components(separatedBy: " feat.")[0].components(separatedBy: ",")[0].trimmingCharacters(in: .whitespacesAndNewlines)
-        } else {
-            cleanArtist = ""
+    /// Generates radio / autoplay recommendations of genuinely similar full-length tracks
+    /// evaluated across genre/subgenre, country/musical origin, mood, tempo/BPM, energy, popularity, and artist metadata.
+    public func fetchRadioTracks(for track: Track, sessionHistoryIds: Set<String>? = nil) async -> [Track] {
+        let seedProfile = RadioRecommendationScorer.profile(for: track)
+        let cleanArtist = seedProfile.primaryArtist
+        
+        var historyIds: Set<String> = sessionHistoryIds ?? []
+        let activeSessionHistory = await MainActor.run {
+            var ids = AudioPlayerEngine.shared.sessionPlayedTrackIds
+            for qTrack in AudioPlayerEngine.shared.queue {
+                ids.insert(qTrack.id)
+            }
+            return ids
         }
+        historyIds.formUnion(activeSessionHistory)
+        historyIds.insert(track.id)
         
         var videoId: String? = nil
         if track.id.count == 11 && !track.id.hasPrefix("yt_") {
             videoId = track.id
-        } else if let resolved = await resolveYouTubeVideoId(title: track.title, artist: cleanArtist) {
+        } else if let resolved = await resolveYouTubeVideoId(title: track.title, artist: track.artist, album: track.album, duration: track.duration) {
             videoId = resolved
+            historyIds.insert(resolved)
         }
         
-        // 1. Try official YouTube Music Radio endpoint (RDAMVM)
+        var rawCandidates: [Track] = []
+        
+        // 1. Official YouTube Music Radio endpoint (RDAMVM)
         if let vId = videoId {
             let body: [String: Any] = [
                 "context": [
@@ -311,54 +431,57 @@ public actor YTMusicClient {
                    let http = resp as? HTTPURLResponse, http.statusCode == 200,
                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                     let radioItems = parsePlaylistPanelVideos(json: json, seedVideoId: vId)
-                    if !radioItems.isEmpty {
-                        return radioItems
-                    }
+                    rawCandidates.append(contentsOf: radioItems)
                 }
             }
         }
         
-        // 2. Intelligent Genre / Artist Affinity Fallback (Ensures recommendations are always "sefrekuensi")
+        // 2. Supplement with subgenre & related-artist candidates if RDAMVM returned few items
         let relatedArtistsMap: [String: [String]] = [
             "muse": ["Radiohead", "The Killers", "Arctic Monkeys", "Placebo", "Franz Ferdinand", "Coldplay", "Oasis"],
+            "radiohead": ["Muse", "Coldplay", "The Verve", "Oasis", "Keane", "Travis", "Blur"],
+            "arctic monkeys": ["The Strokes", "The Killers", "Franz Ferdinand", "Oasis", "Kasabian", "Muse"],
             "noah": ["Peterpan", "Dewa 19", "Sheila On 7", "Ungu", "D'Masiv", "Samson", "Kerispatih", "Ada Band"],
             "peterpan": ["NOAH", "Dewa 19", "Sheila On 7", "Ungu", "D'Masiv", "Samson", "Padi", "Gigi"],
-            "dewa 19": ["Padi", "Sheila On 7", "Gigi", "Slank", "NOAH", "Peterpan", "Jamrud", "Ari Lasso", "Ada Band"],
-            "sheila on 7": ["Padi", "Dewa 19", "NOAH", "Peterpan", "Gigi", "Ungu", "Jikustik", "The Rain"],
-            "linkin park": ["Evanescence", "Limp Bizkit", "Papa Roach", "System of a Down", "Green Day", "Three Days Grace"],
-            "coldplay": ["Keane", "OneRepublic", "The Fray", "Snow Patrol", "Imagine Dragons", "The Script"],
+            "dewa 19": ["Padi", "Sheila On 7", "Gigi", "Slank", "NOAH", "Peterpan", "Ari Lasso", "Ada Band"],
+            "sheila on 7": ["Padi", "Dewa 19", "NOAH", "Peterpan", "Gigi", "Ungu", "Jikustik", "Letto"],
+            "tulus": ["Hindia", "Pamungkas", "Kunto Aji", "Nadin Amizah", "Raisa", "Sal Priadi", "Fiersa Besari"],
+            "hindia": ["Feast", "Pamungkas", "Kunto Aji", "Tulus", "Nadin Amizah", "Payung Teduh", "Efek Rumah Kaca"],
+            "linkin park": ["Evanescence", "Papa Roach", "System of a Down", "Green Day", "Three Days Grace", "Breaking Benjamin"],
+            "coldplay": ["Keane", "OneRepublic", "The Fray", "Snow Patrol", "Imagine Dragons", "The Script", "Travis"],
             "queen": ["Led Zeppelin", "The Beatles", "Pink Floyd", "Elton John", "David Bowie", "Aerosmith"]
         ]
         
-        let artistKey = cleanArtist.lowercased()
-        var targetQueries: [String] = []
-        if let relatedList = relatedArtistsMap[artistKey] ?? relatedArtistsMap.first(where: { artistKey.contains($0.key) })?.value {
-            let sample = relatedList.shuffled().prefix(2)
-            for rel in sample {
-                targetQueries.append("\(rel) lagu populer")
-            }
-        } else if !cleanArtist.isEmpty {
-            targetQueries.append("\(cleanArtist) lagu populer")
-            targetQueries.append("\(cleanArtist) radio")
-        } else {
-            targetQueries.append("\(track.title) radio mix")
-        }
-        
-        var harmonized: [Track] = []
-        for q in targetQueries {
-            if let searchTracks = try? await search(query: q) {
-                let filtered = searchTracks.filter { s in
-                    s.id != track.id && !harmonized.contains(where: { h in h.id == s.id })
+        if rawCandidates.count < 12 {
+            var targetQueries: [String] = []
+            if let relatedList = relatedArtistsMap[cleanArtist] ?? relatedArtistsMap.first(where: { cleanArtist.contains($0.key) })?.value {
+                for rel in relatedList.prefix(4) {
+                    targetQueries.append("\(rel) official audio")
                 }
-                harmonized.append(contentsOf: filtered.prefix(5))
+            } else if !cleanArtist.isEmpty {
+                targetQueries.append("\(cleanArtist) \(seedProfile.subgenre) official audio")
+                targetQueries.append("\(cleanArtist) radio")
+            } else {
+                targetQueries.append("\(track.title) \(seedProfile.subgenre) official audio")
+            }
+            
+            for q in targetQueries {
+                if let searchTracks = try? await search(query: q, filter: "EgWKAQIIAWoKEAkQChAFEAMQBA==") {
+                    rawCandidates.append(contentsOf: searchTracks.prefix(8))
+                }
             }
         }
         
-        if !harmonized.isEmpty {
-            return harmonized
-        }
+        // 3. Strictly evaluate, rank, deduplicate, and filter candidates via RadioRecommendationScorer
+        let curated = RadioRecommendationScorer.rankAndFilterRadioCandidates(
+            seed: track,
+            candidates: rawCandidates,
+            sessionHistoryIds: historyIds,
+            maxResults: 20,
+            maxPerArtist: 2
+        )
         
-        return []
+        return curated
     }
     
     private func parsePlaylistPanelVideos(json: Any, seedVideoId: String) -> [Track] {

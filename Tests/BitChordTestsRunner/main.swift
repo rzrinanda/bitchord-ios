@@ -499,6 +499,325 @@ func runAllTests() async {
         }
     }
     
+    // MARK: - Test 15: Radio Recommendation Relevance & Multi-Attribute Filtering
+    do {
+        let seedSong = Track(
+            id: "seed_indo_pop_1",
+            title: "Separuh Aku",
+            artist: "NOAH",
+            album: "Seperti Seharusnya",
+            duration: 268
+        )
+        let candidatePool: [Track] = [
+            // 1. Seed duplicate (should be excluded)
+            Track(id: "seed_indo_pop_1", title: "Separuh Aku", artist: "NOAH", album: "Seperti Seharusnya", duration: 268),
+            // 2. Alternate ID but same song title & artist (should be excluded as duplicate)
+            Track(id: "dup_separuh_aku", title: "Separuh Aku (Remastered 2024)", artist: "NOAH", album: "Seperti Seharusnya", duration: 268),
+            // 3. Already played in current radio session (should be excluded)
+            Track(id: "played_session_1", title: "Pupus", artist: "Dewa 19", album: "Cintailah Cinta", duration: 305),
+            // 4. Relevant Indonesian Pop Rock tracks matching genre, subgenre, country, mood, tempo, energy, popularity
+            Track(id: "rel_1", title: "Dan", artist: "Sheila On 7", album: "Sheila On 7", duration: 288),
+            Track(id: "rel_2", title: "Mungkin Nanti", artist: "Peterpan", album: "Bintang di Surga", duration: 270),
+            Track(id: "rel_3", title: "Cinta Ini Membunuhku", artist: "D'Masiv", album: "Perubahan", duration: 244),
+            Track(id: "rel_4", title: "Kenangan Terindah", artist: "Samson", album: "Naluri Lelaki", duration: 252),
+            Track(id: "rel_5", title: "Sobat", artist: "Padi", album: "Lain Dunia", duration: 315),
+            Track(id: "rel_6", title: "Demi Waktu", artist: "Ungu", album: "Melayang", duration: 262),
+            // 5. Excessive repetition of the same artist (4 tracks from Sheila On 7 -> should cap at maxPerArtist = 2)
+            Track(id: "rel_so7_2", title: "Seberapa Pantas", artist: "Sheila On 7", album: "07 Des", duration: 240),
+            Track(id: "rel_so7_3", title: "Sephia", artist: "Sheila On 7", album: "Kisah Klasik", duration: 290),
+            Track(id: "rel_so7_4", title: "Melompat Lebih Tinggi", artist: "Sheila On 7", album: "Ost. 30 Hari", duration: 215),
+            // 6. Unrelated genres / styles / tempos (EDM hardstyle, Classical Lo-Fi, Metalcore, Live version) -> must be rejected
+            Track(id: "unrel_edm", title: "Hardstyle Rave Bass Drop", artist: "DJ Club Techno", album: "EDM Festival 150 BPM", duration: 195),
+            Track(id: "unrel_metal", title: "Brutal Death Metal Breakdown", artist: "Slipknot", album: "Iowa Heavy Metal", duration: 230),
+            Track(id: "unrel_lofi", title: "Chill Lo-Fi Study Ambient Beats", artist: "Lofi Sleep Piano", album: "Ambient Meditation", duration: 150),
+            Track(id: "unrel_live", title: "Dan (Live at Synchronize Fest)", artist: "Sheila On 7", album: "Live Concert", duration: 310),
+            Track(id: "unrel_short", title: "Separuh Aku Teaser", artist: "NOAH", album: "Promo", duration: 42)
+        ]
+        
+        let sessionHistory: Set<String> = ["played_session_1"]
+        let ranked = RadioRecommendationScorer.rankAndFilterRadioCandidates(
+            seed: seedSong,
+            candidates: candidatePool,
+            sessionHistoryIds: sessionHistory,
+            maxResults: 15,
+            maxPerArtist: 2
+        )
+        
+        assertTest(!ranked.isEmpty, "Radio Recommendations: Generated relevant playlist (\(ranked.count) tracks)")
+        assertTest(!ranked.contains(where: { $0.id == seedSong.id || $0.title.lowercased().contains("separuh aku") }), "Radio Recommendations: Seed song and duplicate title excluded")
+        assertTest(!ranked.contains(where: { $0.id == "played_session_1" }), "Radio Recommendations: Session history tracks excluded")
+        assertTest(!ranked.contains(where: { $0.id.hasPrefix("unrel_") }), "Radio Recommendations: Unrelated genres, moods, tempos, live versions, and short clips excluded")
+        
+        let so7Count = ranked.filter { $0.artist.lowercased().contains("sheila on 7") }.count
+        assertTest(so7Count <= 2, "Radio Recommendations: Artist repetition capped at max 2 per artist (found \(so7Count))")
+        
+        // Verify every recommended song matched at least 3 musical attributes
+        let seedProfile = RadioRecommendationScorer.profile(for: seedSong)
+        let allMultiAttributeMatched = ranked.allSatisfy { track in
+            if let eval = RadioRecommendationScorer.evaluateCandidate(
+                seed: seedSong,
+                seedProfile: seedProfile,
+                candidate: track,
+                excludedTrackIds: [],
+                excludedTitleArtistKeys: []
+            ) {
+                return eval.matchedAttributes >= 3
+            }
+            return false
+        }
+        assertTest(allMultiAttributeMatched, "Radio Recommendations: Every recommended song matches across >= 3 musical characteristics")
+    }
+    
+    // MARK: - Test 16: Strict Audio Search & Track Version Matching
+    do {
+        // 1. Official Studio requested -> must match studio and reject live, acoustic, instrumental, remix, cover, karaoke, sped-up, slowed
+        let studioTitle = "Creep"
+        let studioArtist = "Radiohead"
+        
+        let exactStudioScore = TrackVersionMatcher.matchScore(
+            requestedTitle: studioTitle,
+            requestedArtist: studioArtist,
+            requestedAlbum: "Pablo Honey",
+            requestedDuration: 238,
+            candidateTitle: "Creep",
+            candidateArtist: "Radiohead - Topic",
+            candidateAlbum: "Pablo Honey",
+            candidateSubtitle: "Song • Radiohead • Pablo Honey",
+            candidateDuration: 239
+        )
+        assertTest(exactStudioScore != nil && exactStudioScore! >= 80, "Version Matching: Official Studio recording matched with high confidence (\(exactStudioScore ?? 0))")
+        
+        let alternateVersions = [
+            "Creep (Live at Reading Festival)",
+            "Creep (Acoustic Version)",
+            "Creep (Instrumental)",
+            "Creep (Club Remix)",
+            "Creep (Vocal Cover by Guest)",
+            "Creep (Karaoke Version)",
+            "Creep (Sped Up Nightcore)",
+            "Creep (Slowed + Reverb)"
+        ]
+        for altTitle in alternateVersions {
+            let score = TrackVersionMatcher.matchScore(
+                requestedTitle: studioTitle,
+                requestedArtist: studioArtist,
+                requestedAlbum: "Pablo Honey",
+                requestedDuration: 238,
+                candidateTitle: altTitle,
+                candidateArtist: studioArtist,
+                candidateAlbum: "Pablo Honey",
+                candidateDuration: 238
+            )
+            assertTest(score == nil, "Version Matching: Studio request strictly rejected alternate version '\(altTitle)'")
+        }
+        
+        // 2. Explicit Acoustic requested -> must match Acoustic and reject Studio or Live
+        let acousticReq = "Creep (Acoustic)"
+        let acousticMatch = TrackVersionMatcher.matchScore(
+            requestedTitle: acousticReq,
+            requestedArtist: studioArtist,
+            candidateTitle: "Creep (Acoustic Version)",
+            candidateArtist: "Radiohead"
+        )
+        let acousticVsStudio = TrackVersionMatcher.matchScore(
+            requestedTitle: acousticReq,
+            requestedArtist: studioArtist,
+            candidateTitle: "Creep",
+            candidateArtist: "Radiohead"
+        )
+        let acousticVsLive = TrackVersionMatcher.matchScore(
+            requestedTitle: acousticReq,
+            requestedArtist: studioArtist,
+            candidateTitle: "Creep (Live)",
+            candidateArtist: "Radiohead"
+        )
+        assertTest(acousticMatch != nil, "Version Matching: Acoustic request matched Acoustic candidate")
+        assertTest(acousticVsStudio == nil, "Version Matching: Acoustic request rejected plain Studio candidate")
+        assertTest(acousticVsLive == nil, "Version Matching: Acoustic request rejected Live candidate")
+        
+        // 3. Explicit Instrumental, Live, Remix, Cover requests
+        assertTest(
+            TrackVersionMatcher.matchScore(
+                requestedTitle: "Numb (Instrumental)",
+                requestedArtist: "Linkin Park",
+                candidateTitle: "Numb (Official Instrumental)",
+                candidateArtist: "Linkin Park"
+            ) != nil,
+            "Version Matching: Instrumental request matched Instrumental candidate"
+        )
+        assertTest(
+            TrackVersionMatcher.matchScore(
+                requestedTitle: "Numb (Live in Texas)",
+                requestedArtist: "Linkin Park",
+                candidateTitle: "Numb (Live)",
+                candidateArtist: "Linkin Park"
+            ) != nil,
+            "Version Matching: Live request matched Live candidate"
+        )
+        assertTest(
+            TrackVersionMatcher.matchScore(
+                requestedTitle: "Summertime Sadness (Cedric Gervais Remix)",
+                requestedArtist: "Lana Del Rey",
+                candidateTitle: "Summertime Sadness (Remix)",
+                candidateArtist: "Lana Del Rey"
+            ) != nil,
+            "Version Matching: Remix request matched Remix candidate"
+        )
+        
+        // 4. Featured artists & different artist rejection
+        let featScore = TrackVersionMatcher.matchScore(
+            requestedTitle: "Get Lucky (feat. Pharrell Williams)",
+            requestedArtist: "Daft Punk",
+            candidateTitle: "Get Lucky",
+            candidateArtist: "Daft Punk, Pharrell Williams & Nile Rodgers"
+        )
+        assertTest(featScore != nil, "Version Matching: Handled featured artists across title and artist metadata")
+        
+        let wrongArtistScore = TrackVersionMatcher.matchScore(
+            requestedTitle: "Yellow",
+            requestedArtist: "Coldplay",
+            candidateTitle: "Yellow",
+            candidateArtist: "Tribute Cover Band"
+        )
+        assertTest(wrongArtistScore == nil, "Version Matching: Rejected same song title by unrelated tribute/cover artist")
+    }
+    
+    // MARK: - Test 17: Objective Audio Quality Measurement & Selection
+    do {
+        let hiresFlac = StreamInfo(
+            streamURL: URL(string: "https://cdn.example.com/track_24_96.flac")!,
+            format: "audio/flac",
+            codec: "flac",
+            bitrate: 4608,
+            isLossless: true,
+            sampleRate: 96000,
+            bitDepth: 24,
+            sourceId: "addon_qobuz",
+            sourceIsDirect: true
+        )
+        let cdFlac = StreamInfo(
+            streamURL: URL(string: "https://cdn.example.com/track_16_44.flac")!,
+            format: "audio/flac",
+            codec: "flac",
+            bitrate: 1411,
+            isLossless: true,
+            sampleRate: 44100,
+            bitDepth: 16,
+            sourceId: "addon_qobuz",
+            sourceIsDirect: true
+        )
+        let lossy320 = StreamInfo(
+            streamURL: URL(string: "https://cdn.example.com/track_320.m4a")!,
+            format: "audio/mp4; codecs=\"mp4a.40.2\"",
+            codec: "aac",
+            bitrate: 320,
+            isLossless: false,
+            sampleRate: 48000,
+            sourceId: "yt_innertube_ios",
+            sourceIsDirect: true
+        )
+        let lossy256 = StreamInfo(
+            streamURL: URL(string: "https://cdn.example.com/track_256.m4a")!,
+            format: "audio/mp4; codecs=\"mp4a.40.2\"",
+            codec: "aac",
+            bitrate: 256,
+            isLossless: false,
+            sampleRate: 44100,
+            sourceId: "yt_innertube_ios",
+            sourceIsDirect: true
+        )
+        let lossy128 = StreamInfo(
+            streamURL: URL(string: "https://cdn.example.com/track_128.m4a")!,
+            format: "audio/mp4; codecs=\"mp4a.40.2\"",
+            codec: "aac",
+            bitrate: 128,
+            isLossless: false,
+            sampleRate: 44100,
+            sourceId: "yt_innertube_ios",
+            sourceIsDirect: true
+        )
+        // Fake lossless label on a lossy Opus/WebM stream -> must NOT be trusted as lossless
+        let fakeLosslessWebm = StreamInfo(
+            streamURL: URL(string: "https://cdn.example.com/track_opus.webm")!,
+            format: "audio/webm; codecs=\"opus\"",
+            codec: "opus",
+            bitrate: 160,
+            isLossless: true, // falsely claimed!
+            sampleRate: 48000,
+            sourceId: "piped",
+            sourceIsDirect: false
+        )
+        
+        assertTest(hiresFlac.isGenuineLossless == true, "Quality Measurement: 24-bit/96kHz FLAC recognized as genuine lossless")
+        assertTest(cdFlac.isGenuineLossless == true, "Quality Measurement: 16-bit/44.1kHz FLAC recognized as genuine lossless")
+        assertTest(fakeLosslessWebm.isGenuineLossless == false && fakeLosslessWebm.isLossless == false, "Quality Measurement: Rejected false lossless label on lossy audio/webm Opus stream")
+        assertTest(hiresFlac.qualityScore > cdFlac.qualityScore, "Quality Measurement: 24-bit/96kHz FLAC outranks 16-bit/44.1kHz FLAC")
+        assertTest(cdFlac.qualityScore > lossy320.qualityScore, "Quality Measurement: Genuine lossless FLAC outranks 320 kbps lossy AAC")
+        assertTest(lossy320.qualityScore > lossy256.qualityScore && lossy256.qualityScore > lossy128.qualityScore, "Quality Measurement: Lossy bitrates ordered 320 > 256 > 128 kbps")
+        
+        let selectedTiers = StreamInfo.selectTopDistinctQualityLevels(
+            from: [lossy128, lossy320, lossy256, fakeLosslessWebm],
+            maxLevels: 3
+        )
+        assertTest(selectedTiers.count == 3, "Quality Selection: Capped at max 3 distinct quality levels per source")
+        assertTest(selectedTiers[0].bitrate == 320 && selectedTiers[1].bitrate == 256 && selectedTiers[2].bitrate == 160, "Quality Selection: Sorted highest quality first (320 -> 256 -> 160 Opus)")
+    }
+    
+    // MARK: - Test 18: Playback Fallback Sequence & Explicit Retry Limits
+    do {
+        let track = Track(id: "test_song_1", title: "Starlight", artist: "Muse", album: "Black Holes and Revelations", duration: 240)
+        
+        // Source 1 (Primary): 320 kbps and 128 kbps
+        let s1_320 = StreamInfo(streamURL: URL(string: "https://primary.example.com/320.m4a")!, format: "audio/mp4", bitrate: 320, sourceId: "source1")
+        let s1_128 = StreamInfo(streamURL: URL(string: "https://primary.example.com/128.m4a")!, format: "audio/mp4", bitrate: 128, sourceId: "source1")
+        // Source 2 (Alt 1): 256 kbps
+        let s2_256 = StreamInfo(streamURL: URL(string: "https://alt1.example.com/256.m4a")!, format: "audio/mp4", bitrate: 256, sourceId: "source2")
+        // Source 3 (Alt 2): 192 kbps
+        let s3_192 = StreamInfo(streamURL: URL(string: "https://alt2.example.com/192.m4a")!, format: "audio/mp4", bitrate: 192, sourceId: "source3")
+        // Source 4 (Should be ignored because max 2 alternative sources = 3 total sources)
+        let s4_128 = StreamInfo(streamURL: URL(string: "https://alt3.example.com/128.m4a")!, format: "audio/mp4", bitrate: 128, sourceId: "source4")
+        
+        var coordinator = PlaybackFallbackCoordinator(
+            track: track,
+            candidateSources: [[s1_128, s1_320], [s2_256], [s3_192], [s4_128]]
+        )
+        assertTest(coordinator.sources.count == 3, "Retry Limits: Enforced maximum 2 alternative sources (3 total sources)")
+        
+        // Attempt 1: Primary source, highest quality (320 kbps)
+        let attempt1 = coordinator.beginInitialAttempt()
+        assertTest(attempt1?.attemptNumber == 1 && attempt1?.stream.bitrate == 320 && attempt1?.sourceIndex == 0, "Fallback Sequence: Attempt #1 uses primary source at 320 kbps")
+        
+        // Fail Attempt 1 with recoverable network error -> Retry #1 of 320 kbps (Attempt #2, backoff 1.0s)
+        let attempt2 = coordinator.recordFailureAndNextAttempt(failedStreamURL: attempt1!.stream.streamURL, reason: .transientNetworkError)
+        assertTest(attempt2?.attemptNumber == 2 && attempt2?.retryIndex == 1 && attempt2?.backoffSeconds == 1.0 && attempt2?.stream.bitrate == 320, "Fallback Sequence: Attempt #2 is Retry #1 of 320 kbps with 1s exponential backoff")
+        assertTest(attempt2?.stream.streamURL != attempt1?.stream.streamURL, "Retry Limits: Never retries the exact same failed stream URL")
+        
+        // Fail Attempt 2 -> Retry #2 of 320 kbps (Attempt #3, backoff 2.0s)
+        let attempt3 = coordinator.recordFailureAndNextAttempt(failedStreamURL: attempt2!.stream.streamURL, reason: .transientNetworkError)
+        assertTest(attempt3?.attemptNumber == 3 && attempt3?.retryIndex == 2 && attempt3?.backoffSeconds == 2.0 && attempt3?.stream.bitrate == 320, "Fallback Sequence: Attempt #3 is Retry #2 (max 2 retries per quality level) with 2s exponential backoff")
+        
+        // Fail Attempt 3 -> Must step down to next quality level in Primary Source (128 kbps, Attempt #4)
+        let attempt4 = coordinator.recordFailureAndNextAttempt(failedStreamURL: attempt3!.stream.streamURL, reason: .transientNetworkError)
+        assertTest(attempt4?.attemptNumber == 4 && attempt4?.sourceIndex == 0 && attempt4?.qualityIndex == 1 && attempt4?.retryIndex == 0 && attempt4?.stream.bitrate == 128, "Fallback Sequence: Attempt #4 steps down to 128 kbps after 2 retries on 320 kbps")
+        
+        // Fail Attempt 4 with non-recoverable codec error -> Must skip retries on 128 kbps and switch to Alternative Source #1 (256 kbps, Attempt #5)
+        let attempt5 = coordinator.recordFailureAndNextAttempt(failedStreamURL: attempt4!.stream.streamURL, reason: .unsupportedCodecOrFormat)
+        assertTest(attempt5?.attemptNumber == 5 && attempt5?.sourceIndex == 1 && attempt5?.stream.bitrate == 256, "Fallback Sequence: Attempt #5 switches to Alternative Source #1 (256 kbps)")
+        
+        // Fail Attempt 5 with codec error -> Switch to Alternative Source #2 (192 kbps, Attempt #6 - global max)
+        let attempt6 = coordinator.recordFailureAndNextAttempt(failedStreamURL: attempt5!.stream.streamURL, reason: .unsupportedCodecOrFormat)
+        assertTest(attempt6?.attemptNumber == 6 && attempt6?.sourceIndex == 2 && attempt6?.stream.bitrate == 192, "Fallback Sequence: Attempt #6 reaches global 6-attempt ceiling on Alternative Source #2")
+        
+        // Fail Attempt 6 -> Must stop immediately because global 6-attempt limit is reached
+        let attempt7 = coordinator.recordFailureAndNextAttempt(failedStreamURL: attempt6!.stream.streamURL, reason: .transientNetworkError)
+        assertTest(attempt7 == nil && coordinator.isStopped && coordinator.totalAttempts == 6, "Retry Limits: Strictly stopped at global 6-attempt limit per song request")
+        assertTest(coordinator.terminalErrorMessage != nil, "Fallback Sequence: Provides clear user-facing error message when all attempts fail")
+        
+        // Verify normal buffering vs failure classification
+        assertTest(PlaybackFallbackCoordinator.isNormalBuffering(isWaitingToPlay: true, stallDurationSeconds: 3.5, hasFatalError: false) == true, "Failure Definition: Short 3.5s buffering is NOT classified as playback failure")
+        assertTest(PlaybackFallbackCoordinator.isNormalBuffering(isWaitingToPlay: true, stallDurationSeconds: 10.5, hasFatalError: false) == false, "Failure Definition: Stall exceeding 10s ready-to-play timeout IS classified as playback failure")
+    }
+    
     print("==================================================")
     print("🏁 Test Results: \(passed) Passed, \(failed) Failed")
     print("==================================================")

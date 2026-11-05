@@ -13,6 +13,235 @@ public enum PlaybackBackend: String, Sendable {
     case avPlayer
 }
 
+/// Classification of playback failures vs transient buffering.
+public enum PlaybackFailureReason: String, Sendable, Equatable {
+    case unavailableOrExpiredStream
+    case unsupportedCodecOrFormat
+    case initializationOrDecodeError
+    case startupTimeoutExceeded // > 10 seconds after readyToPlay
+    case fatalStreamingError
+    case unrecoverableStall
+    case transientNetworkError // Recoverable via bounded retry
+}
+
+/// Deterministic coordinator enforcing explicit retry, quality fallback, and source fallback limits per song request:
+/// - Maximum 2 retries per quality level
+/// - Maximum 3 distinct quality levels per source
+/// - Maximum 2 alternative sources (1 primary + up to 2 alternative = 3 sources max) for the exact same recording and version
+/// - Maximum 6 total playback attempts per song request (global limit including initial attempt)
+/// - Never retries the exact same failed stream URL repeatedly
+/// - Short exponential backoff between retries (1.0s, then 2.0s)
+/// - Stops immediately when playback succeeds or a non-recoverable error occurs
+public struct PlaybackFallbackCoordinator: Sendable {
+    public static let maxRetriesPerQualityLevel: Int = 2
+    public static let maxQualityLevelsPerSource: Int = 3
+    public static let maxAlternativeSources: Int = 2
+    public static let maxTotalSources: Int = 1 + maxAlternativeSources // 3 sources total
+    public static let maxTotalAttemptsPerSong: Int = 6
+    public static let startupTimeoutSeconds: TimeInterval = 10.0
+    
+    public let requestedTrack: Track
+    public let requestedVersion: TrackVersionType
+    public private(set) var sources: [[StreamInfo]]
+    public private(set) var currentSourceIndex: Int = 0
+    public private(set) var currentQualityIndex: Int = 0
+    public private(set) var retriesForCurrentQuality: Int = 0
+    public private(set) var totalAttempts: Int = 0
+    public private(set) var failedStreamURLs: Set<String> = []
+    public private(set) var isStopped: Bool = false
+    public private(set) var hasSucceeded: Bool = false
+    public private(set) var terminalErrorMessage: String? = nil
+    
+    public init(track: Track, candidateSources: [[StreamInfo]]) {
+        self.requestedTrack = track
+        self.requestedVersion = TrackVersionMatcher.detectVersion(title: track.title, album: track.album)
+        // Enforce max 3 sources (primary + 2 alternatives) and max 3 distinct quality levels per source, sorted highest quality first
+        self.sources = Array(candidateSources.prefix(Self.maxTotalSources)).map { sourceStreams in
+            StreamInfo.selectTopDistinctQualityLevels(from: sourceStreams, maxLevels: Self.maxQualityLevelsPerSource)
+        }.filter { !$0.isEmpty }
+    }
+    
+    /// Returns true if the condition is normal buffering or short network latency (NOT a playback failure).
+    public static func isNormalBuffering(isWaitingToPlay: Bool, stallDurationSeconds: TimeInterval, hasFatalError: Bool) -> Bool {
+        if hasFatalError { return false }
+        return isWaitingToPlay && stallDurationSeconds < Self.startupTimeoutSeconds
+    }
+    
+    /// Returns true if a failure reason can be retried on the same quality level (with a refreshed/alternate stream URL),
+    /// whereas codec/format incompatibility or unrecoverable decode errors immediately step down or stop.
+    public static func isRecoverableFailure(_ reason: PlaybackFailureReason) -> Bool {
+        switch reason {
+        case .transientNetworkError, .startupTimeoutExceeded, .unavailableOrExpiredStream:
+            return true
+        case .unsupportedCodecOrFormat, .initializationOrDecodeError, .fatalStreamingError, .unrecoverableStall:
+            return false
+        }
+    }
+    
+    /// Exponential backoff delay for retry index (1-based: retry 1 -> 1.0s, retry 2 -> 2.0s).
+    public static func backoffDelaySeconds(forRetry retryNumber: Int) -> TimeInterval {
+        guard retryNumber > 0 else { return 0 }
+        return pow(2.0, Double(retryNumber - 1))
+    }
+    
+    public struct PlaybackAttemptPlan: Sendable, Equatable {
+        public let attemptNumber: Int
+        public let sourceIndex: Int
+        public let qualityIndex: Int
+        public let retryIndex: Int
+        public let backoffSeconds: TimeInterval
+        public let stream: StreamInfo
+    }
+    
+    /// Starts the initial playback attempt (Attempt #1) at the highest available quality from the primary source.
+    public mutating func beginInitialAttempt() -> PlaybackAttemptPlan? {
+        guard !isStopped, !hasSucceeded else { return nil }
+        guard !sources.isEmpty, !sources[0].isEmpty else {
+            isStopped = true
+            let verName = requestedVersion.rawValue.lowercased()
+            terminalErrorMessage = "The requested \(verName) version of \"\(requestedTrack.title)\" is unavailable."
+            return nil
+        }
+        currentSourceIndex = 0
+        currentQualityIndex = 0
+        retriesForCurrentQuality = 0
+        totalAttempts = 1
+        let stream = sources[0][0]
+        return PlaybackAttemptPlan(
+            attemptNumber: totalAttempts,
+            sourceIndex: currentSourceIndex,
+            qualityIndex: currentQualityIndex,
+            retryIndex: retriesForCurrentQuality,
+            backoffSeconds: 0,
+            stream: stream
+        )
+    }
+    
+    /// Marks playback as succeeded and stops all further retry/fallback operations immediately.
+    public mutating func recordPlaybackSuccess() {
+        hasSucceeded = true
+        isStopped = true
+        terminalErrorMessage = nil
+    }
+    
+    /// Records a failed stream attempt and computes the next fallback/retry plan according to the strict limits:
+    /// 1. Retry current quality level up to `maxRetriesPerQualityLevel` (2) if recoverable and stream URL hasn't already failed.
+    /// 2. Move to the next-highest quality level (up to 3 per source) of the exact same recording and version.
+    /// 3. Move to the next alternative source (up to 2 alternative sources) for the exact same recording and version.
+    /// 4. Never exceed 6 total playback attempts globally.
+    public mutating func recordFailureAndNextAttempt(
+        failedStreamURL: URL,
+        reason: PlaybackFailureReason,
+        refreshedStreamForRetry: StreamInfo? = nil,
+        isFatalNonRecoverableRequestError: Bool = false
+    ) -> PlaybackAttemptPlan? {
+        guard !isStopped, !hasSucceeded else { return nil }
+        failedStreamURLs.insert(failedStreamURL.absoluteString)
+        
+        if isFatalNonRecoverableRequestError {
+            isStopped = true
+            terminalErrorMessage = "Playback stopped due to a non-recoverable error for \"\(requestedTrack.title)\"."
+            return nil
+        }
+        
+        // Global 6-attempt ceiling per song request
+        if totalAttempts >= Self.maxTotalAttemptsPerSong {
+            isStopped = true
+            terminalErrorMessage = "Unable to play \"\(requestedTrack.title)\" after \(totalAttempts) attempts."
+            return nil
+        }
+        
+        // Step 1: Retry current quality level up to maxRetriesPerQualityLevel (2) if error is recoverable
+        if Self.isRecoverableFailure(reason) && retriesForCurrentQuality < Self.maxRetriesPerQualityLevel {
+            let currentTierStream = sources[currentSourceIndex][currentQualityIndex]
+            let candidateRetryStream: StreamInfo
+            if let refreshed = refreshedStreamForRetry, !failedStreamURLs.contains(refreshed.streamURL.absoluteString) {
+                candidateRetryStream = refreshed
+            } else {
+                // Distinguish retry token while never retrying the exact same failed URL string
+                let retryTokenIndex = retriesForCurrentQuality + 1
+                let separator = currentTierStream.streamURL.query != nil ? "&" : "?"
+                let retryURLString = "\(currentTierStream.streamURL.absoluteString)\(separator)bitchord_retry=\(retryTokenIndex)"
+                if let retryURL = URL(string: retryURLString), !failedStreamURLs.contains(retryURL.absoluteString) {
+                    candidateRetryStream = StreamInfo(
+                        streamURL: retryURL,
+                        format: currentTierStream.format,
+                        codec: currentTierStream.codec,
+                        bitrate: currentTierStream.bitrate,
+                        isLossless: currentTierStream.isLossless,
+                        sampleRate: currentTierStream.sampleRate,
+                        bitDepth: currentTierStream.bitDepth,
+                        sourceId: currentTierStream.sourceId,
+                        sourceIsDirect: currentTierStream.sourceIsDirect
+                    )
+                } else {
+                    candidateRetryStream = currentTierStream
+                }
+            }
+            
+            if !failedStreamURLs.contains(candidateRetryStream.streamURL.absoluteString) {
+                retriesForCurrentQuality += 1
+                totalAttempts += 1
+                let backoff = Self.backoffDelaySeconds(forRetry: retriesForCurrentQuality)
+                return PlaybackAttemptPlan(
+                    attemptNumber: totalAttempts,
+                    sourceIndex: currentSourceIndex,
+                    qualityIndex: currentQualityIndex,
+                    retryIndex: retriesForCurrentQuality,
+                    backoffSeconds: backoff,
+                    stream: candidateRetryStream
+                )
+            }
+        }
+        
+        // Step 2: Advance to next-highest quality level within the current source (max 3 distinct quality levels per source)
+        while currentQualityIndex + 1 < sources[currentSourceIndex].count && currentQualityIndex + 1 < Self.maxQualityLevelsPerSource {
+            currentQualityIndex += 1
+            retriesForCurrentQuality = 0
+            let nextQualityStream = sources[currentSourceIndex][currentQualityIndex]
+            if !failedStreamURLs.contains(nextQualityStream.streamURL.absoluteString) {
+                totalAttempts += 1
+                return PlaybackAttemptPlan(
+                    attemptNumber: totalAttempts,
+                    sourceIndex: currentSourceIndex,
+                    qualityIndex: currentQualityIndex,
+                    retryIndex: 0,
+                    backoffSeconds: 0,
+                    stream: nextQualityStream
+                )
+            }
+        }
+        
+        // Step 3: Advance to next alternative source (max 2 alternative sources = 3 total sources)
+        while currentSourceIndex + 1 < sources.count && currentSourceIndex + 1 < Self.maxTotalSources {
+            currentSourceIndex += 1
+            currentQualityIndex = 0
+            retriesForCurrentQuality = 0
+            for qIdx in 0..<min(sources[currentSourceIndex].count, Self.maxQualityLevelsPerSource) {
+                let candidateStream = sources[currentSourceIndex][qIdx]
+                if !failedStreamURLs.contains(candidateStream.streamURL.absoluteString) {
+                    currentQualityIndex = qIdx
+                    totalAttempts += 1
+                    return PlaybackAttemptPlan(
+                        attemptNumber: totalAttempts,
+                        sourceIndex: currentSourceIndex,
+                        qualityIndex: currentQualityIndex,
+                        retryIndex: 0,
+                        backoffSeconds: 0,
+                        stream: candidateStream
+                    )
+                }
+            }
+        }
+        
+        // Step 4: All sources and quality tiers exhausted
+        isStopped = true
+        let verName = requestedVersion.rawValue.lowercased()
+        terminalErrorMessage = "Unable to play the requested \(verName) version of \"\(requestedTrack.title)\"."
+        return nil
+    }
+}
+
 @MainActor
 public final class AudioPlayerEngine: ObservableObject {
     public static let shared = AudioPlayerEngine()
@@ -37,6 +266,11 @@ public final class AudioPlayerEngine: ObservableObject {
     @Published public private(set) var queueIndex: Int = 0
     @Published public var repeatMode: RepeatMode = .off
     @Published public var shuffleMode: ShuffleMode = .off
+    @Published public var playbackErrorMessage: String? = nil
+    public private(set) var sessionPlayedTrackIds: Set<String> = []
+    public private(set) var activeFallbackCoordinator: PlaybackFallbackCoordinator? = nil
+    private var startupWatchdogTask: Task<Void, Never>? = nil
+    private var hasRenderedAudioForCurrentAttempt: Bool = false
     
     private var originalQueue: [Track] = []
     private var player: AVPlayer?
@@ -471,9 +705,16 @@ public final class AudioPlayerEngine: ObservableObject {
     
     public func playTrack(at index: Int, initialSeek: TimeInterval? = nil) {
         guard index >= 0 && index < queue.count else { return }
+        startupWatchdogTask?.cancel()
+        startupWatchdogTask = nil
+        hasRenderedAudioForCurrentAttempt = false
+        playbackErrorMessage = nil
+        activeFallbackCoordinator = nil
+        
         queueIndex = index
         let track = queue[index]
         self.currentTrack = track
+        self.sessionPlayedTrackIds.insert(track.id)
         self.duration = track.duration
         let startPos = initialSeek ?? 0
         self.currentTime = startPos
@@ -495,7 +736,7 @@ public final class AudioPlayerEngine: ObservableObject {
             return
         }
         
-        // 2. If track already has a valid 11-char YouTube ID, play via YouTubeAudioBridge with auto-fallback
+        // 2. If track already has a valid 11-char YouTube ID, play via YouTubeAudioBridge with bounded quality/source fallback
         if track.id.count == 11 && !track.id.hasPrefix("yt_") {
             self.stopAVPlayer()
             self.activeBackend = .youtubeBridge
@@ -503,15 +744,26 @@ public final class AudioPlayerEngine: ObservableObject {
             self.status = .loading
             self.updateNowPlayingInfo()
             
-            // Concurrently extract native direct stream for AVPlayer (enabling uninterrupted lock-screen audio)
+            // Concurrently extract ranked native direct stream tiers for AVPlayer (prioritizing highest quality / lossless)
             let targetTrackId = track.id
             Task { @MainActor [weak self] in
                 guard let self = self else { return }
-                if let streamInfo = try? await StreamExtractor.shared.extractAudioStream(trackId: targetTrackId, title: track.title, artist: track.artist) {
-                    guard self.currentTrack?.id == targetTrackId else { return }
+                let sourceGroups = await StreamExtractor.shared.extractRankedStreamCandidates(
+                    trackId: targetTrackId,
+                    title: track.title,
+                    artist: track.artist,
+                    album: track.album,
+                    duration: track.duration,
+                    preferredQuality: BitChordSettings.shared.audioQuality
+                )
+                guard self.currentTrack?.id == targetTrackId else { return }
+                var coordinator = PlaybackFallbackCoordinator(track: track, candidateSources: sourceGroups)
+                if let initialPlan = coordinator.beginInitialAttempt() {
+                    self.activeFallbackCoordinator = coordinator
+                    let streamInfo = initialPlan.stream
                     var updated = track
                     updated.streamURL = streamInfo.streamURL
-                    updated.isLossless = streamInfo.isLossless
+                    updated.isLossless = streamInfo.isGenuineLossless
                     updated.sampleRate = streamInfo.sampleRate
                     updated.bitDepth = streamInfo.bitDepth
                     self.currentTrack = updated
@@ -524,31 +776,37 @@ public final class AudioPlayerEngine: ObservableObject {
                     let isBackgrounded = false
                     #endif
                     
-                    if self.status != .playing || isBackgrounded || streamInfo.isLossless {
+                    if self.status != .playing || isBackgrounded || streamInfo.isGenuineLossless {
                         let currentPos = self.currentTime
                         self.startPlaying(url: streamInfo.streamURL, for: updated, initialSeek: currentPos)
                     }
                 }
             }
             
-            // Watchdog fallback: if YouTubeAudioBridge doesn't start producing audio within 6.0s, fall back to AVPlayer!
+            // Watchdog fallback: if YouTubeAudioBridge doesn't start producing audio within 6.0s, switch to bounded stream fallback
             Task { @MainActor [weak self] in
                 try? await Task.sleep(nanoseconds: 6_000_000_000)
                 guard let self = self, self.currentTrack?.id == targetTrackId else { return }
                 if self.status != .playing {
                     print("[AudioEngine] YouTube Audio Bridge startup timed out for \(targetTrackId), switching to AVPlayer stream fallback")
-                    self.attemptStreamFallback(for: track)
+                    self.attemptStreamFallback(for: track, reason: .startupTimeoutExceeded)
                 }
             }
             return
         }
         
-        // 3. Resolve real 11-char YouTube videoId for titles / search metadata
+        // 3. Resolve real 11-char YouTube videoId for the exact selected version
         Task { @MainActor [weak self] in
             guard let self = self else { return }
-            if let vId = await YTMusicClient.shared.resolveYouTubeVideoId(title: track.title, artist: track.artist) {
+            if let vId = await YTMusicClient.shared.resolveYouTubeVideoId(
+                title: track.title,
+                artist: track.artist,
+                album: track.album,
+                duration: track.duration
+            ) {
                 var updated = track
                 updated.id = vId
+                self.sessionPlayedTrackIds.insert(vId)
                 if self.queueIndex == index {
                     self.currentTrack = updated
                     if index < self.queue.count {
@@ -563,11 +821,22 @@ public final class AudioPlayerEngine: ObservableObject {
                     let targetTrackId = vId
                     Task { @MainActor [weak self] in
                         guard let self = self else { return }
-                        if let streamInfo = try? await StreamExtractor.shared.extractAudioStream(trackId: targetTrackId, title: track.title, artist: track.artist) {
-                            guard self.currentTrack?.id == targetTrackId else { return }
+                        let sourceGroups = await StreamExtractor.shared.extractRankedStreamCandidates(
+                            trackId: targetTrackId,
+                            title: track.title,
+                            artist: track.artist,
+                            album: track.album,
+                            duration: track.duration,
+                            preferredQuality: BitChordSettings.shared.audioQuality
+                        )
+                        guard self.currentTrack?.id == targetTrackId else { return }
+                        var coordinator = PlaybackFallbackCoordinator(track: updated, candidateSources: sourceGroups)
+                        if let initialPlan = coordinator.beginInitialAttempt() {
+                            self.activeFallbackCoordinator = coordinator
+                            let streamInfo = initialPlan.stream
                             var withStream = updated
                             withStream.streamURL = streamInfo.streamURL
-                            withStream.isLossless = streamInfo.isLossless
+                            withStream.isLossless = streamInfo.isGenuineLossless
                             withStream.sampleRate = streamInfo.sampleRate
                             withStream.bitDepth = streamInfo.bitDepth
                             self.currentTrack = withStream
@@ -575,8 +844,8 @@ public final class AudioPlayerEngine: ObservableObject {
                                 self.queue[self.queueIndex] = withStream
                             }
                             
-                            // Switch to AVPlayer if not playing yet, or if a true Lossless/Hi-Res stream was resolved
-                            if self.status != .playing || streamInfo.isLossless {
+                            // Switch to AVPlayer if not playing yet, or if a genuine Lossless/Hi-Res stream was resolved
+                            if self.status != .playing || streamInfo.isGenuineLossless {
                                 let currentPos = self.currentTime
                                 self.startPlaying(url: streamInfo.streamURL, for: withStream, initialSeek: currentPos)
                             }
@@ -588,25 +857,29 @@ public final class AudioPlayerEngine: ObservableObject {
                         guard let self = self, self.currentTrack?.id == targetTrackId else { return }
                         if self.status != .playing {
                             print("[AudioEngine] YouTube Audio Bridge startup timed out for \(targetTrackId), switching to AVPlayer stream fallback")
-                            self.attemptStreamFallback(for: updated)
+                            self.attemptStreamFallback(for: updated, reason: .startupTimeoutExceeded)
                         }
                     }
                 }
             } else if let directURL = track.streamURL, !directURL.absoluteString.contains("apple.com") {
                 self.startPlaying(url: directURL, for: track)
             } else {
-                self.attemptStreamFallback(for: track)
+                self.attemptStreamFallback(for: track, reason: .unavailableOrExpiredStream)
             }
         }
     }
     
     private func startPlaying(url: URL, for track: Track, initialSeek: TimeInterval = 0) {
         self.activeBackend = .avPlayer
+        self.hasRenderedAudioForCurrentAttempt = false
+        self.playbackErrorMessage = nil
         YouTubeAudioBridge.shared.pause()
         if initialSeek > 0 {
             self.pendingSeekTime = initialSeek
             self.currentTime = initialSeek
         }
+        startupWatchdogTask?.cancel()
+        startupWatchdogTask = nil
         playerItemObservation?.invalidate()
         playerItemObservation = nil
         
@@ -640,9 +913,12 @@ public final class AudioPlayerEngine: ObservableObject {
                         self.pendingSeekTime = nil
                     }
                     self.updateNowPlayingInfo()
+                    self.startReadyToPlayWatchdog(for: track, streamURL: url, initialTime: self.currentTime)
                 case .failed:
                     print("[BitChord AudioEngine] AVPlayerItem failed: \(String(describing: item.error))")
-                    self.attemptStreamFallback(for: track)
+                    self.startupWatchdogTask?.cancel()
+                    let reason = Self.classifyAVPlayerError(item.error)
+                    self.attemptStreamFallback(for: track, failedURL: url, reason: reason)
                 case .unknown:
                     break
                 @unknown default:
@@ -666,6 +942,45 @@ public final class AudioPlayerEngine: ObservableObject {
         player?.play()
         self.status = .playing
         updateNowPlayingInfo()
+    }
+    
+    /// Enforces the 10-second playback startup watchdog after a stream reports `.readyToPlay`.
+    /// Normal buffering that recovers within 10s is not treated as a failure.
+    private func startReadyToPlayWatchdog(for track: Track, streamURL: URL, initialTime: TimeInterval) {
+        startupWatchdogTask?.cancel()
+        let timeoutNanoseconds = UInt64(PlaybackFallbackCoordinator.startupTimeoutSeconds * 1_000_000_000)
+        startupWatchdogTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: timeoutNanoseconds)
+            guard !Task.isCancelled, let self = self else { return }
+            guard self.activeBackend == .avPlayer, self.currentTrack?.id == track.id else { return }
+            if self.hasRenderedAudioForCurrentAttempt || (self.currentTime - initialTime) > 0.25 {
+                self.activeFallbackCoordinator?.recordPlaybackSuccess()
+                return
+            }
+            print("[BitChord AudioEngine] Stream failed to start playback within 10s after readyToPlay: \(streamURL)")
+            self.attemptStreamFallback(for: track, failedURL: streamURL, reason: .startupTimeoutExceeded)
+        }
+    }
+    
+    private static func classifyAVPlayerError(_ error: Error?) -> PlaybackFailureReason {
+        guard let nsError = error as NSError? else { return .unavailableOrExpiredStream }
+        if nsError.domain == AVFoundationErrorDomain {
+            switch nsError.code {
+            case AVError.Code.fileFormatNotRecognized.rawValue,
+                 AVError.Code.unsupportedOutputSettings.rawValue:
+                return .unsupportedCodecOrFormat
+            case AVError.Code.decoderNotFound.rawValue,
+                 AVError.Code.decoderTemporarilyUnavailable.rawValue,
+                 AVError.Code.failedToParse.rawValue:
+                return .initializationOrDecodeError
+            default:
+                return .unavailableOrExpiredStream
+            }
+        }
+        if nsError.domain == NSURLErrorDomain {
+            return .transientNetworkError
+        }
+        return .unavailableOrExpiredStream
     }
     
     private func handleTrackFinished() {
@@ -720,7 +1035,7 @@ public final class AudioPlayerEngine: ObservableObject {
         
         Task { @MainActor [weak self] in
             guard let self = self else { return }
-            let more = await YTMusicClient.shared.fetchRadioTracks(for: current)
+            let more = await YTMusicClient.shared.fetchRadioTracks(for: current, sessionHistoryIds: self.sessionPlayedTrackIds)
             if !more.isEmpty {
                 let nextIdx = self.queue.count
                 for t in more {
@@ -742,48 +1057,97 @@ public final class AudioPlayerEngine: ObservableObject {
         }
     }
     
-    private func attemptStreamFallback(for track: Track) {
+    private func attemptStreamFallback(
+        for track: Track,
+        failedURL: URL? = nil,
+        reason: PlaybackFailureReason = .unavailableOrExpiredStream
+    ) {
         Task { @MainActor [weak self] in
             guard let self = self else { return }
             guard self.currentTrack?.id == track.id else { return }
             
-            // 1. Direct streamURL on track if already present (excluding snippet previews)
-            if let streamURL = track.streamURL, !streamURL.absoluteString.contains("apple.com") {
-                print("[BitChord AudioEngine] Using track's existing full streamURL: \(streamURL)")
-                self.startPlaying(url: streamURL, for: track)
-                return
+            // Initialize coordinator if not already built for this song request
+            if self.activeFallbackCoordinator == nil {
+                let sourceGroups = await StreamExtractor.shared.extractRankedStreamCandidates(
+                    trackId: track.id,
+                    title: track.title,
+                    artist: track.artist,
+                    album: track.album,
+                    duration: track.duration,
+                    preferredQuality: BitChordSettings.shared.audioQuality
+                )
+                guard self.currentTrack?.id == track.id else { return }
+                var coordinator = PlaybackFallbackCoordinator(track: track, candidateSources: sourceGroups)
+                if let firstPlan = coordinator.beginInitialAttempt() {
+                    self.activeFallbackCoordinator = coordinator
+                    self.applyFallbackAttemptPlan(firstPlan, for: track)
+                    return
+                } else {
+                    // Check exact-version Topic Video on YouTube bridge before declaring unavailable
+                    if let topicId = await YTMusicClient.shared.resolveTopicVideoId(
+                        title: track.title,
+                        artist: track.artist,
+                        album: track.album,
+                        duration: track.duration
+                    ), topicId != track.id {
+                        var updated = track
+                        updated.id = topicId
+                        self.currentTrack = updated
+                        if self.queueIndex < self.queue.count {
+                            self.queue[self.queueIndex] = updated
+                        }
+                        self.activeBackend = .youtubeBridge
+                        self.stopAVPlayer()
+                        YouTubeAudioBridge.shared.play(videoId: topicId)
+                        return
+                    }
+                    self.activeFallbackCoordinator = coordinator
+                    self.status = .error
+                    self.playbackErrorMessage = coordinator.terminalErrorMessage
+                        ?? "The requested version of \"\(track.title)\" is currently unavailable."
+                    self.updateNowPlayingInfo()
+                    return
+                }
             }
             
-            // 2. Official Topic Video fallback on YouTube bridge (Topic videos always allow embedding)
-            if let topicId = await YTMusicClient.shared.resolveTopicVideoId(title: track.title, artist: track.artist), topicId != track.id {
-                print("[BitChord AudioEngine] Fallback switching to Topic videoId: \(topicId)")
-                var updated = track
-                updated.id = topicId
-                self.currentTrack = updated
-                if self.queueIndex < self.queue.count {
-                    self.queue[self.queueIndex] = updated
+            guard var coordinator = self.activeFallbackCoordinator else { return }
+            let effectiveFailedURL = failedURL ?? track.streamURL ?? URL(string: "https://invalid.bitchord.local/\(track.id)")!
+            
+            if let nextPlan = coordinator.recordFailureAndNextAttempt(
+                failedStreamURL: effectiveFailedURL,
+                reason: reason
+            ) {
+                self.activeFallbackCoordinator = coordinator
+                if nextPlan.backoffSeconds > 0 {
+                    let delayNs = UInt64(nextPlan.backoffSeconds * 1_000_000_000)
+                    try? await Task.sleep(nanoseconds: delayNs)
+                    guard self.currentTrack?.id == track.id else { return }
                 }
-                self.activeBackend = .youtubeBridge
+                self.applyFallbackAttemptPlan(nextPlan, for: track)
+            } else {
+                self.activeFallbackCoordinator = coordinator
                 self.stopAVPlayer()
-                YouTubeAudioBridge.shared.play(videoId: topicId)
-                return
+                self.status = .error
+                self.playbackErrorMessage = coordinator.terminalErrorMessage
+                    ?? "Unable to play \"\(track.title)\" after \(coordinator.totalAttempts) attempts."
+                self.updateNowPlayingInfo()
             }
-            
-            // 3. High-Fidelity Multi-source StreamExtractor (Full Length Audio Only)
-            if let streamInfo = try? await StreamExtractor.shared.extractAudioStream(trackId: track.id, title: track.title, artist: track.artist) {
-                print("[BitChord AudioEngine] StreamExtractor recovered full stream: \(streamInfo.streamURL)")
-                var recoveredTrack = track
-                recoveredTrack.streamURL = streamInfo.streamURL
-                self.currentTrack = recoveredTrack
-                if self.queueIndex < self.queue.count {
-                    self.queue[self.queueIndex] = recoveredTrack
-                }
-                self.startPlaying(url: streamInfo.streamURL, for: recoveredTrack)
-                return
-            }
-            
-            self.status = .error
         }
+    }
+    
+    private func applyFallbackAttemptPlan(_ plan: PlaybackFallbackCoordinator.PlaybackAttemptPlan, for track: Track) {
+        let streamInfo = plan.stream
+        var updatedTrack = track
+        updatedTrack.streamURL = streamInfo.streamURL
+        updatedTrack.isLossless = streamInfo.isGenuineLossless
+        updatedTrack.sampleRate = streamInfo.sampleRate
+        updatedTrack.bitDepth = streamInfo.bitDepth
+        self.currentTrack = updatedTrack
+        if self.queueIndex < self.queue.count && self.queue[self.queueIndex].id == track.id {
+            self.queue[self.queueIndex] = updatedTrack
+        }
+        let resumeTime = self.currentTime > 1.0 ? self.currentTime : 0
+        self.startPlaying(url: streamInfo.streamURL, for: updatedTrack, initialSeek: resumeTime)
     }
     
     public func togglePlayPause() {
@@ -799,6 +1163,8 @@ public final class AudioPlayerEngine: ObservableObject {
             if !queue.isEmpty {
                 let resumeTime = pendingSeekTime ?? (currentTime > 2 ? currentTime : nil)
                 playTrack(at: queueIndex, initialSeek: resumeTime)
+                status = .playing
+                updateNowPlayingInfo()
                 return
             }
         }
@@ -897,10 +1263,11 @@ public final class AudioPlayerEngine: ObservableObject {
     }
     
     public func startRadio(for track: Track) {
+        self.sessionPlayedTrackIds.insert(track.id)
         setQueue([track], startIndex: 0)
         Task { @MainActor [weak self] in
             guard let self = self else { return }
-            let radioTracks = await YTMusicClient.shared.fetchRadioTracks(for: track)
+            let radioTracks = await YTMusicClient.shared.fetchRadioTracks(for: track, sessionHistoryIds: self.sessionPlayedTrackIds)
             for t in radioTracks {
                 if !self.queue.contains(where: { $0.id == t.id }) {
                     self.queue.append(t)
@@ -953,6 +1320,11 @@ public final class AudioPlayerEngine: ObservableObject {
                 if self.pendingSeekTime == nil {
                     let sec = time.seconds
                     if sec.isFinite && !sec.isNaN && sec >= 0 {
+                        if sec > 0.25 && !self.hasRenderedAudioForCurrentAttempt {
+                            self.hasRenderedAudioForCurrentAttempt = true
+                            self.startupWatchdogTask?.cancel()
+                            self.activeFallbackCoordinator?.recordPlaybackSuccess()
+                        }
                         self.currentTime = sec
                         if abs(sec - self.lastSavedProgressTimestamp) >= 2.0 {
                             self.lastSavedProgressTimestamp = sec

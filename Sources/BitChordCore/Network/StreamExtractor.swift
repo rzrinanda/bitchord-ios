@@ -1,27 +1,197 @@
 import Foundation
 
-public struct StreamInfo: Sendable {
+public struct StreamInfo: Sendable, Equatable {
     public let streamURL: URL
     public let format: String
+    public let codec: String
     public let bitrate: Int
     public let isLossless: Bool
     public let sampleRate: Double?
     public let bitDepth: Int?
+    public let sourceId: String
+    public let sourceIsDirect: Bool
     
     public init(
         streamURL: URL,
         format: String = "audio/mp4",
+        codec: String? = nil,
         bitrate: Int = 256,
         isLossless: Bool = false,
         sampleRate: Double? = 44100,
-        bitDepth: Int? = nil
+        bitDepth: Int? = nil,
+        sourceId: String = "yt_innertube_ios",
+        sourceIsDirect: Bool = true
     ) {
         self.streamURL = streamURL
         self.format = format
+        let inferredCodec = Self.detectCodec(from: format, explicitCodec: codec)
+        self.codec = inferredCodec
         self.bitrate = bitrate
-        self.isLossless = isLossless
         self.sampleRate = sampleRate
-        self.bitDepth = bitDepth
+        let genuineLossless = Self.evaluateGenuineLossless(format: format, codec: inferredCodec, claimedLossless: isLossless)
+        self.isLossless = genuineLossless
+        self.bitDepth = genuineLossless ? (bitDepth ?? ((sampleRate ?? 44100) > 48000 ? 24 : 16)) : nil
+        self.sourceId = sourceId
+        self.sourceIsDirect = sourceIsDirect
+    }
+    
+    /// Verifies that lossless claims are backed by actual lossless codec/container metadata (FLAC, ALAC, WAV, PCM).
+    /// Never trusts a boolean label alone if the underlying format/codec is lossy (AAC, Opus, MP3, Vorbis).
+    public var isGenuineLossless: Bool {
+        Self.evaluateGenuineLossless(format: format, codec: codec, claimedLossless: isLossless)
+    }
+    
+    public static func detectCodec(from format: String, explicitCodec: String? = nil) -> String {
+        if let exp = explicitCodec?.lowercased().trimmingCharacters(in: .whitespacesAndNewlines), !exp.isEmpty {
+            return exp
+        }
+        let lower = format.lowercased()
+        if lower.contains("flac") { return "flac" }
+        if lower.contains("alac") || lower.contains("apple lossless") { return "alac" }
+        if lower.contains("wav") || lower.contains("pcm") || lower.contains("l16") || lower.contains("l24") { return "pcm" }
+        if lower.contains("opus") { return "opus" }
+        if lower.contains("vorbis") { return "vorbis" }
+        if lower.contains("mp4a") || lower.contains("aac") || lower.contains("audio/mp4") || lower.contains("m4a") { return "aac" }
+        if lower.contains("mpeg") || lower.contains("mp3") { return "mp3" }
+        if lower.contains("webm") { return "opus" }
+        return "aac"
+    }
+    
+    public static func evaluateGenuineLossless(format: String, codec: String, claimedLossless: Bool) -> Bool {
+        let lowerFormat = format.lowercased()
+        let lowerCodec = codec.lowercased()
+        
+        // Explicitly reject known lossy formats/codecs regardless of label
+        let lossyIndicators = ["opus", "vorbis", "mp3", "audio/mpeg", "mp4a.40", "aac", "audio/webm", "video/mp4", "application/x-mpegurl"]
+        for indicator in lossyIndicators {
+            if lowerFormat.contains(indicator) || lowerCodec == indicator {
+                if !lowerFormat.contains("alac") && !lowerFormat.contains("flac") && lowerCodec != "alac" && lowerCodec != "flac" {
+                    return false
+                }
+            }
+        }
+        
+        let losslessIndicators = ["flac", "alac", "wav", "pcm", "aiff", "apple lossless"]
+        for indicator in losslessIndicators {
+            if lowerFormat.contains(indicator) || lowerCodec.contains(indicator) {
+                return true
+            }
+        }
+        return false
+    }
+    
+    /// Evaluates objective audio quality across format/codec, bitrate, sample rate, bit depth, and source integrity.
+    public var qualityScore: Double {
+        var score: Double = 0
+        let sr = sampleRate ?? 44100
+        
+        if isGenuineLossless {
+            // 1. Genuine lossless formats (FLAC / ALAC / PCM) outrank all lossy streams
+            score += 1000.0
+            if codec == "flac" || codec == "alac" {
+                score += 40.0
+            } else if codec == "pcm" {
+                score += 35.0
+            }
+            // 4. Bit depth for lossless PCM audio (24-bit > 16-bit)
+            let depth = bitDepth ?? 16
+            if depth >= 24 {
+                score += 120.0
+            } else if depth >= 16 {
+                score += 60.0
+            }
+            // 3. Sample rate (96kHz / 88.2kHz / 48kHz / 44.1kHz)
+            if sr >= 96000 {
+                score += 90.0
+            } else if sr >= 88200 {
+                score += 80.0
+            } else if sr >= 48000 {
+                score += 50.0
+            } else if sr >= 44100 {
+                score += 30.0
+            }
+            score += min(60.0, Double(max(0, bitrate)) / 100.0)
+        } else {
+            // 2. Lossy formats: compare codec perceptual efficiency + bitrate appropriately
+            let perceptualEquivalentBitrate: Double
+            switch codec {
+            case "opus":
+                // Opus is perceptually more efficient at lower nominal bitrates than MP3,
+                // while 320 kbps AAC/MP3 or 256 kbps AAC still scale cleanly
+                perceptualEquivalentBitrate = Double(bitrate) * 1.18
+            case "aac":
+                perceptualEquivalentBitrate = Double(bitrate) * 1.10
+            case "vorbis":
+                perceptualEquivalentBitrate = Double(bitrate) * 1.05
+            case "mp3":
+                perceptualEquivalentBitrate = Double(bitrate) * 1.00
+            default:
+                perceptualEquivalentBitrate = Double(bitrate) * 0.95
+            }
+            score += min(600.0, perceptualEquivalentBitrate)
+            
+            // Explicit tier bonus for standard high bitrates within lossy
+            if bitrate >= 320 {
+                score += 80.0
+            } else if bitrate >= 256 {
+                score += 60.0
+            } else if bitrate >= 192 {
+                score += 40.0
+            } else if bitrate >= 128 {
+                score += 20.0
+            }
+            
+            if sr >= 48000 {
+                score += 15.0
+            } else if sr >= 44100 {
+                score += 10.0
+            }
+        }
+        
+        // 5. Source integrity: prefer original direct sources over re-encoded or proxied streams
+        if sourceIsDirect {
+            score += 25.0
+        }
+        return score
+    }
+    
+    /// Normalized quality tier bucket key so each source selects up to 3 distinct quality levels.
+    public var qualityTierKey: String {
+        if isGenuineLossless {
+            let depth = bitDepth ?? 16
+            let sr = Int((sampleRate ?? 44100) / 1000)
+            return depth >= 24 || sr > 48 ? "lossless_hires_\(depth)bit_\(sr)k" : "lossless_cd_16bit"
+        }
+        if bitrate >= 280 { return "lossy_320" }
+        if bitrate >= 220 { return "lossy_256" }
+        if bitrate >= 150 { return "lossy_192" }
+        if bitrate >= 100 { return "lossy_128" }
+        return "lossy_low"
+    }
+    
+    /// Sorts candidate streams from highest to lowest objective quality and deduplicates into at most `maxLevels` distinct quality tiers.
+    public static func selectTopDistinctQualityLevels(from streams: [StreamInfo], maxLevels: Int = 3) -> [StreamInfo] {
+        let sorted = streams.sorted { a, b in
+            if abs(a.qualityScore - b.qualityScore) > 0.01 {
+                return a.qualityScore > b.qualityScore
+            }
+            return a.bitrate > b.bitrate
+        }
+        var selected: [StreamInfo] = []
+        var seenTierKeys: Set<String> = []
+        var seenURLs: Set<String> = []
+        for stream in sorted {
+            let urlKey = stream.streamURL.absoluteString
+            guard !seenURLs.contains(urlKey) else { continue }
+            guard !seenTierKeys.contains(stream.qualityTierKey) else { continue }
+            seenURLs.insert(urlKey)
+            seenTierKeys.insert(stream.qualityTierKey)
+            selected.append(stream)
+            if selected.count >= maxLevels {
+                break
+            }
+        }
+        return selected
     }
 }
 
@@ -50,59 +220,122 @@ public actor StreamExtractor {
         trackId: String,
         title: String? = nil,
         artist: String? = nil,
+        album: String? = nil,
+        duration: TimeInterval? = nil,
         preferredQuality: AudioQuality = .high
     ) async throws -> StreamInfo {
+        let grouped = await extractRankedStreamCandidates(
+            trackId: trackId,
+            title: title,
+            artist: artist,
+            album: album,
+            duration: duration,
+            preferredQuality: preferredQuality
+        )
+        if let bestSource = grouped.first, let bestStream = bestSource.first {
+            return bestStream
+        }
+        throw URLError(.cannotFindHost)
+    }
+    
+    /// Resolves ranked stream candidates grouped by audio source:
+    /// - At most 3 sources total (primary source + up to 2 alternative sources) for the exact same recording and version.
+    /// - At most 3 distinct quality levels per source, sorted from highest objective quality to lowest.
+    public func extractRankedStreamCandidates(
+        trackId: String,
+        title: String? = nil,
+        artist: String? = nil,
+        album: String? = nil,
+        duration: TimeInterval? = nil,
+        preferredQuality: AudioQuality = .high
+    ) async -> [[StreamInfo]] {
         var effectiveVideoId = trackId
         
-        // If trackId is an alias or placeholder, resolve real YouTube 11-char videoId first
+        // If trackId is an alias or placeholder, resolve real YouTube 11-char videoId for the exact requested version first
         if effectiveVideoId.count != 11 || effectiveVideoId.hasPrefix("yt_") {
-            if let title = title, let resolvedId = await resolveYouTubeVideoId(title: title, artist: artist) {
+            if let title = title, let resolvedId = await resolveYouTubeVideoId(title: title, artist: artist, album: album, duration: duration) {
                 effectiveVideoId = resolvedId
             }
         }
         
-        // Strategy 0: Custom Addon Stream (e.g. SoundFean Qobuz Hi-Res FLAC)
+        var sourceGroups: [[StreamInfo]] = []
+        let maxSources = 3 // Primary source + maximum 2 alternative sources
+        let maxQualityLevelsPerSource = 3
+        
+        // Source 0: Custom Addon Stream (e.g. SoundFean Qobuz Hi-Res FLAC) for exact matching version
         let activeAddons = await MainActor.run {
             BitChordSettings.shared.addonSources.filter { $0.isEnabled && $0.resources.contains("stream") }
         }
         if let title = title {
             for addon in activeAddons {
-                if let addonStream = await AddonService.shared.resolveStream(trackTitle: title, artist: artist, addon: addon) {
-                    return addonStream
+                if sourceGroups.count >= maxSources { break }
+                let addonTiers = await AddonService.shared.resolveStreamTiers(
+                    trackTitle: title,
+                    artist: artist,
+                    album: album,
+                    duration: duration,
+                    addon: addon
+                )
+                let ranked = StreamInfo.selectTopDistinctQualityLevels(from: addonTiers, maxLevels: maxQualityLevelsPerSource)
+                if !ranked.isEmpty {
+                    sourceGroups.append(ranked)
                 }
             }
         }
         
-        // Strategy 1: Direct YouTube Innertube Player API (iOS Client - Full Length Audio)
-        if effectiveVideoId.count == 11, let direct = await extractViaYouTubeInnertube(trackId: effectiveVideoId) {
-            return direct
+        // Source 1: Direct YouTube Innertube Player API (iOS Client - Full Length Official Audio)
+        if sourceGroups.count < maxSources, effectiveVideoId.count == 11 {
+            let iosStreams = await extractTiersViaYouTubeInnertube(trackId: effectiveVideoId)
+            let ranked = StreamInfo.selectTopDistinctQualityLevels(from: iosStreams, maxLevels: maxQualityLevelsPerSource)
+            if !ranked.isEmpty {
+                sourceGroups.append(ranked)
+            }
         }
         
-        // Strategy 2: Direct YouTube Innertube Player API (Android Client - Full Length Audio)
-        if effectiveVideoId.count == 11, let androidStream = await extractViaYouTubeAndroid(trackId: effectiveVideoId) {
-            return androidStream
+        // Source 2: Direct YouTube Innertube Player API (Android Client - Full Length Official Audio)
+        if sourceGroups.count < maxSources, effectiveVideoId.count == 11 {
+            let androidStreams = await extractTiersViaYouTubeAndroid(trackId: effectiveVideoId)
+            let ranked = StreamInfo.selectTopDistinctQualityLevels(from: androidStreams, maxLevels: maxQualityLevelsPerSource)
+            if !ranked.isEmpty {
+                sourceGroups.append(ranked)
+            }
         }
         
-        // Strategy 3: Piped Audio Streams (Full Length Audio)
-        if effectiveVideoId.count == 11, let piped = await extractViaPiped(trackId: effectiveVideoId, preferredQuality: preferredQuality) {
-            return piped
+        // Source 3: Piped Audio Streams (Full Length Audio)
+        if sourceGroups.count < maxSources, effectiveVideoId.count == 11 {
+            let pipedStreams = await extractTiersViaPiped(trackId: effectiveVideoId)
+            let ranked = StreamInfo.selectTopDistinctQualityLevels(from: pipedStreams, maxLevels: maxQualityLevelsPerSource)
+            if !ranked.isEmpty {
+                sourceGroups.append(ranked)
+            }
         }
         
-        // Strategy 4: Invidious Audio Streams (Full Length Audio)
-        if effectiveVideoId.count == 11, let invidious = await extractViaInvidious(trackId: effectiveVideoId) {
-            return invidious
+        // Source 4: Invidious Audio Streams (Full Length Audio)
+        if sourceGroups.count < maxSources, effectiveVideoId.count == 11 {
+            let invidiousStreams = await extractTiersViaInvidious(trackId: effectiveVideoId)
+            let ranked = StreamInfo.selectTopDistinctQualityLevels(from: invidiousStreams, maxLevels: maxQualityLevelsPerSource)
+            if !ranked.isEmpty {
+                sourceGroups.append(ranked)
+            }
         }
         
-        throw URLError(.cannotFindHost)
+        return Array(sourceGroups.prefix(maxSources))
     }
     
-    // Resolve YouTube 11-char Video ID from search (Full-length official audio only)
-    private func resolveYouTubeVideoId(title: String, artist: String?) async -> String? {
-        if let ytMusicId = await YTMusicClient.shared.resolveYouTubeVideoId(title: title, artist: artist) {
+    // Resolve YouTube 11-char Video ID from search (Strict version matching + full-length official audio only)
+    private func resolveYouTubeVideoId(
+        title: String,
+        artist: String?,
+        album: String? = nil,
+        duration: TimeInterval? = nil
+    ) async -> String? {
+        if let ytMusicId = await YTMusicClient.shared.resolveYouTubeVideoId(title: title, artist: artist, album: album, duration: duration) {
             return ytMusicId
         }
         
-        let query = "\(title) \(artist ?? "") Official Audio".trimmingCharacters(in: .whitespacesAndNewlines)
+        let requestedVersion = TrackVersionMatcher.detectVersion(title: title, album: album)
+        let versionHint = requestedVersion == .studio ? "Official Audio" : requestedVersion.rawValue
+        let query = "\(title) \(artist ?? "") \(versionHint)".trimmingCharacters(in: .whitespacesAndNewlines)
         let body: [String: Any] = [
             "context": [
                 "client": [
@@ -129,6 +362,9 @@ public actor StreamExtractor {
             return nil
         }
         
+        var bestVideoId: String? = nil
+        var bestScore: Double = -1
+        
         if let contents = json["contents"] as? [String: Any],
            let sectionList = contents["sectionListRenderer"] as? [String: Any],
            let sections = sectionList["contents"] as? [[String: Any]] {
@@ -138,25 +374,54 @@ public actor StreamExtractor {
                     for item in contentsArray {
                         if let videoRenderer = item["videoRenderer"] as? [String: Any],
                            let vId = videoRenderer["videoId"] as? String, vId.count == 11 {
-                            // Verify duration is not a short/teaser (< 60s)
+                            var candidateDuration: TimeInterval? = nil
                             if let lengthText = (videoRenderer["lengthText"] as? [String: Any])?["simpleText"] as? String {
                                 let parts = lengthText.split(separator: ":")
-                                if parts.count == 2, let m = Int(parts[0]), let s = Int(parts[1]), (m * 60 + s) < 60 {
-                                    continue
+                                if parts.count == 2, let m = Double(parts[0]), let s = Double(parts[1]) {
+                                    candidateDuration = m * 60 + s
+                                } else if parts.count == 3, let h = Double(parts[0]), let m = Double(parts[1]), let s = Double(parts[2]) {
+                                    candidateDuration = h * 3600 + m * 60 + s
                                 }
                             }
-                            return vId
+                            if let dur = candidateDuration, dur > 0 && dur < 60 {
+                                continue
+                            }
+                            let candidateTitle = ((videoRenderer["title"] as? [String: Any])?["runs"] as? [[String: Any]])?.first?["text"] as? String ?? ""
+                            let candidateChannel = ((videoRenderer["ownerText"] as? [String: Any])?["runs"] as? [[String: Any]])?.first?["text"] as? String
+                                ?? ((videoRenderer["longBylineText"] as? [String: Any])?["runs"] as? [[String: Any]])?.first?["text"] as? String
+                                ?? ""
+                            
+                            if let score = TrackVersionMatcher.matchScore(
+                                requestedTitle: title,
+                                requestedArtist: artist ?? "",
+                                requestedAlbum: album,
+                                requestedDuration: duration,
+                                candidateTitle: candidateTitle,
+                                candidateArtist: candidateChannel,
+                                candidateAlbum: nil,
+                                candidateSubtitle: candidateChannel,
+                                candidateDuration: candidateDuration
+                            ) {
+                                if score > bestScore {
+                                    bestScore = score
+                                    bestVideoId = vId
+                                }
+                            }
                         }
                     }
                 }
             }
         }
-        return nil
+        return bestVideoId
     }
     
     // MARK: - 1. Direct YouTube Innertube (iOS Client with Public Key)
     private func extractViaYouTubeInnertube(trackId: String) async -> StreamInfo? {
-        guard let url = URL(string: "https://www.youtube.com/youtubei/v1/player?key=\(innertubeKey)") else { return nil }
+        return await extractTiersViaYouTubeInnertube(trackId: trackId).first
+    }
+    
+    private func extractTiersViaYouTubeInnertube(trackId: String) async -> [StreamInfo] {
+        guard let url = URL(string: "https://www.youtube.com/youtubei/v1/player?key=\(innertubeKey)") else { return [] }
         
         let body: [String: Any] = [
             "context": [
@@ -191,41 +456,38 @@ public actor StreamExtractor {
               let http = response as? HTTPURLResponse, http.statusCode == 200,
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let streamingData = json["streamingData"] as? [String: Any] else {
-            return nil
+            return []
         }
         
         // Reject short clips / teasers (< 60s)
         if let videoDetails = json["videoDetails"] as? [String: Any],
            let lengthStr = videoDetails["lengthSeconds"] as? String,
            let lengthSec = Int(lengthStr), lengthSec > 0 && lengthSec < 60 {
-            return nil
+            return []
         }
         
-        // Parse adaptiveFormats (sorted by highest bitrate)
+        var candidates: [StreamInfo] = []
+        
+        // Parse adaptiveFormats
         if let adaptiveFormats = streamingData["adaptiveFormats"] as? [[String: Any]] {
-            let audioStreams = adaptiveFormats.filter { format in
-                let mime = format["mimeType"] as? String ?? ""
-                return mime.contains("audio") && format["url"] != nil
-            }
-            
-            let sorted = audioStreams.sorted {
-                let b1 = $0["bitrate"] as? Int ?? 0
-                let b2 = $1["bitrate"] as? Int ?? 0
-                return b1 > b2
-            }
-            
-            if let best = sorted.first,
-               let urlString = best["url"] as? String,
-               let streamURL = URL(string: urlString) {
-                let bitrate = (best["bitrate"] as? Int ?? 256000) / 1000
-                let mime = best["mimeType"] as? String ?? "audio/mp4"
-                let sampleRate = Double(best["audioSampleRate"] as? String ?? "44100") ?? 44100
-                return StreamInfo(
-                    streamURL: streamURL,
-                    format: mime,
-                    bitrate: bitrate,
-                    isLossless: false,
-                    sampleRate: sampleRate
+            for fmt in adaptiveFormats {
+                let mime = fmt["mimeType"] as? String ?? ""
+                guard mime.contains("audio"),
+                      let urlString = fmt["url"] as? String,
+                      let streamURL = URL(string: urlString) else { continue }
+                let rawBitrate = fmt["bitrate"] as? Int ?? fmt["averageBitrate"] as? Int ?? 128000
+                let bitrate = max(32, rawBitrate / 1000)
+                let sampleRate = Double(fmt["audioSampleRate"] as? String ?? "44100") ?? 44100
+                candidates.append(
+                    StreamInfo(
+                        streamURL: streamURL,
+                        format: mime,
+                        bitrate: bitrate,
+                        isLossless: false,
+                        sampleRate: sampleRate,
+                        sourceId: "yt_innertube_ios",
+                        sourceIsDirect: true
+                    )
                 )
             }
         }
@@ -233,23 +495,52 @@ public actor StreamExtractor {
         // Check HLS manifest
         if let hlsManifest = streamingData["hlsManifestUrl"] as? String,
            let hlsURL = URL(string: hlsManifest) {
-            return StreamInfo(streamURL: hlsURL, format: "application/x-mpegURL", bitrate: 256, isLossless: false)
+            candidates.append(
+                StreamInfo(
+                    streamURL: hlsURL,
+                    format: "application/x-mpegURL",
+                    codec: "aac",
+                    bitrate: 256,
+                    isLossless: false,
+                    sampleRate: 44100,
+                    sourceId: "yt_innertube_ios",
+                    sourceIsDirect: true
+                )
+            )
         }
         
         // Fallback to combined formats
-        if let formats = streamingData["formats"] as? [[String: Any]],
-           let firstFormat = formats.first,
-           let urlString = firstFormat["url"] as? String,
-           let streamURL = URL(string: urlString) {
-            return StreamInfo(streamURL: streamURL, format: "video/mp4", bitrate: 128)
+        if let formats = streamingData["formats"] as? [[String: Any]] {
+            for fmt in formats {
+                guard let urlString = fmt["url"] as? String,
+                      let streamURL = URL(string: urlString) else { continue }
+                let rawBitrate = fmt["bitrate"] as? Int ?? 128000
+                let bitrate = max(64, min(192, rawBitrate / 1000))
+                candidates.append(
+                    StreamInfo(
+                        streamURL: streamURL,
+                        format: "video/mp4",
+                        codec: "aac",
+                        bitrate: bitrate,
+                        isLossless: false,
+                        sampleRate: 44100,
+                        sourceId: "yt_innertube_ios",
+                        sourceIsDirect: true
+                    )
+                )
+            }
         }
         
-        return nil
+        return StreamInfo.selectTopDistinctQualityLevels(from: candidates, maxLevels: 3)
     }
     
     // MARK: - 1b. Direct YouTube Innertube (Android Client - Full Length Audio)
     private func extractViaYouTubeAndroid(trackId: String) async -> StreamInfo? {
-        guard let url = URL(string: "https://www.youtube.com/youtubei/v1/player?key=\(innertubeKey)") else { return nil }
+        return await extractTiersViaYouTubeAndroid(trackId: trackId).first
+    }
+    
+    private func extractTiersViaYouTubeAndroid(trackId: String) async -> [StreamInfo] {
+        guard let url = URL(string: "https://www.youtube.com/youtubei/v1/player?key=\(innertubeKey)") else { return [] }
         
         let body: [String: Any] = [
             "context": [
@@ -275,44 +566,48 @@ public actor StreamExtractor {
               let http = response as? HTTPURLResponse, http.statusCode == 200,
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let streamingData = json["streamingData"] as? [String: Any] else {
-            return nil
+            return []
         }
         
         // Reject short clips / teasers (< 60s)
         if let videoDetails = json["videoDetails"] as? [String: Any],
            let lengthStr = videoDetails["lengthSeconds"] as? String,
            let lengthSec = Int(lengthStr), lengthSec > 0 && lengthSec < 60 {
-            return nil
+            return []
         }
         
+        var candidates: [StreamInfo] = []
         if let adaptiveFormats = streamingData["adaptiveFormats"] as? [[String: Any]] {
-            let audioStreams = adaptiveFormats.filter { format in
-                let mime = format["mimeType"] as? String ?? ""
-                return mime.contains("audio") && format["url"] != nil
-            }.sorted {
-                let b1 = $0["bitrate"] as? Int ?? 0
-                let b2 = $1["bitrate"] as? Int ?? 0
-                return b1 > b2
-            }
-            if let best = audioStreams.first,
-               let urlString = best["url"] as? String,
-               let streamURL = URL(string: urlString) {
-                let bitrate = (best["bitrate"] as? Int ?? 256000) / 1000
-                let sampleRate = Double(best["audioSampleRate"] as? String ?? "44100") ?? 44100
-                return StreamInfo(
-                    streamURL: streamURL,
-                    format: "audio/mp4",
-                    bitrate: bitrate,
-                    isLossless: false,
-                    sampleRate: sampleRate
+            for fmt in adaptiveFormats {
+                let mime = fmt["mimeType"] as? String ?? ""
+                guard mime.contains("audio"),
+                      let urlString = fmt["url"] as? String,
+                      let streamURL = URL(string: urlString) else { continue }
+                let rawBitrate = fmt["bitrate"] as? Int ?? fmt["averageBitrate"] as? Int ?? 128000
+                let bitrate = max(32, rawBitrate / 1000)
+                let sampleRate = Double(fmt["audioSampleRate"] as? String ?? "44100") ?? 44100
+                candidates.append(
+                    StreamInfo(
+                        streamURL: streamURL,
+                        format: mime.isEmpty ? "audio/mp4" : mime,
+                        bitrate: bitrate,
+                        isLossless: false,
+                        sampleRate: sampleRate,
+                        sourceId: "yt_innertube_android",
+                        sourceIsDirect: true
+                    )
                 )
             }
         }
-        return nil
+        return StreamInfo.selectTopDistinctQualityLevels(from: candidates, maxLevels: 3)
     }
     
     // MARK: - 2. Piped Streams
     private func extractViaPiped(trackId: String, preferredQuality: AudioQuality) async -> StreamInfo? {
+        return await extractTiersViaPiped(trackId: trackId).first
+    }
+    
+    private func extractTiersViaPiped(trackId: String) async -> [StreamInfo] {
         for instance in pipedInstances {
             guard let url = URL(string: "\(instance)/streams/\(trackId)") else { continue }
             var request = URLRequest(url: url)
@@ -325,29 +620,51 @@ public actor StreamExtractor {
                 continue
             }
             
-            let sorted = audioStreams.sorted {
-                let b1 = $0["bitrate"] as? Int ?? 0
-                let b2 = $1["bitrate"] as? Int ?? 0
-                return b1 > b2
+            if let dur = json["duration"] as? Int, dur > 0 && dur < 60 {
+                continue
             }
             
-            if let best = sorted.first,
-               let urlString = best["url"] as? String,
-               let streamURL = URL(string: urlString) {
-                let bitrate = (best["bitrate"] as? Int ?? 256000) / 1000
-                return StreamInfo(
-                    streamURL: streamURL,
-                    format: best["mimeType"] as? String ?? "audio/mp4",
-                    bitrate: bitrate,
-                    isLossless: preferredQuality == .lossless
+            var candidates: [StreamInfo] = []
+            for stream in audioStreams {
+                guard let urlString = stream["url"] as? String,
+                      let streamURL = URL(string: urlString) else { continue }
+                let rawBitrate = stream["bitrate"] as? Int ?? 128000
+                let bitrate = rawBitrate > 1000 ? rawBitrate / 1000 : rawBitrate
+                let mime = stream["mimeType"] as? String ?? "audio/mp4"
+                let codec = stream["codec"] as? String
+                // Never claim lossless unless the actual format/codec is genuinely lossless
+                let isGenuineLossless = StreamInfo.evaluateGenuineLossless(
+                    format: mime,
+                    codec: StreamInfo.detectCodec(from: mime, explicitCodec: codec),
+                    claimedLossless: false
+                )
+                candidates.append(
+                    StreamInfo(
+                        streamURL: streamURL,
+                        format: mime,
+                        codec: codec,
+                        bitrate: max(32, bitrate),
+                        isLossless: isGenuineLossless,
+                        sampleRate: 48000,
+                        sourceId: "piped",
+                        sourceIsDirect: false
+                    )
                 )
             }
+            let ranked = StreamInfo.selectTopDistinctQualityLevels(from: candidates, maxLevels: 3)
+            if !ranked.isEmpty {
+                return ranked
+            }
         }
-        return nil
+        return []
     }
     
     // MARK: - 3. Invidious Streams
     private func extractViaInvidious(trackId: String) async -> StreamInfo? {
+        return await extractTiersViaInvidious(trackId: trackId).first
+    }
+    
+    private func extractTiersViaInvidious(trackId: String) async -> [StreamInfo] {
         for instance in invidiousInstances {
             guard let url = URL(string: "\(instance)/api/v1/videos/\(trackId)") else { continue }
             var request = URLRequest(url: url)
@@ -359,15 +676,39 @@ public actor StreamExtractor {
                 continue
             }
             
+            if let lengthSec = json["lengthSeconds"] as? Int, lengthSec > 0 && lengthSec < 60 {
+                continue
+            }
+            
+            var candidates: [StreamInfo] = []
             if let adaptiveFormats = json["adaptiveFormats"] as? [[String: Any]] {
-                let audioFormats = adaptiveFormats.filter { ($0["type"] as? String ?? "").contains("audio") }
-                if let first = audioFormats.first,
-                   let urlString = first["url"] as? String,
-                   let streamURL = URL(string: urlString) {
-                    return StreamInfo(streamURL: streamURL, format: first["type"] as? String ?? "audio/mp4", bitrate: 128)
+                for fmt in adaptiveFormats {
+                    let mime = fmt["type"] as? String ?? ""
+                    guard mime.contains("audio"),
+                          let urlString = fmt["url"] as? String,
+                          let streamURL = URL(string: urlString) else { continue }
+                    let bitrateStr = fmt["bitrate"] as? String ?? "128000"
+                    let rawBitrate = Int(bitrateStr) ?? (fmt["bitrate"] as? Int) ?? 128000
+                    let bitrate = rawBitrate > 1000 ? rawBitrate / 1000 : rawBitrate
+                    let sampleRate = Double(fmt["audioSampleRate"] as? String ?? "44100") ?? 44100
+                    candidates.append(
+                        StreamInfo(
+                            streamURL: streamURL,
+                            format: mime,
+                            bitrate: max(32, bitrate),
+                            isLossless: false,
+                            sampleRate: sampleRate,
+                            sourceId: "invidious",
+                            sourceIsDirect: false
+                        )
+                    )
                 }
             }
+            let ranked = StreamInfo.selectTopDistinctQualityLevels(from: candidates, maxLevels: 3)
+            if !ranked.isEmpty {
+                return ranked
+            }
         }
-        return nil
+        return []
     }
 }
