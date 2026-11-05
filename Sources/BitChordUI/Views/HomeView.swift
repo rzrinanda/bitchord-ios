@@ -24,7 +24,8 @@ public struct HomeView: View {
             album: "Taman Langit",
             duration: 218,
             artworkURL: URL(string: "https://i.ytimg.com/vi/IqxdiPd_q40/hqdefault.jpg"),
-            isLossless: true
+            isLossless: false,
+            source: .youtube
         ),
         Track(
             id: "utgn0LCDirk",
@@ -33,7 +34,8 @@ public struct HomeView: View {
             album: "19",
             duration: 312,
             artworkURL: URL(string: "https://i.ytimg.com/vi/utgn0LCDirk/hqdefault.jpg"),
-            isLossless: true
+            isLossless: false,
+            source: .youtube
         ),
         Track(
             id: "b0ZBBjViV8Y",
@@ -42,7 +44,8 @@ public struct HomeView: View {
             album: "Seperti Seharusnya",
             duration: 268,
             artworkURL: URL(string: "https://i.ytimg.com/vi/b0ZBBjViV8Y/hqdefault.jpg"),
-            isLossless: true
+            isLossless: false,
+            source: .youtube
         ),
         Track(
             id: "CNbmVEEW-mA",
@@ -51,7 +54,8 @@ public struct HomeView: View {
             album: "Taman Langit",
             duration: 198,
             artworkURL: URL(string: "https://i.ytimg.com/vi/CNbmVEEW-mA/hqdefault.jpg"),
-            isLossless: true
+            isLossless: false,
+            source: .youtube
         ),
         Track(
             id: "34Na4j8AVgA",
@@ -60,7 +64,8 @@ public struct HomeView: View {
             album: "Starboy",
             duration: 230,
             artworkURL: URL(string: "https://i.ytimg.com/vi/34Na4j8AVgA/hqdefault.jpg"),
-            isLossless: true
+            isLossless: false,
+            source: .youtube
         ),
         Track(
             id: "5NV6Rdv1a3I",
@@ -69,7 +74,8 @@ public struct HomeView: View {
             album: "Random Access Memories",
             duration: 248,
             artworkURL: URL(string: "https://i.ytimg.com/vi/5NV6Rdv1a3I/hqdefault.jpg"),
-            isLossless: true
+            isLossless: false,
+            source: .youtube
         ),
         Track(
             id: "N43bVhtyVt4",
@@ -78,7 +84,8 @@ public struct HomeView: View {
             album: "Bintang Lima",
             duration: 243,
             artworkURL: URL(string: "https://i.ytimg.com/vi/N43bVhtyVt4/hqdefault.jpg"),
-            isLossless: true
+            isLossless: false,
+            source: .youtube
         ),
         Track(
             id: "4NRXx6U8ABQ",
@@ -87,7 +94,8 @@ public struct HomeView: View {
             album: "After Hours",
             duration: 200,
             artworkURL: URL(string: "https://i.ytimg.com/vi/4NRXx6U8ABQ/hqdefault.jpg"),
-            isLossless: true
+            isLossless: false,
+            source: .youtube
         )
     ]
     
@@ -100,7 +108,8 @@ public struct HomeView: View {
             album: "Single • 2026",
             duration: 251,
             artworkURL: URL(string: "https://i.ytimg.com/vi/kPa7bsKwL-c/hqdefault.jpg"),
-            isLossless: true
+            isLossless: false,
+            source: .youtube
         ),
         Track(
             id: "V9PVRfjEBTI",
@@ -109,7 +118,8 @@ public struct HomeView: View {
             album: "HIT ME HARD AND SOFT",
             duration: 210,
             artworkURL: URL(string: "https://i.ytimg.com/vi/V9PVRfjEBTI/hqdefault.jpg"),
-            isLossless: true
+            isLossless: false,
+            source: .youtube
         ),
         Track(
             id: "eVli-tstM5E",
@@ -118,7 +128,8 @@ public struct HomeView: View {
             album: "Short n' Sweet",
             duration: 175,
             artworkURL: URL(string: "https://i.ytimg.com/vi/eVli-tstM5E/hqdefault.jpg"),
-            isLossless: true
+            isLossless: false,
+            source: .youtube
         ),
         Track(
             id: "H5v3kku4y6Q",
@@ -127,7 +138,8 @@ public struct HomeView: View {
             album: "Harry's House",
             duration: 167,
             artworkURL: URL(string: "https://i.ytimg.com/vi/H5v3kku4y6Q/hqdefault.jpg"),
-            isLossless: true
+            isLossless: false,
+            source: .youtube
         ),
         Track(
             id: "34Na4j8AVgA",
@@ -136,7 +148,8 @@ public struct HomeView: View {
             album: "Album • Hi-Res",
             duration: 230,
             artworkURL: URL(string: "https://i.ytimg.com/vi/34Na4j8AVgA/hqdefault.jpg"),
-            isLossless: true
+            isLossless: false,
+            source: .youtube
         )
     ]
     
@@ -149,7 +162,8 @@ public struct HomeView: View {
             album: "Bintang Lima",
             duration: 243,
             artworkURL: URL(string: "https://i.ytimg.com/vi/N43bVhtyVt4/hqdefault.jpg"),
-            isLossless: true
+            isLossless: false,
+            source: .youtube
         ),
         Track(
             id: "CNbmVEEW-mA",
@@ -158,7 +172,8 @@ public struct HomeView: View {
             album: "Taman Langit",
             duration: 198,
             artworkURL: URL(string: "https://i.ytimg.com/vi/CNbmVEEW-mA/hqdefault.jpg"),
-            isLossless: true
+            isLossless: false,
+            source: .youtube
         ),
         Track(
             id: "5NV6Rdv1a3I",
@@ -167,7 +182,8 @@ public struct HomeView: View {
             album: "Random Access Memories",
             duration: 248,
             artworkURL: URL(string: "https://i.ytimg.com/vi/5NV6Rdv1a3I/hqdefault.jpg"),
-            isLossless: true
+            isLossless: false,
+            source: .youtube
         ),
         Track(
             id: "fJ9rUzIMcZQ",
@@ -176,7 +192,8 @@ public struct HomeView: View {
             album: "A Night at the Opera",
             duration: 354,
             artworkURL: URL(string: "https://i.ytimg.com/vi/fJ9rUzIMcZQ/hqdefault.jpg"),
-            isLossless: true
+            isLossless: false,
+            source: .youtube
         ),
         Track(
             id: "hTWKbfoikeg",
@@ -185,7 +202,8 @@ public struct HomeView: View {
             album: "Nevermind",
             duration: 301,
             artworkURL: URL(string: "https://i.ytimg.com/vi/hTWKbfoikeg/hqdefault.jpg"),
-            isLossless: true
+            isLossless: false,
+            source: .youtube
         )
     ]
     

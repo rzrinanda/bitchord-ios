@@ -846,6 +846,62 @@ func runAllTests() async {
         assertTest(bestVideoAudio?.isIOSAVPlayerCompatible == true, "YouTube Video Audio: Top extracted stream is natively compatible with iOS AVPlayer (audio/mp4 AAC)")
     }
     
+    // MARK: - Test 20: Addon Quality Upgrade & YouTube Default Playback for Home & Explore
+    do {
+        let engine = AudioPlayerEngine.shared
+        
+        // 1. Home / Explore track has source .youtube by default and isLossless == false
+        let homeTrack = Track(
+            id: "IqxdiPd_q40",
+            title: "Mimpi Yang Sempurna",
+            artist: "NOAH",
+            album: "Taman Langit",
+            duration: 218,
+            source: .youtube
+        )
+        assertTest(homeTrack.source == .youtube, "Home/Explore Default: Track source defaults to .youtube")
+        assertTest(!homeTrack.isLossless, "Home/Explore Default: Initial YouTube track isLossless is false")
+        
+        // 2. Play track via engine
+        engine.setQueue([homeTrack], startIndex: 0)
+        assertTest(engine.currentTrack?.source == .youtube, "Engine Queue: Currently loaded track has source .youtube")
+        assertTest(engine.availableQualityUpgrade == nil, "Quality Upgrade: Initially nil before addon search completes")
+        
+        // 3. Simulate addon returning a Hi-Res FLAC stream
+        let mockAddonStream = StreamInfo(
+            streamURL: URL(string: "https://example.com/stream/flac/noah_hi_res.flac")!,
+            format: "flac",
+            codec: "flac",
+            bitrate: 4608,
+            isLossless: true,
+            sampleRate: 96000,
+            bitDepth: 24,
+            sourceId: "addon_dev.bitperfect.qobuz",
+            sourceIsDirect: true
+        )
+        let upgradeInfo = QualityUpgradeInfo(
+            addonId: "dev.bitperfect.qobuz",
+            addonName: "Qobuz Lossless",
+            streamInfo: mockAddonStream,
+            badge: "Hi-Res Lossless 24-bit/96.0 kHz"
+        )
+        engine.setAvailableQualityUpgrade(upgradeInfo)
+        assertTest(engine.availableQualityUpgrade != nil, "Quality Upgrade: Upgrade offer is present and detected")
+        assertTest(engine.availableQualityUpgrade?.badge.contains("Hi-Res") == true, "Quality Upgrade: Badge indicates Hi-Res audio")
+        assertTest(engine.availableQualityUpgrade?.addonName == "Qobuz Lossless", "Quality Upgrade: Contains addon name 'Qobuz Lossless'")
+        
+        // 4. User triggers upgrade to higher quality stream from addon
+        engine.currentTime = 42.0 // User has listened to 42 seconds
+        engine.upgradeToAvailableQuality()
+        
+        assertTest(engine.currentTrack?.source == .addon, "Quality Upgrade: Track source switched to .addon")
+        assertTest(engine.currentTrack?.isLossless == true, "Quality Upgrade: Track isLossless is now true")
+        assertTest(engine.currentTrack?.bitDepth == 24, "Quality Upgrade: Track bitDepth is 24-bit")
+        assertTest(engine.currentTrack?.sampleRate == 96000, "Quality Upgrade: Track sampleRate is 96.0 kHz")
+        assertTest(engine.currentTrack?.audioBadge == "HI-RES LOSSLESS 24-bit/96.0 kHz", "Quality Upgrade: Audio badge shows Hi-Res Lossless")
+        assertTest(engine.availableQualityUpgrade == nil, "Quality Upgrade: Offer dismissed after successful upgrade")
+    }
+    
     print("==================================================")
     print("🏁 Test Results: \(passed) Passed, \(failed) Failed")
     print("==================================================")

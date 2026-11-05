@@ -242,6 +242,21 @@ public struct PlaybackFallbackCoordinator: Sendable {
     }
 }
 
+// MARK: - Quality Upgrade Info (Prompt to switch from YouTube to Addon Lossless / Hi-Res)
+public struct QualityUpgradeInfo: Equatable, Sendable {
+    public let addonId: String
+    public let addonName: String
+    public let streamInfo: StreamInfo
+    public let badge: String
+    
+    public init(addonId: String, addonName: String, streamInfo: StreamInfo, badge: String) {
+        self.addonId = addonId
+        self.addonName = addonName
+        self.streamInfo = streamInfo
+        self.badge = badge
+    }
+}
+
 @MainActor
 public final class AudioPlayerEngine: ObservableObject {
     public static let shared = AudioPlayerEngine()
@@ -260,6 +275,7 @@ public final class AudioPlayerEngine: ObservableObject {
     @Published public var automixEnabled: Bool = false
     @Published public var isAutoPlayEnabled: Bool = true
     @Published public var skipSilenceEnabled: Bool = false
+    @Published public private(set) var availableQualityUpgrade: QualityUpgradeInfo? = nil
     
     // Queue & Modes
     @Published public private(set) var queue: [Track] = []
@@ -270,6 +286,7 @@ public final class AudioPlayerEngine: ObservableObject {
     public private(set) var sessionPlayedTrackIds: Set<String> = []
     public private(set) var activeFallbackCoordinator: PlaybackFallbackCoordinator? = nil
     private var startupWatchdogTask: Task<Void, Never>? = nil
+    private var addonQualitySearchTask: Task<Void, Never>? = nil
     private var hasRenderedAudioForCurrentAttempt: Bool = false
     private var playbackRequestId: UInt64 = 0
     
@@ -757,12 +774,28 @@ public final class AudioPlayerEngine: ObservableObject {
         let requestId = playbackRequestId
         startupWatchdogTask?.cancel()
         startupWatchdogTask = nil
+        addonQualitySearchTask?.cancel()
+        addonQualitySearchTask = nil
+        availableQualityUpgrade = nil
         hasRenderedAudioForCurrentAttempt = false
         playbackErrorMessage = nil
         activeFallbackCoordinator = nil
         
         queueIndex = index
-        let track = queue[index]
+        var track = queue[index]
+        if track.source == nil {
+            if track.id.hasPrefix("local_") {
+                track.source = .library
+            } else if track.id.hasPrefix("addon_") {
+                track.source = .addon
+            } else {
+                track.source = .youtube
+            }
+        }
+        if track.source == .youtube && !track.id.hasPrefix("addon_") {
+            track.isLossless = false
+        }
+        self.queue[index] = track
         self.currentTrack = track
         self.sessionPlayedTrackIds.insert(track.id)
         self.duration = track.duration
@@ -906,39 +939,45 @@ public final class AudioPlayerEngine: ObservableObject {
             self.status = .loading
             self.updateNowPlayingInfo()
             
+            let targetTrack = track
             let targetTrackId = track.id
             
-            // If user did NOT explicitly select YouTube as the exclusive source and has an enabled Hi-Res Addon,
-            // only upgrade to AVPlayer when the stream is a genuine non-googlevideo Addon stream
-            if track.source != .youtube {
-                let activeStreamAddons = BitChordSettings.shared.addonSources.filter { $0.isEnabled && $0.resources.contains("stream") }
-                if !activeStreamAddons.isEmpty {
-                    Task { @MainActor [weak self] in
-                        guard let self = self, self.playbackRequestId == requestId else { return }
-                        for addon in activeStreamAddons {
-                            let tiers = await AddonService.shared.resolveStreamTiers(
-                                trackTitle: track.title,
-                                artist: track.artist,
-                                album: track.album,
-                                duration: track.duration,
-                                addon: addon
-                            )
-                            if let addonStream = tiers.first,
-                               !(addonStream.streamURL.host?.lowercased().contains("googlevideo.com") ?? false) {
-                                guard self.playbackRequestId == requestId, self.currentTrack?.id == targetTrackId else { return }
-                                var updated = track
-                                updated.streamURL = addonStream.streamURL
-                                updated.isLossless = addonStream.isGenuineLossless
-                                updated.sampleRate = addonStream.sampleRate
-                                updated.bitDepth = addonStream.bitDepth
-                                self.currentTrack = updated
-                                if self.queueIndex < self.queue.count && self.queue[self.queueIndex].id == targetTrackId {
-                                    self.queue[self.queueIndex] = updated
+            // Asynchronously check configured addons for higher quality (Lossless FLAC / Hi-Res)
+            // When found, prompts the user with an "Upgrade Quality" button instead of hijacking playback
+            let activeStreamAddons = BitChordSettings.shared.addonSources.filter { $0.isEnabled && $0.resources.contains("stream") }
+            if !activeStreamAddons.isEmpty {
+                addonQualitySearchTask = Task { @MainActor [weak self] in
+                    guard let self = self, self.playbackRequestId == requestId else { return }
+                    for addon in activeStreamAddons {
+                        let tiers = await AddonService.shared.resolveStreamTiers(
+                            trackTitle: targetTrack.title,
+                            artist: targetTrack.artist,
+                            album: targetTrack.album,
+                            duration: targetTrack.duration,
+                            addon: addon
+                        )
+                        if let addonStream = tiers.first,
+                           !(addonStream.streamURL.host?.lowercased().contains("googlevideo.com") ?? false) {
+                            guard self.playbackRequestId == requestId, self.currentTrack?.id == targetTrackId else { return }
+                            
+                            let badge: String
+                            if addonStream.isGenuineLossless {
+                                if let depth = addonStream.bitDepth, let rate = addonStream.sampleRate, rate > 48000 {
+                                    badge = String(format: "Hi-Res %d-bit/%.1f kHz", depth, rate / 1000.0)
+                                } else {
+                                    badge = "Lossless FLAC"
                                 }
-                                let currentPos = self.currentTime
-                                self.startPlaying(url: addonStream.streamURL, for: updated, initialSeek: currentPos > 0 ? currentPos : startPos)
-                                return
+                            } else {
+                                badge = "\(addonStream.bitrate) kbps \(addonStream.codec.uppercased())"
                             }
+                            
+                            self.availableQualityUpgrade = QualityUpgradeInfo(
+                                addonId: addon.id,
+                                addonName: addon.name,
+                                streamInfo: addonStream,
+                                badge: badge
+                            )
+                            return
                         }
                     }
                 }
@@ -1506,6 +1545,37 @@ public final class AudioPlayerEngine: ObservableObject {
                 }
             }
         }
+    }
+    
+    // MARK: - Quality Upgrade Action
+    public func upgradeToAvailableQuality() {
+        guard let upgrade = availableQualityUpgrade,
+              var track = currentTrack else { return }
+        
+        let currentPos = self.currentTime
+        let stream = upgrade.streamInfo
+        
+        track.streamURL = stream.streamURL
+        track.isLossless = stream.isGenuineLossless
+        track.sampleRate = stream.sampleRate
+        track.bitDepth = stream.bitDepth
+        track.source = .addon
+        track.sourceId = upgrade.addonId
+        
+        self.currentTrack = track
+        if queueIndex >= 0 && queueIndex < queue.count {
+            queue[queueIndex] = track
+        }
+        
+        self.availableQualityUpgrade = nil
+        
+        YouTubeAudioBridge.shared.pause()
+        self.startPlaying(url: stream.streamURL, for: track, initialSeek: currentPos > 0 ? currentPos : 0)
+        self.updateNowPlayingInfo()
+    }
+    
+    public func setAvailableQualityUpgrade(_ upgrade: QualityUpgradeInfo?) {
+        self.availableQualityUpgrade = upgrade
     }
     
     public func seek(to time: TimeInterval) {

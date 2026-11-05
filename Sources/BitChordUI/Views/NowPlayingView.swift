@@ -144,6 +144,34 @@ public struct NowPlayingView: View {
                                 .buttonStyle(.plain)
                             }
                             .padding(.horizontal, 24)
+                            
+                            // Quality Upgrade Pill for Synced Lyrics mode
+                            if let upgrade = engine.availableQualityUpgrade {
+                                Button {
+                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                                        engine.upgradeToAvailableQuality()
+                                    }
+                                } label: {
+                                    HStack(spacing: 5) {
+                                        Image(systemName: "sparkles")
+                                            .font(.system(size: 11, weight: .bold))
+                                            .foregroundColor(.yellow)
+                                        Text("Upgrade Quality: \(upgrade.badge)")
+                                            .font(.system(size: 11, weight: .semibold))
+                                            .foregroundColor(.cyan)
+                                        Image(systemName: "arrow.up.circle.fill")
+                                            .font(.system(size: 12))
+                                            .foregroundColor(.cyan)
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 4)
+                                    .background(Color.cyan.opacity(0.18))
+                                    .clipShape(Capsule())
+                                }
+                                .buttonStyle(.plain)
+                                .padding(.horizontal, 24)
+                                .padding(.top, 2)
+                            }
                         }
                         .padding(.bottom, 4)
                         .contentShape(Rectangle())
@@ -458,6 +486,89 @@ public struct NowPlayingView: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        
+                        // MARK: - Quality Upgrade Banner (Prompts to switch to Lossless/Hi-Res Addon)
+                        if let upgrade = engine.availableQualityUpgrade {
+                            Button {
+                                withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                                    engine.upgradeToAvailableQuality()
+                                }
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "sparkles")
+                                        .font(.system(size: 13, weight: .bold))
+                                        .foregroundColor(.yellow)
+                                    
+                                    Text("Upgrade Quality")
+                                        .font(.system(size: 13, weight: .bold))
+                                        .foregroundColor(.white)
+                                    
+                                    Text("• \(upgrade.badge)")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundColor(.cyan)
+                                    
+                                    Text("(\(upgrade.addonName))")
+                                        .font(.system(size: 11, weight: .regular))
+                                        .foregroundColor(.white.opacity(0.7))
+                                        .lineLimit(1)
+                                    
+                                    Spacer()
+                                    
+                                    HStack(spacing: 4) {
+                                        Text("Switch")
+                                            .font(.system(size: 12, weight: .bold))
+                                            .foregroundColor(.white)
+                                        Image(systemName: "arrow.up.circle.fill")
+                                            .font(.system(size: 15, weight: .bold))
+                                            .foregroundColor(.cyan)
+                                    }
+                                }
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .fill(Color(red: 0.12, green: 0.15, blue: 0.22).opacity(0.92))
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .stroke(
+                                            LinearGradient(
+                                                colors: [Color.cyan.opacity(0.8), Color.purple.opacity(0.5)],
+                                                startPoint: .leading,
+                                                endPoint: .trailing
+                                            ),
+                                            lineWidth: 1
+                                        )
+                                )
+                                .shadow(color: .cyan.opacity(0.25), radius: 8, x: 0, y: 2)
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.horizontal, 28)
+                            .padding(.top, 4)
+                            .padding(.bottom, 2)
+                            .transition(.scale.combined(with: .opacity))
+                        } else if track.source == .addon || track.isLossless {
+                            HStack(spacing: 6) {
+                                Image(systemName: "checkmark.seal.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.cyan)
+                                Text(track.audioBadge)
+                                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                    .foregroundColor(.cyan)
+                                if let src = track.sourceId {
+                                    Text("• \(src.replacingOccurrences(of: "addon_", with: ""))")
+                                        .font(.system(size: 11, weight: .regular))
+                                        .foregroundColor(.white.opacity(0.65))
+                                }
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(Color.cyan.opacity(0.12))
+                            .clipShape(Capsule())
+                            .padding(.horizontal, 28)
+                            .padding(.top, 4)
+                            .padding(.bottom, 2)
+                        }
                     }
                     
                     // MARK: - Scrubber Bar

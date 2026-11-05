@@ -41,6 +41,32 @@ public struct MiniPlayerBar: View {
                         }
                     }
                     
+                    if engine.availableQualityUpgrade != nil {
+                        Button {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                                engine.upgradeToAvailableQuality()
+                            }
+                        } label: {
+                            HStack(spacing: 3) {
+                                Image(systemName: "sparkles")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(.yellow)
+                                Text("Upgrade")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundColor(.cyan)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.cyan.opacity(0.18))
+                            .clipShape(Capsule())
+                            .overlay(
+                                Capsule()
+                                    .stroke(Color.cyan.opacity(0.6), lineWidth: 1)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    
                     Spacer()
                     
                     // Controls (Matching Car HU Photo 1 & 2: Loading Spinner / Play / Pause)
