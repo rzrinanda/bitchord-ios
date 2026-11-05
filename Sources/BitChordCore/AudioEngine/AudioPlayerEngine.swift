@@ -765,8 +765,11 @@ public final class AudioPlayerEngine: ObservableObject {
             return
         }
         
-        // 4. Pre-resolved direct remote stream URL (e.g. from prefetch or cache)
-        if let directURL = track.streamURL, !directURL.isFileURL, !directURL.absoluteString.contains("apple.com") {
+        // 4. Pre-resolved direct remote stream URL (exclude YouTube googlevideo.com raw URLs which return HTTP 403 in AVPlayer)
+        if let directURL = track.streamURL,
+           !directURL.isFileURL,
+           !directURL.absoluteString.contains("apple.com"),
+           !(directURL.host?.lowercased().contains("googlevideo.com") ?? false) {
             YouTubeAudioBridge.shared.pause()
             startPlaying(url: directURL, for: track, initialSeek: startPos)
             return
@@ -827,7 +830,22 @@ public final class AudioPlayerEngine: ObservableObject {
                     if index < self.queue.count { self.queue[index] = updated }
                     self.startPlaying(url: stream.streamURL, for: updated, initialSeek: startPos)
                 } else {
-                    self.status = .error
+                    // Fallback to official YouTube Topic audio if Addon stream is temporarily unreachable
+                    if let topicId = await YTMusicClient.shared.resolveTopicVideoId(
+                        title: targetTrack.title,
+                        artist: targetTrack.artist,
+                        album: targetTrack.album,
+                        duration: targetTrack.duration
+                    ) {
+                        guard self.playbackRequestId == requestId else { return }
+                        self.stopAVPlayer()
+                        self.activeBackend = .youtubeBridge
+                        YouTubeAudioBridge.shared.play(videoId: topicId)
+                        self.status = .loading
+                        self.updateNowPlayingInfo()
+                    } else {
+                        self.status = .error
+                    }
                 }
             }
             return
@@ -841,43 +859,47 @@ public final class AudioPlayerEngine: ObservableObject {
             self.status = .loading
             self.updateNowPlayingInfo()
             
-            // Concurrently extract ranked native stream tiers (Hi-Res / Backend / Addon / Lossless)
             let targetTrackId = track.id
-            Task { @MainActor [weak self] in
-                guard let self = self, self.playbackRequestId == requestId else { return }
-                let sourceGroups = await StreamExtractor.shared.extractRankedStreamCandidates(
-                    trackId: targetTrackId,
-                    title: track.title,
-                    artist: track.artist,
-                    album: track.album,
-                    duration: track.duration,
-                    preferredQuality: BitChordSettings.shared.audioQuality
-                )
-                guard self.playbackRequestId == requestId, self.currentTrack?.id == targetTrackId else { return }
-                var coordinator = PlaybackFallbackCoordinator(track: track, candidateSources: sourceGroups)
-                if let initialPlan = coordinator.beginInitialAttempt() {
-                    let streamInfo = initialPlan.stream
-                    var updated = track
-                    updated.streamURL = streamInfo.streamURL
-                    updated.isLossless = streamInfo.isGenuineLossless
-                    updated.sampleRate = streamInfo.sampleRate
-                    updated.bitDepth = streamInfo.bitDepth
-                    self.currentTrack = updated
-                    if self.queueIndex < self.queue.count && self.queue[self.queueIndex].id == targetTrackId {
-                        self.queue[self.queueIndex] = updated
+            
+            // If user did NOT explicitly select YouTube as the exclusive source and has an enabled Hi-Res Addon,
+            // only upgrade to AVPlayer when the stream is a genuine non-googlevideo Addon stream
+            if track.source != .youtube {
+                let activeStreamAddons = BitChordSettings.shared.addonSources.filter { $0.isEnabled && $0.resources.contains("stream") }
+                if !activeStreamAddons.isEmpty {
+                    Task { @MainActor [weak self] in
+                        guard let self = self, self.playbackRequestId == requestId else { return }
+                        for addon in activeStreamAddons {
+                            let tiers = await AddonService.shared.resolveStreamTiers(
+                                trackTitle: track.title,
+                                artist: track.artist,
+                                album: track.album,
+                                duration: track.duration,
+                                addon: addon
+                            )
+                            if let addonStream = tiers.first,
+                               !(addonStream.streamURL.host?.lowercased().contains("googlevideo.com") ?? false) {
+                                guard self.playbackRequestId == requestId, self.currentTrack?.id == targetTrackId else { return }
+                                var updated = track
+                                updated.streamURL = addonStream.streamURL
+                                updated.isLossless = addonStream.isGenuineLossless
+                                updated.sampleRate = addonStream.sampleRate
+                                updated.bitDepth = addonStream.bitDepth
+                                self.currentTrack = updated
+                                if self.queueIndex < self.queue.count && self.queue[self.queueIndex].id == targetTrackId {
+                                    self.queue[self.queueIndex] = updated
+                                }
+                                let currentPos = self.currentTime
+                                self.startPlaying(url: addonStream.streamURL, for: updated, initialSeek: currentPos > 0 ? currentPos : startPos)
+                                return
+                            }
+                        }
                     }
-                    
-                    // Upgrade to native AVPlayer immediately with ranked native stream
-                    self.activeFallbackCoordinator = coordinator
-                    let currentPos = self.currentTime
-                    self.startPlaying(url: streamInfo.streamURL, for: updated, initialSeek: currentPos > 0 ? currentPos : startPos)
-                    YouTubeAudioBridge.shared.pause()
                 }
             }
             
-            // Fast 1.8s Topic Audio promotion if initial video ID is an embed-restricted Music Video or slow to start
+            // Fast 1.2s Topic Audio promotion if initial video ID is an embed-restricted Music Video or slow to start
             Task { @MainActor [weak self] in
-                try? await Task.sleep(nanoseconds: 1_800_000_000)
+                try? await Task.sleep(nanoseconds: 1_200_000_000)
                 guard let self = self, self.playbackRequestId == requestId, self.currentTrack?.id == targetTrackId else { return }
                 if self.status != .playing {
                     if let topicId = await YTMusicClient.shared.resolveTopicVideoId(
@@ -886,7 +908,7 @@ public final class AudioPlayerEngine: ObservableObject {
                         album: track.album,
                         duration: track.duration
                     ), topicId != targetTrackId {
-                        guard self.playbackRequestId == requestId else { return }
+                        guard self.playbackRequestId == requestId, self.status != .playing else { return }
                         var updated = self.currentTrack ?? track
                         updated.id = topicId
                         self.currentTrack = updated
@@ -900,12 +922,12 @@ public final class AudioPlayerEngine: ObservableObject {
                 }
             }
             
-            // Watchdog fallback: if neither YouTubeAudioBridge nor Topic stream started playing within 3.5s, trigger stream fallback
+            // Watchdog fallback: if neither YouTubeAudioBridge nor Topic stream started playing within 4.5s, trigger stream fallback
             Task { @MainActor [weak self] in
-                try? await Task.sleep(nanoseconds: 3_500_000_000)
+                try? await Task.sleep(nanoseconds: 4_500_000_000)
                 guard let self = self, self.playbackRequestId == requestId else { return }
                 if self.status != .playing, let cur = self.currentTrack {
-                    print("[AudioEngine] Startup timed out for \(cur.id), switching to AVPlayer stream fallback")
+                    print("[AudioEngine] Startup timed out for \(cur.id), switching to stream fallback")
                     self.attemptStreamFallback(for: cur, reason: .startupTimeoutExceeded)
                 }
             }
@@ -928,38 +950,31 @@ public final class AudioPlayerEngine: ObservableObject {
                 if self.queueIndex == index {
                     self.currentTrack = updated
                     if index < self.queue.count { self.queue[index] = updated }
-                    
-                    let sourceGroups = await StreamExtractor.shared.extractRankedStreamCandidates(
-                        trackId: vId,
-                        title: updated.title,
-                        artist: updated.artist,
-                        album: updated.album,
-                        duration: updated.duration,
-                        preferredQuality: BitChordSettings.shared.audioQuality
-                    )
-                    guard self.playbackRequestId == requestId else { return }
-                    var coordinator = PlaybackFallbackCoordinator(track: updated, candidateSources: sourceGroups)
-                    if let initialPlan = coordinator.beginInitialAttempt() {
-                        let streamInfo = initialPlan.stream
-                        updated.streamURL = streamInfo.streamURL
-                        updated.isLossless = streamInfo.isGenuineLossless
-                        updated.sampleRate = streamInfo.sampleRate
-                        updated.bitDepth = streamInfo.bitDepth
-                        self.currentTrack = updated
-                        if index < self.queue.count { self.queue[index] = updated }
-                        self.activeFallbackCoordinator = coordinator
-                        self.startPlaying(url: streamInfo.streamURL, for: updated, initialSeek: startPos)
-                    } else {
-                        self.stopAVPlayer()
-                        self.activeBackend = .youtubeBridge
-                        YouTubeAudioBridge.shared.play(videoId: vId)
-                        self.status = .loading
-                        self.updateNowPlayingInfo()
-                    }
+                    self.stopAVPlayer()
+                    self.activeBackend = .youtubeBridge
+                    YouTubeAudioBridge.shared.play(videoId: vId)
+                    self.status = .loading
+                    self.updateNowPlayingInfo()
                 }
             } else {
                 self.attemptStreamFallback(for: track, reason: .unavailableOrExpiredStream)
             }
+        }
+    }
+    
+    public func updateCurrentTrackArtwork(_ artworkURL: URL) {
+        guard var cur = self.currentTrack else { return }
+        if cur.artworkURL != artworkURL {
+            cur.artworkURL = artworkURL
+            self.currentTrack = cur
+            if queueIndex < queue.count && queue[queueIndex].id == cur.id {
+                queue[queueIndex].artworkURL = artworkURL
+            }
+            #if os(iOS)
+            self.cachedTrackId = nil
+            self.cachedArtworkImage = nil
+            #endif
+            updateNowPlayingInfo()
         }
     }
     

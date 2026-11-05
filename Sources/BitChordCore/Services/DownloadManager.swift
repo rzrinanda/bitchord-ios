@@ -67,12 +67,36 @@ public actor DownloadManager {
         return nil
     }
     
-    public func getDownloadedTracks() -> [Track] {
-        return downloadedTracksMap.values.map { item in
+    public func getDownloadedTracks() async -> [Track] {
+        var result: [Track] = []
+        var didUpdateArt = false
+        for (key, item) in downloadedTracksMap {
             var t = item.track
             t.streamURL = URL(fileURLWithPath: item.localFilePath)
-            return t
+            if ArtworkResolver.shouldResolveReplacement(for: t.artworkURL) {
+                if let resolved = await ArtworkResolver.shared.resolveArtworkURL(
+                    title: t.title,
+                    artist: t.artist,
+                    album: t.album,
+                    trackId: t.id,
+                    existingURL: t.artworkURL
+                ) {
+                    t.artworkURL = resolved
+                    downloadedTracksMap[key] = DownloadedTrack(
+                        track: t,
+                        localFilePath: item.localFilePath,
+                        downloadedAt: item.downloadedAt,
+                        fileSize: item.fileSize
+                    )
+                    didUpdateArt = true
+                }
+            }
+            result.append(t)
         }
+        if didUpdateArt {
+            saveIndex()
+        }
+        return result
     }
     
     /// Downloads track audio file locally to device storage
@@ -107,6 +131,17 @@ public actor DownloadManager {
         
         var offlineTrack = track
         offlineTrack.streamURL = targetFileURL
+        if ArtworkResolver.shouldResolveReplacement(for: offlineTrack.artworkURL) {
+            if let resolved = await ArtworkResolver.shared.resolveArtworkURL(
+                title: offlineTrack.title,
+                artist: offlineTrack.artist,
+                album: offlineTrack.album,
+                trackId: offlineTrack.id,
+                existingURL: offlineTrack.artworkURL
+            ) {
+                offlineTrack.artworkURL = resolved
+            }
+        }
         
         let downloadedItem = DownloadedTrack(
             track: offlineTrack,

@@ -24,6 +24,88 @@ public final class LibraryDatabase: ObservableObject {
     
     public init() {
         loadData()
+        resolveMissingArtworksInLibrary()
+    }
+    
+    /// Updates the artwork URL for a track across all Library collections (`likedTracks`, `recentTracks`, `recentSearches`, `userPlaylists`).
+    public func updateTrackArtwork(trackId: String, title: String? = nil, artworkURL: URL) {
+        var didChangeLiked = false
+        for i in likedTracks.indices {
+            if likedTracks[i].id == trackId || (title != nil && likedTracks[i].title == title) {
+                if likedTracks[i].artworkURL != artworkURL {
+                    likedTracks[i].artworkURL = artworkURL
+                    didChangeLiked = true
+                }
+            }
+        }
+        if didChangeLiked { saveLiked() }
+        
+        var didChangeRecents = false
+        for i in recentTracks.indices {
+            if recentTracks[i].id == trackId || (title != nil && recentTracks[i].title == title) {
+                if recentTracks[i].artworkURL != artworkURL {
+                    recentTracks[i].artworkURL = artworkURL
+                    didChangeRecents = true
+                }
+            }
+        }
+        if didChangeRecents { saveRecents() }
+        
+        var didChangeSearches = false
+        for i in recentSearches.indices {
+            if recentSearches[i].id == trackId || (title != nil && recentSearches[i].title == title) {
+                if recentSearches[i].artworkURL != artworkURL {
+                    recentSearches[i].artworkURL = artworkURL
+                    didChangeSearches = true
+                }
+            }
+        }
+        if didChangeSearches { saveRecentSearches() }
+        
+        var didChangePlaylists = false
+        for pIdx in userPlaylists.indices {
+            for tIdx in userPlaylists[pIdx].tracks.indices {
+                if userPlaylists[pIdx].tracks[tIdx].id == trackId || (title != nil && userPlaylists[pIdx].tracks[tIdx].title == title) {
+                    if userPlaylists[pIdx].tracks[tIdx].artworkURL != artworkURL {
+                        userPlaylists[pIdx].tracks[tIdx].artworkURL = artworkURL
+                        didChangePlaylists = true
+                    }
+                }
+            }
+        }
+        if didChangePlaylists { savePlaylists() }
+        
+        if AudioPlayerEngine.shared.currentTrack?.id == trackId {
+            AudioPlayerEngine.shared.updateCurrentTrackArtwork(artworkURL)
+        }
+    }
+    
+    public func resolveMissingArtworksInLibrary() {
+        var tracksNeedingArt: [Track] = []
+        let all = likedTracks + recentTracks + recentSearches + userPlaylists.flatMap { $0.tracks }
+        var seen = Set<String>()
+        for t in all {
+            if !seen.contains(t.id) && ArtworkResolver.shouldResolveReplacement(for: t.artworkURL) {
+                seen.insert(t.id)
+                tracksNeedingArt.append(t)
+            }
+        }
+        guard !tracksNeedingArt.isEmpty else { return }
+        Task {
+            for track in tracksNeedingArt {
+                if let resolved = await ArtworkResolver.shared.resolveArtworkURL(
+                    title: track.title,
+                    artist: track.artist,
+                    album: track.album,
+                    trackId: track.id,
+                    existingURL: track.artworkURL
+                ), resolved != track.artworkURL {
+                    await MainActor.run {
+                        self.updateTrackArtwork(trackId: track.id, title: track.title, artworkURL: resolved)
+                    }
+                }
+            }
+        }
     }
     
     private func loadData() {
@@ -131,6 +213,9 @@ public final class LibraryDatabase: ObservableObject {
             likedTracks.remove(at: index)
         } else {
             likedTracks.insert(track, at: 0)
+            if ArtworkResolver.shouldResolveReplacement(for: track.artworkURL) {
+                resolveAndSaveArtwork(for: track)
+            }
         }
         saveLiked()
     }
@@ -153,6 +238,9 @@ public final class LibraryDatabase: ObservableObject {
         if !userPlaylists[index].tracks.contains(where: { $0.id == track.id }) {
             userPlaylists[index].tracks.append(track)
             savePlaylists()
+            if ArtworkResolver.shouldResolveReplacement(for: track.artworkURL) {
+                resolveAndSaveArtwork(for: track)
+            }
         }
     }
     
@@ -170,6 +258,9 @@ public final class LibraryDatabase: ObservableObject {
             recentTracks.removeLast()
         }
         saveRecents()
+        if ArtworkResolver.shouldResolveReplacement(for: track.artworkURL) {
+            resolveAndSaveArtwork(for: track)
+        }
         let now = Date()
         self.lastPlayedAt = now
         self.lastPlaybackDuration = track.duration
@@ -199,6 +290,25 @@ public final class LibraryDatabase: ObservableObject {
             recentSearches.removeLast()
         }
         saveRecentSearches()
+        if ArtworkResolver.shouldResolveReplacement(for: track.artworkURL) {
+            resolveAndSaveArtwork(for: track)
+        }
+    }
+    
+    private func resolveAndSaveArtwork(for track: Track) {
+        Task {
+            if let resolved = await ArtworkResolver.shared.resolveArtworkURL(
+                title: track.title,
+                artist: track.artist,
+                album: track.album,
+                trackId: track.id,
+                existingURL: track.artworkURL
+            ) {
+                await MainActor.run {
+                    self.updateTrackArtwork(trackId: track.id, title: track.title, artworkURL: resolved)
+                }
+            }
+        }
     }
     
     public func removeRecentSearch(trackId: String) {

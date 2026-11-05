@@ -399,7 +399,47 @@ public actor AddonService {
                 allResults.append(result)
             }
         }
-        return allResults
+        // Gather items that need reliable artwork resolution (missing cover or ISP-blocked static.qobuz.com cover)
+        let resolvedResults = await withTaskGroup(of: (Int, URL?).self) { group in
+            for (idx, item) in allResults.enumerated() {
+                if ArtworkResolver.shouldResolveReplacement(for: item.artworkURL) {
+                    group.addTask {
+                        let resolved = await ArtworkResolver.shared.resolveArtworkURL(
+                            title: item.title,
+                            artist: item.artist ?? "",
+                            album: item.album ?? "",
+                            trackId: item.id,
+                            existingURL: item.artworkURL
+                        )
+                        return (idx, resolved)
+                    }
+                }
+            }
+            var updated = allResults
+            for await (idx, url) in group {
+                if let url = url, idx < updated.count {
+                    let old = updated[idx]
+                    updated[idx] = SearchResultItem(
+                        id: old.id,
+                        title: old.title,
+                        subtitle: old.subtitle,
+                        type: old.type,
+                        artist: old.artist,
+                        album: old.album,
+                        artworkURL: url,
+                        videoId: old.videoId,
+                        browseId: old.browseId,
+                        playlistId: old.playlistId,
+                        duration: old.duration,
+                        streamURL: old.streamURL,
+                        source: old.source,
+                        sourceId: old.sourceId
+                    )
+                }
+            }
+            return updated
+        }
+        return resolvedResults
     }
     
     private func extractCoverURL(from item: [String: Any], trackId: String, baseURL: String) -> URL? {
@@ -407,7 +447,8 @@ public actor AddonService {
         
         let directKeys = [
             "cover", "artwork", "image", "thumbnail", "picture",
-            "cover_url", "artwork_url", "coverUrl", "artworkUrl", "coverArt", "albumArt", "album_art"
+            "cover_url", "artwork_url", "coverUrl", "artworkUrl", "artworkURL",
+            "coverArt", "albumArt", "album_art", "cover_xl", "cover_big", "cover_medium"
         ]
         for key in directKeys {
             if let val = item[key] as? String, !val.isEmpty {
@@ -416,7 +457,7 @@ public actor AddonService {
             }
         }
         
-        // Nested album dictionary (Qobuz / SoundFean standard format)
+        // Nested album dictionary (Qobuz / SoundFean / Deezer standard format)
         if rawString == nil, let albDict = item["album"] as? [String: Any] {
             if let imgDict = albDict["image"] as? [String: Any] {
                 rawString = (imgDict["large"] as? String)
@@ -434,11 +475,14 @@ public actor AddonService {
             }
         }
         
-        guard let s = rawString?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty else {
+        guard var s = rawString?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty else {
             return nil
         }
         
-        if s.hasPrefix("http://") || s.hasPrefix("https://") {
+        if s.lowercased().hasPrefix("http://") {
+            s = "https://" + s.dropFirst(7)
+        }
+        if s.hasPrefix("https://") {
             return URL(string: s)
         }
         let cleanBase = baseURL.hasSuffix("/") ? String(baseURL.dropLast()) : baseURL
@@ -620,6 +664,154 @@ public actor AddonService {
         }
         
         return StreamInfo.selectTopDistinctQualityLevels(from: tiers, maxLevels: 3)
+    }
+}
+
+// MARK: - Artwork Resolver (Guarantees High-Res Album Art for Addons, Library, Search & Player)
+public actor ArtworkResolver {
+    public static let shared = ArtworkResolver()
+    
+    private let cacheKey = "BitChord.ArtworkResolver.Cache"
+    private var memoryCache: [String: String] = [:]
+    private let session: URLSession
+    
+    public init() {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 4.0
+        config.timeoutIntervalForResource = 6.0
+        self.session = URLSession(configuration: config)
+        
+        if let saved = UserDefaults.standard.dictionary(forKey: "BitChord.ArtworkResolver.Cache") as? [String: String] {
+            self.memoryCache = saved
+        }
+    }
+    
+    /// Returns true if the URL is missing or points to a host that is blocked/unreliable on regional ISPs (e.g. `static.qobuz.com`).
+    nonisolated public static func shouldResolveReplacement(for url: URL?) -> Bool {
+        guard let url = url else { return true }
+        if url.isFileURL {
+            return !FileManager.default.fileExists(atPath: url.path)
+        }
+        let host = url.host?.lowercased() ?? ""
+        if host.contains("qobuz.com") {
+            return true
+        }
+        if url.scheme?.lowercased() == "http" {
+            return true
+        }
+        return false
+    }
+    
+    private func makeLookupKey(title: String, artist: String, trackId: String?) -> String {
+        let cleanTitle = title.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanArtist = artist.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        if !cleanTitle.isEmpty || !cleanArtist.isEmpty {
+            return "\(cleanTitle)|\(cleanArtist)"
+        }
+        return trackId ?? "unknown"
+    }
+    
+    public func cachedArtworkURL(title: String, artist: String, trackId: String? = nil) -> URL? {
+        let key = makeLookupKey(title: title, artist: artist, trackId: trackId)
+        if let str = memoryCache[key], let url = URL(string: str) {
+            return url
+        }
+        if let tid = trackId, let str = memoryCache[tid], let url = URL(string: str) {
+            return url
+        }
+        return nil
+    }
+    
+    /// Resolves a reliable, high-res HTTPS album art URL (`mzstatic.com` or `i.ytimg.com`) for any track.
+    public func resolveArtworkURL(
+        title: String,
+        artist: String,
+        album: String = "",
+        trackId: String? = nil,
+        existingURL: URL? = nil,
+        forceRefresh: Bool = false
+    ) async -> URL? {
+        if !forceRefresh, let existing = existingURL, !Self.shouldResolveReplacement(for: existing) {
+            return existing
+        }
+        
+        let key = makeLookupKey(title: title, artist: artist, trackId: trackId)
+        if !forceRefresh {
+            if let cachedStr = memoryCache[key], let cachedURL = URL(string: cachedStr), !Self.shouldResolveReplacement(for: cachedURL) {
+                return cachedURL
+            }
+            if let tid = trackId, let cachedStr = memoryCache[tid], let cachedURL = URL(string: cachedStr), !Self.shouldResolveReplacement(for: cachedURL) {
+                return cachedURL
+            }
+        }
+        
+        // 1. Query iTunes Search API for official 600x600 Apple CDN (`is1-ssl.mzstatic.com`) album art
+        let cleanArtist = artist == "Unknown Artist" ? "" : artist
+        let searchQuery = "\(title) \(cleanArtist)".trimmingCharacters(in: .whitespacesAndNewlines)
+        if !searchQuery.isEmpty,
+           let encoded = searchQuery.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+           let itunesURL = URL(string: "https://itunes.apple.com/search?term=\(encoded)&media=music&entity=song&limit=5") {
+            if let (data, resp) = try? await session.data(from: itunesURL),
+               let http = resp as? HTTPURLResponse, http.statusCode == 200,
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let results = json["results"] as? [[String: Any]], !results.isEmpty {
+                
+                var chosenArtString: String? = nil
+                let lowerTitle = title.lowercased()
+                let lowerArtist = cleanArtist.lowercased()
+                
+                for item in results {
+                    let tName = (item["trackName"] as? String ?? "").lowercased()
+                    let aName = (item["artistName"] as? String ?? "").lowercased()
+                    if let art100 = item["artworkUrl100"] as? String {
+                        if tName.contains(lowerTitle) || lowerTitle.contains(tName) || (!lowerArtist.isEmpty && aName.contains(lowerArtist)) {
+                            chosenArtString = art100.replacingOccurrences(of: "100x100bb", with: "600x600bb")
+                            break
+                        }
+                        if chosenArtString == nil {
+                            chosenArtString = art100.replacingOccurrences(of: "100x100bb", with: "600x600bb")
+                        }
+                    }
+                }
+                
+                if let artStr = chosenArtString, let resolvedURL = URL(string: artStr) {
+                    saveToCache(url: resolvedURL, key: key, trackId: trackId)
+                    return resolvedURL
+                }
+            }
+        }
+        
+        // 2. If trackId is a valid 11-char YouTube ID, use high-quality YouTube thumbnail
+        if let tid = trackId, tid.count == 11, !tid.hasPrefix("yt_"), !tid.hasPrefix("local_"), !tid.hasPrefix("addon_") {
+            if let ytThumb = URL(string: "https://i.ytimg.com/vi/\(tid)/hqdefault.jpg") {
+                saveToCache(url: ytThumb, key: key, trackId: trackId)
+                return ytThumb
+            }
+        }
+        
+        // 3. Fallback to YouTube Music search artwork
+        if !searchQuery.isEmpty,
+           let items = try? await YTMusicClient.shared.searchItems(query: searchQuery, filter: "Songs"),
+           let firstArt = items.first(where: { $0.artworkURL != nil })?.artworkURL {
+            saveToCache(url: firstArt, key: key, trackId: trackId)
+            return firstArt
+        }
+        
+        return existingURL
+    }
+    
+    private func saveToCache(url: URL, key: String, trackId: String?) {
+        let str = url.absoluteString
+        memoryCache[key] = str
+        if let tid = trackId, !tid.isEmpty {
+            memoryCache[tid] = str
+        }
+        if memoryCache.count > 500 {
+            if let firstKey = memoryCache.keys.first {
+                memoryCache.removeValue(forKey: firstKey)
+            }
+        }
+        UserDefaults.standard.set(memoryCache, forKey: cacheKey)
     }
 }
 

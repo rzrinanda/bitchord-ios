@@ -287,7 +287,7 @@ public struct LibraryView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 16))
                     .padding(.horizontal, 16)
                     
-                    Spacer(minLength: 80)
+                    Spacer(minLength: 165)
                 }
                 .padding(.top, 10)
             }
@@ -388,19 +388,7 @@ public struct TrackListView: View {
                             engine.setQueue(tracks, startIndex: idx)
                         } label: {
                             HStack(spacing: 12) {
-                                if let art = track.artworkURL {
-                                    AsyncImage(url: art) { phase in
-                                        if let img = phase.image {
-                                            img.resizable().aspectRatio(contentMode: .fill)
-                                        } else {
-                                            Color.gray.opacity(0.3)
-                                        }
-                                    }
-                                    .frame(width: 44, height: 44)
-                                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                                } else {
-                                    BitChordLogoView(size: 44, cornerRadius: 6)
-                                }
+                                TrackArtworkView(track: track, size: 44, cornerRadius: 6)
                                 
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(track.title)
@@ -439,6 +427,9 @@ public struct TrackListView: View {
                 }
             }
         }
+        .safeAreaInset(edge: .bottom) {
+            Color.clear.frame(height: 140)
+        }
         .navigationTitle(title)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -464,15 +455,25 @@ public struct PlaylistsDetailView: View {
                 NavigationLink {
                     TrackListView(title: playlist.title, tracks: playlist.tracks)
                 } label: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(playlist.title)
-                            .font(.headline)
-                        Text("\(playlist.tracks.count) tracks")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
+                    HStack(spacing: 12) {
+                        if let firstTrack = playlist.tracks.first {
+                            TrackArtworkView(track: firstTrack, size: 46, cornerRadius: 8)
+                        } else {
+                            BitChordLogoView(size: 46, cornerRadius: 8)
+                        }
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(playlist.title)
+                                .font(.headline)
+                            Text("\(playlist.tracks.count) tracks")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
                     }
                 }
             }
+        }
+        .safeAreaInset(edge: .bottom) {
+            Color.clear.frame(height: 140)
         }
         .navigationTitle("Playlists")
         .toolbar {
@@ -558,19 +559,7 @@ public struct DownloadedSongsView: View {
                         engine.setQueue(tracks, startIndex: idx)
                     } label: {
                         HStack(spacing: 12) {
-                            if let artURL = track.artworkURL {
-                                AsyncImage(url: artURL) { phase in
-                                    if let img = phase.image {
-                                        img.resizable().aspectRatio(contentMode: .fill)
-                                    } else {
-                                        BitChordLogoView(size: 44, cornerRadius: 6)
-                                    }
-                                }
-                                .frame(width: 44, height: 44)
-                                .clipShape(RoundedRectangle(cornerRadius: 6))
-                            } else {
-                                BitChordLogoView(size: 44, cornerRadius: 6)
-                            }
+                            TrackArtworkView(track: track, size: 44, cornerRadius: 6)
                             
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(track.title)
@@ -589,6 +578,9 @@ public struct DownloadedSongsView: View {
                     }
                 }
             }
+        }
+        .safeAreaInset(edge: .bottom) {
+            Color.clear.frame(height: 140)
         }
         .navigationTitle("Downloads")
         .task {
@@ -776,19 +768,7 @@ public struct SpotifyImporterSheet: View {
                             
                             ForEach(importedTracks) { track in
                                 HStack(spacing: 12) {
-                                    if let art = track.artworkURL {
-                                        AsyncImage(url: art) { phase in
-                                            if let img = phase.image {
-                                                img.resizable().aspectRatio(contentMode: .fill)
-                                            } else {
-                                                Color.gray.opacity(0.25)
-                                            }
-                                        }
-                                        .frame(width: 42, height: 42)
-                                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                                    } else {
-                                        BitChordLogoView(size: 42, cornerRadius: 8)
-                                    }
+                                    TrackArtworkView(track: track, size: 42, cornerRadius: 8)
                                     
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(track.title)

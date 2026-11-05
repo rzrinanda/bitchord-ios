@@ -185,7 +185,7 @@ public struct ExploreView: View {
                     // MARK: - 5. Charts & Tangga Lagu
                     chartsSection
                     
-                    Spacer(minLength: 110)
+                    Spacer(minLength: 165)
                 }
                 .padding(.top, 10)
             }
@@ -289,19 +289,7 @@ public struct ExploreView: View {
                         } label: {
                             VStack(alignment: .leading, spacing: 8) {
                                 ZStack(alignment: .topLeading) {
-                                    if let artURL = track.artworkURL {
-                                        AsyncImage(url: artURL) { phase in
-                                            if let img = phase.image {
-                                                img.resizable().aspectRatio(contentMode: .fill)
-                                            } else {
-                                                Color.gray.opacity(0.25)
-                                            }
-                                        }
-                                        .frame(width: 155, height: 155)
-                                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                    } else {
-                                        BitChordLogoView(size: 155, cornerRadius: 12)
-                                    }
+                                    TrackArtworkView(track: track, size: 155, cornerRadius: 12)
                                     
                                     Circle()
                                         .fill(Color.black.opacity(0.45))
@@ -378,19 +366,7 @@ public struct ExploreView: View {
                                         library.recordPlayback(track: track)
                                     } label: {
                                         HStack(spacing: 10) {
-                                            if let artURL = track.artworkURL {
-                                                AsyncImage(url: artURL) { phase in
-                                                    if let img = phase.image {
-                                                        img.resizable().aspectRatio(contentMode: .fill)
-                                                    } else {
-                                                        Color.gray.opacity(0.3)
-                                                    }
-                                                }
-                                                .frame(width: 48, height: 48)
-                                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                                            } else {
-                                                BitChordLogoView(size: 48, cornerRadius: 8)
-                                            }
+                                            TrackArtworkView(track: track, size: 48, cornerRadius: 8)
                                             
                                             // Rank Number + Green Trend Dot
                                             VStack(spacing: 2) {

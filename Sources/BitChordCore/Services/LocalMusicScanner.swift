@@ -172,6 +172,15 @@ public final class LocalMusicScanner: ObservableObject {
             }
         }
         
+        if artworkURL == nil {
+            artworkURL = await ArtworkResolver.shared.resolveArtworkURL(
+                title: title,
+                artist: artist,
+                album: album,
+                trackId: id
+            )
+        }
+        
         let ext = url.pathExtension.lowercased()
         let lossless = ["flac", "alac", "wav", "aiff", "aif"].contains(ext)
         var sampleRate: Double? = nil

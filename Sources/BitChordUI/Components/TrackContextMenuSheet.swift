@@ -31,19 +31,7 @@ public struct TrackContextMenuSheet: View {
                     VStack(spacing: 0) {
                         // Track Header Preview
                         HStack(spacing: 14) {
-                            if let artURL = track.artworkURL {
-                                AsyncImage(url: artURL) { phase in
-                                    if let img = phase.image {
-                                        img.resizable().aspectRatio(contentMode: .fill)
-                                    } else {
-                                        Color.gray.opacity(0.3)
-                                    }
-                                }
-                                .frame(width: 52, height: 52)
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
-                            } else {
-                                BitChordLogoView(size: 52, cornerRadius: 10)
-                            }
+                            TrackArtworkView(track: track, size: 52, cornerRadius: 10)
                             
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(track.title)

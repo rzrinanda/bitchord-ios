@@ -530,6 +530,23 @@ public actor StreamExtractor {
         
         var candidates: [StreamInfo] = []
         
+        // Check HLS manifest FIRST (AVPlayer on iOS plays YouTube .m3u8 HLS manifests natively without HTTP 403 Forbidden!)
+        if let hlsManifest = streamingData["hlsManifestUrl"] as? String,
+           let hlsURL = URL(string: hlsManifest) {
+            candidates.append(
+                StreamInfo(
+                    streamURL: hlsURL,
+                    format: "application/x-mpegURL",
+                    codec: "aac",
+                    bitrate: 320,
+                    isLossless: false,
+                    sampleRate: 48000,
+                    sourceId: "yt_innertube_ios",
+                    sourceIsDirect: true
+                )
+            )
+        }
+        
         // Parse adaptiveFormats
         if let adaptiveFormats = streamingData["adaptiveFormats"] as? [[String: Any]] {
             for fmt in adaptiveFormats {
@@ -552,23 +569,6 @@ public actor StreamExtractor {
                     )
                 )
             }
-        }
-        
-        // Check HLS manifest
-        if let hlsManifest = streamingData["hlsManifestUrl"] as? String,
-           let hlsURL = URL(string: hlsManifest) {
-            candidates.append(
-                StreamInfo(
-                    streamURL: hlsURL,
-                    format: "application/x-mpegURL",
-                    codec: "aac",
-                    bitrate: 256,
-                    isLossless: false,
-                    sampleRate: 44100,
-                    sourceId: "yt_innertube_ios",
-                    sourceIsDirect: true
-                )
-            )
         }
         
         // Fallback to combined formats

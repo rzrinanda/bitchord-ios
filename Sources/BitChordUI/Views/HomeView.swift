@@ -246,7 +246,7 @@ public struct HomeView: View {
                         )
                     }
                     
-                    Spacer(minLength: 110)
+                    Spacer(minLength: 165)
                 }
                 .padding(.top, 8)
             }
@@ -376,19 +376,7 @@ public struct HomeView: View {
             
             HStack(spacing: 14) {
                 ZStack(alignment: .center) {
-                    if let artURL = track.artworkURL {
-                        AsyncImage(url: artURL) { phase in
-                            if let img = phase.image {
-                                img.resizable().aspectRatio(contentMode: .fill)
-                            } else {
-                                Color.gray.opacity(0.3)
-                            }
-                        }
-                        .frame(width: 64, height: 64)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    } else {
-                        BitChordLogoView(size: 64, cornerRadius: 12)
-                    }
+                    TrackArtworkView(track: track, size: 64, cornerRadius: 12)
                     
                     Circle()
                         .fill(Color.black.opacity(0.55))
@@ -510,19 +498,7 @@ public struct HomeView: View {
                                     } label: {
                                         HStack(spacing: 12) {
                                             ZStack {
-                                                if let artURL = track.artworkURL {
-                                                    AsyncImage(url: artURL) { phase in
-                                                        if let img = phase.image {
-                                                            img.resizable().aspectRatio(contentMode: .fill)
-                                                        } else {
-                                                            Color.gray.opacity(0.25)
-                                                        }
-                                                    }
-                                                    .frame(width: 50, height: 50)
-                                                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                                                } else {
-                                                    BitChordLogoView(size: 50, cornerRadius: 8)
-                                                }
+                                                TrackArtworkView(track: track, size: 50, cornerRadius: 8)
                                                 
                                                 if engine.currentTrack?.id == track.id {
                                                     RoundedRectangle(cornerRadius: 8)
@@ -790,19 +766,7 @@ public struct HomeView: View {
     private func albumOrTrackCardContent(for track: Track, isAlbumStyle: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             ZStack(alignment: isAlbumStyle ? .topLeading : .bottomTrailing) {
-                if let artURL = track.artworkURL {
-                    AsyncImage(url: artURL) { phase in
-                        if let img = phase.image {
-                            img.resizable().aspectRatio(contentMode: .fill)
-                        } else {
-                            Color.gray.opacity(0.25)
-                        }
-                    }
-                    .frame(width: 155, height: 155)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                } else {
-                    BitChordLogoView(size: 155, cornerRadius: 12)
-                }
+                TrackArtworkView(track: track, size: 155, cornerRadius: 12)
                 
                 if isAlbumStyle {
                     Circle()
@@ -1305,19 +1269,15 @@ public struct CategoryPlaylistCard: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             ZStack(alignment: .topLeading) {
-                if let artURL = item.artworkURL {
-                    AsyncImage(url: artURL) { phase in
-                        if let img = phase.image {
-                            img.resizable().aspectRatio(contentMode: .fill)
-                        } else {
-                            Color.gray.opacity(0.28)
-                        }
-                    }
-                    .frame(width: size, height: size)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                } else {
-                    BitChordLogoView(size: size, cornerRadius: 12)
-                }
+                TrackArtworkView(
+                    trackId: item.videoId ?? item.id,
+                    title: item.title,
+                    artist: item.artist ?? "",
+                    album: item.album ?? "",
+                    artworkURL: item.artworkURL,
+                    size: size,
+                    cornerRadius: 12
+                )
                 
                 // Top-left YouTube Music / BitChord play circle badge (matching user's screenshot)
                 Circle()
@@ -1429,20 +1389,17 @@ public struct PlaylistOrAlbumDetailView: View {
                             .padding(18)
                         }
                         .frame(width: 210, height: 210)
-                    } else if let artURL = item.artworkURL ?? tracks.first?.artworkURL {
-                        AsyncImage(url: artURL) { phase in
-                            if let img = phase.image {
-                                img.resizable().aspectRatio(contentMode: .fill)
-                            } else {
-                                Color.gray.opacity(0.3)
-                            }
-                        }
-                        .frame(width: 210, height: 210)
-                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                        .shadow(color: .black.opacity(0.4), radius: 16, x: 0, y: 8)
                     } else {
-                        BitChordLogoView(size: 210, cornerRadius: 18)
-                            .shadow(color: .black.opacity(0.4), radius: 16, x: 0, y: 8)
+                        TrackArtworkView(
+                            trackId: item.videoId ?? item.id,
+                            title: item.title,
+                            artist: item.artist ?? tracks.first?.artist ?? "",
+                            album: item.album ?? "",
+                            artworkURL: item.artworkURL ?? tracks.first?.artworkURL,
+                            size: 210,
+                            cornerRadius: 18
+                        )
+                        .shadow(color: .black.opacity(0.4), radius: 16, x: 0, y: 8)
                     }
                     
                     VStack(spacing: 5) {
@@ -1565,19 +1522,7 @@ public struct PlaylistOrAlbumDetailView: View {
                                                 .foregroundColor(engine.currentTrack?.id == track.id ? .red : .secondary)
                                                 .frame(width: 26)
                                         } else {
-                                            if let artURL = track.artworkURL {
-                                                AsyncImage(url: artURL) { phase in
-                                                    if let img = phase.image {
-                                                        img.resizable().aspectRatio(contentMode: .fill)
-                                                    } else {
-                                                        Color.gray.opacity(0.3)
-                                                    }
-                                                }
-                                                .frame(width: 48, height: 48)
-                                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                                            } else {
-                                                BitChordLogoView(size: 48, cornerRadius: 8)
-                                            }
+                                            TrackArtworkView(track: track, size: 48, cornerRadius: 8)
                                         }
                                         
                                         VStack(alignment: .leading, spacing: 3) {
@@ -1626,7 +1571,7 @@ public struct PlaylistOrAlbumDetailView: View {
                     }
                 }
                 
-                Spacer(minLength: 110)
+                Spacer(minLength: 165)
             }
         }
         .navigationBarTitleDisplayMode(.inline)

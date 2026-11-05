@@ -79,19 +79,7 @@ public struct DownloadSheetView: View {
                     VStack(alignment: .leading, spacing: 20) {
                         // Track Header (Artwork + Title + Artist)
                         HStack(spacing: 14) {
-                            if let artURL = track.artworkURL {
-                                AsyncImage(url: artURL) { phase in
-                                    if let img = phase.image {
-                                        img.resizable().aspectRatio(contentMode: .fill)
-                                    } else {
-                                        Color.gray.opacity(0.3)
-                                    }
-                                }
-                                .frame(width: 54, height: 54)
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
-                            } else {
-                                BitChordLogoView(size: 54, cornerRadius: 12)
-                            }
+                            TrackArtworkView(track: track, size: 54, cornerRadius: 12)
                             
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(track.title)

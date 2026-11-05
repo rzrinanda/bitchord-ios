@@ -12,22 +12,9 @@ public struct MiniPlayerBar: View {
         if let track = engine.currentTrack {
             Button(action: onExpand) {
                 HStack(spacing: 12) {
-                    // Artwork Thumbnail
-                    if let artURL = track.artworkURL {
-                        AsyncImage(url: artURL) { phase in
-                            if let img = phase.image {
-                                img.resizable().aspectRatio(contentMode: .fill)
-                            } else {
-                                Color.gray.opacity(0.3)
-                            }
-                        }
-                        .frame(width: 44, height: 44)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                        .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
-                    } else {
-                        BitChordLogoView(size: 44, cornerRadius: 8)
-                            .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
-                    }
+                    // Artwork Thumbnail (Guaranteed Album Art via TrackArtworkView)
+                    TrackArtworkView(track: track, size: 44, cornerRadius: 8)
+                        .shadow(color: .black.opacity(0.25), radius: 4, x: 0, y: 2)
                     
                     // Track Information
                     VStack(alignment: .leading, spacing: 2) {
@@ -85,11 +72,18 @@ public struct MiniPlayerBar: View {
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
-                .frostedGlass(cornerRadius: 16, opacity: 0.95)
+                .background(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(Color(red: 0.13, green: 0.13, blue: 0.16).opacity(0.96))
+                        .shadow(color: .black.opacity(0.4), radius: 12, x: 0, y: 4)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(Color.white.opacity(0.14), lineWidth: 1)
+                )
             }
             .buttonStyle(.plain)
-            .padding(.horizontal, 12)
-            .padding(.bottom, 6)
+            .padding(.bottom, 4)
             .gesture(
                 DragGesture()
                     .onEnded { value in

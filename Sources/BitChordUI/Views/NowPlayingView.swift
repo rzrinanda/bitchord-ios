@@ -101,19 +101,7 @@ public struct NowPlayingView: View {
                             .padding(.top, 8)
                             
                             HStack(spacing: 12) {
-                                if let artURL = track.artworkURL {
-                                    AsyncImage(url: artURL) { phase in
-                                        if let image = phase.image {
-                                            image.resizable().aspectRatio(contentMode: .fill)
-                                        } else {
-                                            Color.white.opacity(0.15)
-                                        }
-                                    }
-                                    .frame(width: 44, height: 44)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                                } else {
-                                    BitChordLogoView(size: 44, cornerRadius: 8)
-                                }
+                                TrackArtworkView(track: track, size: 44, cornerRadius: 8)
                                 
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(track.title)
@@ -389,23 +377,8 @@ public struct NowPlayingView: View {
                         Spacer(minLength: 6)
                         
                         ZStack {
-                            if let artURL = track.artworkURL {
-                                AsyncImage(url: artURL) { phase in
-                                    if let image = phase.image {
-                                        image
-                                            .resizable()
-                                            .aspectRatio(contentMode: .fill)
-                                    } else {
-                                        Color.white.opacity(0.1)
-                                    }
-                                }
-                                .frame(width: 290, height: 290)
-                                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                            TrackArtworkView(track: track, size: 290, cornerRadius: 22)
                                 .shadow(color: .black.opacity(0.4), radius: 24, x: 0, y: 12)
-                            } else {
-                                BitChordLogoView(size: 290, cornerRadius: 22)
-                                    .shadow(color: .black.opacity(0.35), radius: 24, x: 0, y: 12)
-                            }
                         }
                         .scaleEffect(engine.status == .playing ? 1.0 : 0.92)
                         .animation(.spring(response: 0.4, dampingFraction: 0.7), value: engine.status)
@@ -982,19 +955,7 @@ public struct QueueSheetView: View {
                                     VStack(spacing: 4) {
                                         ForEach(historyItems, id: \.element.id) { index, track in
                                             HStack(spacing: 12) {
-                                                if let art = track.artworkURL {
-                                                    AsyncImage(url: art) { phase in
-                                                        if let img = phase.image {
-                                                            img.resizable().aspectRatio(contentMode: .fill)
-                                                        } else {
-                                                            Color.gray.opacity(0.3)
-                                                        }
-                                                    }
-                                                    .frame(width: 38, height: 38)
-                                                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                                                } else {
-                                                    BitChordLogoView(size: 38, cornerRadius: 6)
-                                                }
+                                                TrackArtworkView(track: track, size: 38, cornerRadius: 6)
                                                 
                                                 VStack(alignment: .leading, spacing: 2) {
                                                     Text(track.title)
@@ -1030,19 +991,7 @@ public struct QueueSheetView: View {
                             
                             if let current = engine.currentTrack {
                                 HStack(spacing: 12) {
-                                    if let art = current.artworkURL {
-                                        AsyncImage(url: art) { phase in
-                                            if let img = phase.image {
-                                                img.resizable().aspectRatio(contentMode: .fill)
-                                            } else {
-                                                Color.gray.opacity(0.3)
-                                            }
-                                        }
-                                        .frame(width: 44, height: 44)
-                                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                                    } else {
-                                        BitChordLogoView(size: 44, cornerRadius: 8)
-                                    }
+                                    TrackArtworkView(track: current, size: 44, cornerRadius: 8)
                                     
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(current.title)
@@ -1110,19 +1059,7 @@ public struct QueueSheetView: View {
                                                 .font(.system(size: 14))
                                                 .foregroundColor(.secondary)
                                             
-                                            if let art = track.artworkURL {
-                                                AsyncImage(url: art) { phase in
-                                                    if let img = phase.image {
-                                                        img.resizable().aspectRatio(contentMode: .fill)
-                                                    } else {
-                                                        Color.gray.opacity(0.3)
-                                                    }
-                                                }
-                                                .frame(width: 40, height: 40)
-                                                .clipShape(RoundedRectangle(cornerRadius: 6))
-                                            } else {
-                                                BitChordLogoView(size: 40, cornerRadius: 6)
-                                            }
+                                            TrackArtworkView(track: track, size: 40, cornerRadius: 6)
                                             
                                             VStack(alignment: .leading, spacing: 2) {
                                                 Text(track.title)
@@ -1194,19 +1131,7 @@ public struct QueueSheetView: View {
                                             .font(.system(size: 14))
                                             .foregroundColor(.secondary)
                                         
-                                        if let art = track.artworkURL {
-                                            AsyncImage(url: art) { phase in
-                                                if let img = phase.image {
-                                                    img.resizable().aspectRatio(contentMode: .fill)
-                                                } else {
-                                                    Color.gray.opacity(0.3)
-                                                }
-                                            }
-                                            .frame(width: 40, height: 40)
-                                            .clipShape(RoundedRectangle(cornerRadius: 6))
-                                        } else {
-                                            BitChordLogoView(size: 40, cornerRadius: 6)
-                                        }
+                                        TrackArtworkView(track: track, size: 40, cornerRadius: 6)
                                         
                                         VStack(alignment: .leading, spacing: 2) {
                                             Text(track.title)

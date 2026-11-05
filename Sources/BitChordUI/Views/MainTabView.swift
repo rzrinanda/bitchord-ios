@@ -92,16 +92,31 @@ public struct MainTabView: View {
                 .padding(4)
                 .background(
                     RoundedRectangle(cornerRadius: 32, style: .continuous)
-                        .fill(Color(UIColor.systemBackground).opacity(0.88))
-                        .shadow(color: .black.opacity(0.35), radius: 16, x: 0, y: 6)
+                        .fill(Color(red: 0.11, green: 0.11, blue: 0.13).opacity(0.96))
+                        .shadow(color: .black.opacity(0.45), radius: 16, x: 0, y: 6)
                 )
-                .background(
+                .overlay(
                     RoundedRectangle(cornerRadius: 32, style: .continuous)
-                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                        .stroke(Color.white.opacity(0.14), lineWidth: 1)
                 )
-                .padding(.horizontal, 24)
+                .padding(.horizontal, 16)
                 .padding(.bottom, 8)
             }
+            .padding(.top, 14)
+            .background(
+                LinearGradient(
+                    stops: [
+                        .init(color: Color.black.opacity(0.0), location: 0.0),
+                        .init(color: Color.black.opacity(0.78), location: 0.28),
+                        .init(color: Color.black.opacity(0.95), location: 0.62),
+                        .init(color: Color.black, location: 1.0)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea(edges: .bottom)
+                .allowsHitTesting(false)
+            )
         }
         .ignoresSafeArea(.keyboard, edges: .bottom)
         .sheet(isPresented: $showingNowPlaying) {

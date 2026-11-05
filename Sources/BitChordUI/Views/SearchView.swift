@@ -353,7 +353,7 @@ public struct SearchView: View {
                                 }
                             }
                             
-                            Spacer(minLength: 80)
+                            Spacer(minLength: 165)
                         }
                     }
                 } else if searchResults.isEmpty && !query.isEmpty {
@@ -428,7 +428,7 @@ public struct SearchView: View {
                                 }
                             }
                             
-                            Spacer(minLength: 80)
+                            Spacer(minLength: 165)
                         }
                     }
                 }
@@ -456,19 +456,7 @@ public struct SearchView: View {
                 library.recordPlayback(track: track)
             } label: {
                 HStack(spacing: 12) {
-                    if let artURL = track.artworkURL {
-                        AsyncImage(url: artURL) { phase in
-                            if let img = phase.image {
-                                img.resizable().aspectRatio(contentMode: .fill)
-                            } else {
-                                Color.gray.opacity(0.3)
-                            }
-                        }
-                        .frame(width: 48, height: 48)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                    } else {
-                        BitChordLogoView(size: 48, cornerRadius: 8)
-                    }
+                    TrackArtworkView(track: track, size: 48, cornerRadius: 8)
                     
                     VStack(alignment: .leading, spacing: 3) {
                         Text(track.title)
@@ -534,19 +522,16 @@ public struct SearchView: View {
     private func searchResultRowContent(for item: SearchResultItem) -> some View {
         HStack(spacing: 12) {
             ZStack {
-                if let artURL = item.artworkURL {
-                    AsyncImage(url: artURL) { phase in
-                        if let img = phase.image {
-                            img.resizable().aspectRatio(contentMode: .fill)
-                        } else {
-                            Color.gray.opacity(0.3)
-                        }
-                    }
-                    .frame(width: 48, height: 48)
-                    .clipShape(item.type == .artist ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: 8)))
-                } else {
-                    BitChordLogoView(size: 48, cornerRadius: item.type == .artist ? 24 : 8)
-                }
+                TrackArtworkView(
+                    trackId: item.videoId ?? item.id,
+                    title: item.title,
+                    artist: item.artist ?? item.subtitle,
+                    album: item.album ?? "",
+                    artworkURL: item.artworkURL,
+                    size: 48,
+                    cornerRadius: 8,
+                    isCircular: item.type == .artist
+                )
                 
                 if loadingItemId == item.id {
                     Color.black.opacity(0.55)

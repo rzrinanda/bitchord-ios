@@ -10,19 +10,19 @@ public struct BitChordApp: App {
     public var body: some Scene {
         WindowGroup {
             ZStack(alignment: .topLeading) {
+                #if os(iOS)
+                YouTubeBridgeView()
+                    .frame(width: 12, height: 12)
+                    .opacity(0.05)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                #endif
+                
                 MainTabView()
                     .environmentObject(settings)
                     .environmentObject(engine)
                     .preferredColorScheme(.dark)
                     .background(Color.black)
-                
-                #if os(iOS)
-                YouTubeBridgeView()
-                    .frame(width: 2, height: 2)
-                    .opacity(0.01)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-                #endif
             }
         }
     }
