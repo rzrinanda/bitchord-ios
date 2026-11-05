@@ -12,10 +12,10 @@ public struct BitChordApp: App {
             ZStack(alignment: .topLeading) {
                 #if os(iOS)
                 YouTubeBridgeView()
-                    .frame(width: 12, height: 12)
-                    .opacity(0.05)
+                    .frame(width: 320, height: 240)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
+                    .zIndex(0)
                 #endif
                 
                 MainTabView()
@@ -23,6 +23,7 @@ public struct BitChordApp: App {
                     .environmentObject(engine)
                     .preferredColorScheme(.dark)
                     .background(Color.black)
+                    .zIndex(1)
             }
         }
     }

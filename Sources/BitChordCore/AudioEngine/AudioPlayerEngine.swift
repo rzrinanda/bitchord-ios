@@ -944,37 +944,9 @@ public final class AudioPlayerEngine: ObservableObject {
                 }
             }
             
-            // Fast Topic Audio promotion if initial video ID is an embed-restricted Music Video or slow to start:
-            // For songs, check after 1.2s; for explicit YouTube videos, give the video's own IFrame stream 2.2s to start first!
-            let topicCheckDelayNs: UInt64 = (track.album == "YouTube Video") ? 2_200_000_000 : 1_200_000_000
+            // Watchdog fallback: if YouTubeAudioBridge does not start playing within 8.0s, trigger stream fallback
             Task { @MainActor [weak self] in
-                try? await Task.sleep(nanoseconds: topicCheckDelayNs)
-                guard let self = self, self.playbackRequestId == requestId, self.currentTrack?.id == targetTrackId else { return }
-                if self.status != .playing {
-                    if let topicId = await YTMusicClient.shared.resolveTopicVideoId(
-                        title: track.title,
-                        artist: track.artist,
-                        album: track.album == "YouTube Video" ? nil : track.album,
-                        duration: track.duration
-                    ), topicId != targetTrackId {
-                        guard self.playbackRequestId == requestId, self.status != .playing else { return }
-                        var updated = self.currentTrack ?? track
-                        updated.id = topicId
-                        self.currentTrack = updated
-                        if self.queueIndex < self.queue.count {
-                            self.queue[self.queueIndex] = updated
-                        }
-                        self.stopAVPlayer()
-                        self.activeBackend = .youtubeBridge
-                        YouTubeAudioBridge.shared.play(videoId: topicId)
-                        return
-                    }
-                }
-            }
-            
-            // Watchdog fallback: if neither YouTubeAudioBridge nor Topic stream started playing within 4.5s, trigger stream fallback
-            Task { @MainActor [weak self] in
-                try? await Task.sleep(nanoseconds: 4_500_000_000)
+                try? await Task.sleep(nanoseconds: 8_000_000_000)
                 guard let self = self, self.playbackRequestId == requestId else { return }
                 if self.status != .playing, let cur = self.currentTrack {
                     print("[AudioEngine] Startup timed out for \(cur.id), switching to stream fallback")

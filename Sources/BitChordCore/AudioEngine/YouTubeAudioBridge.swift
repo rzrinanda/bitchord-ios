@@ -83,12 +83,15 @@ public final class YouTubeAudioBridge: NSObject {
         config.userContentController = contentController
         
         // Active viewport dimensions so iOS WebKit never throttles media or timers
-        let wv = WKWebView(frame: .init(x: 0, y: 0, width: 100, height: 100), configuration: config)
+        let wv = WKWebView(frame: .init(x: 0, y: 0, width: 320, height: 240), configuration: config)
         #if os(iOS)
-        wv.isOpaque = false
-        wv.backgroundColor = .clear
+        wv.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_3_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Mobile/15E148 Safari/604.1"
+        wv.isOpaque = true
+        wv.backgroundColor = .black
         wv.scrollView.isScrollEnabled = false
-        wv.scrollView.backgroundColor = .clear
+        wv.scrollView.backgroundColor = .black
+        #elseif os(macOS)
+        wv.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Safari/605.1.15"
         #endif
         self.webView = wv
         
@@ -104,7 +107,7 @@ public final class YouTubeAudioBridge: NSObject {
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
         <style>
           body, html { margin:0; padding:0; width:100%; height:100%; background-color:#000; overflow:hidden; }
-          #player { width:100%; height:100%; }
+          #player { width:100%; height:100%; border:none; display:block; }
         </style>
         <script>
         // 1. Spoof visibility so YouTube player never detects background / minimization
@@ -137,58 +140,32 @@ public final class YouTubeAudioBridge: NSObject {
           }
         } catch(e) {}
         </script>
-        <script src="https://www.youtube.com/iframe_api"></script>
         </head>
         <body>
-        <div id="player"></div>
+        <iframe id="player"
+                src=""
+                allow="autoplay; encrypted-media; picture-in-picture"
+                playsinline>
+        </iframe>
         <script>
-        var player = null;
-        var isReady = false;
+        var isReady = true;
         var pendingId = null;
+        var currentLoadedId = null;
         var isUserPlaying = false;
 
-        function onYouTubeIframeAPIReady() {
-          player = new YT.Player('player', {
-            height: '100%',
-            width: '100%',
-            playerVars: {
-              'autoplay': 1,
-              'controls': 0,
-              'playsinline': 1,
-              'rel': 0,
-              'fs': 0,
-              'disablekb': 1,
-              'enablejsapi': 1,
-              'origin': 'https://www.youtube.com'
-            },
-            events: {
-              'onReady': onPlayerReady,
-              'onStateChange': onPlayerStateChange,
-              'onError': onPlayerError
-            }
-          });
-        }
-        if (window.YT && window.YT.Player) {
-          onYouTubeIframeAPIReady();
-        }
-
-        function onPlayerReady(event) {
-          isReady = true;
-          window.webkit.messageHandlers.bridge.postMessage({ type: 'ready' });
-          if (pendingId) {
-            playVideoId(pendingId);
-            pendingId = null;
+        function postCommand(command, args) {
+          var iframe = document.getElementById('player');
+          if (iframe && iframe.contentWindow) {
+            iframe.contentWindow.postMessage(JSON.stringify({
+              event: 'command',
+              func: command,
+              args: args || []
+            }), '*');
           }
         }
-
-        var retryPlayTimer = null;
 
         function playVideoId(vId) {
           isUserPlaying = true;
-          if (retryPlayTimer) {
-            clearInterval(retryPlayTimer);
-            retryPlayTimer = null;
-          }
           try {
             if (window._aCtx && window._aCtx.state === 'suspended') {
               window._aCtx.resume();
@@ -197,54 +174,40 @@ public final class YouTubeAudioBridge: NSObject {
           if ('mediaSession' in navigator) {
             try { navigator.mediaSession.playbackState = 'playing'; } catch(e) {}
           }
-          if (!isReady || !player || !player.loadVideoById) {
+          
+          var iframe = document.getElementById('player');
+          if (!iframe) {
             pendingId = vId;
             return;
           }
-          try {
-            if (player.unMute) player.unMute();
-            if (player.setVolume) player.setVolume(100);
-          } catch(e) {}
-          player.loadVideoById(vId);
-          player.playVideo();
-          var attempts = 0;
-          retryPlayTimer = setInterval(function() {
-            attempts++;
-            if (!isUserPlaying || attempts > 8) {
-              clearInterval(retryPlayTimer);
-              retryPlayTimer = null;
+          
+          if (currentLoadedId === vId) {
+            postCommand('playVideo');
+          } else {
+            currentLoadedId = vId;
+            var embedUrl = "https://www.youtube-nocookie.com/embed/" + vId + "?autoplay=1&playsinline=1&controls=0&rel=0&enablejsapi=1&iv_load_policy=3&widget_referrer=https%3A%2F%2Fwww.youtube.com";
+            iframe.src = embedUrl;
+          }
+          
+          // Poll listening handshake to wake up YouTube embed API
+          var pingCount = 0;
+          var pingInterval = setInterval(function() {
+            pingCount++;
+            if (!isUserPlaying || pingCount > 10) {
+              clearInterval(pingInterval);
               return;
             }
-            if (player && player.getPlayerState) {
-              var st = player.getPlayerState();
-              if (st === 1) {
-                clearInterval(retryPlayTimer);
-                retryPlayTimer = null;
-              } else if (st === -1 || st === 2 || st === 5) {
-                try { player.playVideo(); } catch(e) {}
-              }
-            }
-          }, 300);
+            postCommand('listening');
+            postCommand('playVideo');
+          }, 350);
         }
 
         function pauseVideo() {
           isUserPlaying = false;
-          if (retryPlayTimer) {
-            clearInterval(retryPlayTimer);
-            retryPlayTimer = null;
-          }
           if ('mediaSession' in navigator) {
             try { navigator.mediaSession.playbackState = 'paused'; } catch(e) {}
           }
-          if (player && player.pauseVideo) {
-            try { player.pauseVideo(); } catch(e) {}
-          }
-          try {
-            var vids = document.getElementsByTagName('video');
-            for (var i = 0; i < vids.length; i++) {
-              vids[i].pause();
-            }
-          } catch(e) {}
+          postCommand('pauseVideo');
         }
 
         function resumeVideo() {
@@ -257,51 +220,60 @@ public final class YouTubeAudioBridge: NSObject {
           if ('mediaSession' in navigator) {
             try { navigator.mediaSession.playbackState = 'playing'; } catch(e) {}
           }
-          if (player && player.playVideo) {
-            try { player.playVideo(); } catch(e) {}
-          }
-          try {
-            var vids = document.getElementsByTagName('video');
-            for (var i = 0; i < vids.length; i++) {
-              vids[i].play();
-            }
-          } catch(e) {}
+          postCommand('playVideo');
         }
 
         function seekTo(seconds) {
-          if (player && player.seekTo) player.seekTo(seconds, true);
+          postCommand('seekTo', [seconds, true]);
         }
 
         function setVolume(vol) {
-          if (player && player.setVolume) player.setVolume(vol * 100);
+          postCommand('setVolume', [vol * 100]);
         }
 
-        function onPlayerStateChange(event) {
-          window.webkit.messageHandlers.bridge.postMessage({ type: 'state', state: event.data });
-          if ((event.data === 5 || event.data === -1) && player && player.playVideo && isUserPlaying) {
-            player.playVideo();
-          }
-        }
+        // Handle YouTube Embed PostMessages
+        window.addEventListener('message', function(event) {
+          try {
+            var data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+            if (!data) return;
 
-        function onPlayerError(event) {
-          window.webkit.messageHandlers.bridge.postMessage({ type: 'error', code: event.data });
-        }
-
-        setInterval(function() {
-          if (player && player.getCurrentTime && player.getDuration) {
-            var cur = player.getCurrentTime() || 0;
-            var dur = player.getDuration() || 0;
-            if (dur > 0) {
-              window.webkit.messageHandlers.bridge.postMessage({ type: 'time', current: cur, duration: dur });
+            // State changes: 1 = Playing, 2 = Paused, 3 = Buffering, 0 = Ended, -1 = Unstarted
+            if (data.event === 'onStateChange') {
+              var st = data.info;
+              window.webkit.messageHandlers.bridge.postMessage({ type: 'state', state: st });
+            } else if (data.event === 'infoDelivery' && data.info) {
+              if (data.info.playerState !== undefined) {
+                window.webkit.messageHandlers.bridge.postMessage({ type: 'state', state: data.info.playerState });
+              }
+              if (data.info.currentTime !== undefined) {
+                var cur = data.info.currentTime || 0;
+                var dur = data.info.duration || 0;
+                if (dur > 0) {
+                  window.webkit.messageHandlers.bridge.postMessage({ type: 'time', current: cur, duration: dur });
+                }
+              }
+            } else if (data.event === 'onError') {
+              var err = data.info || -1;
+              window.webkit.messageHandlers.bridge.postMessage({ type: 'error', code: err });
             }
+          } catch(e) {}
+        });
+
+        // Notify Swift host that HTML container is fully ready
+        window.onload = function() {
+          window.webkit.messageHandlers.bridge.postMessage({ type: 'ready' });
+          if (pendingId) {
+            var p = pendingId;
+            pendingId = null;
+            playVideoId(p);
           }
-        }, 250);
+        };
         </script>
         </body>
         </html>
         """
         
-        webView?.loadHTMLString(html, baseURL: URL(string: "https://www.youtube.com"))
+        webView?.loadHTMLString(html, baseURL: URL(string: "https://www.youtube-nocookie.com"))
     }
     #endif
     

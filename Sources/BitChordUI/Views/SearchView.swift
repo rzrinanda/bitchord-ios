@@ -352,10 +352,10 @@ public struct SearchView: View {
                                     .padding(.horizontal, 16)
                                 }
                             }
-                            
-                            Spacer(minLength: 165)
                         }
+                        .padding(.bottom, 140)
                     }
+                    .scrollDismissesKeyboard(.interactively)
                 } else if searchResults.isEmpty && !query.isEmpty {
                     Spacer()
                     if selectedSource == .addons && settings.addonSources.filter({ $0.isEnabled }).isEmpty {
@@ -427,10 +427,10 @@ public struct SearchView: View {
                                     }
                                 }
                             }
-                            
-                            Spacer(minLength: 165)
                         }
+                        .padding(.bottom, 140)
                     }
+                    .scrollDismissesKeyboard(.interactively)
                 }
             }
             .navigationTitle("Search")
