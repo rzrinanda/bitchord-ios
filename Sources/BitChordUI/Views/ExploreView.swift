@@ -8,6 +8,8 @@ public struct ExploreView: View {
     
     @State private var liveNewAlbums: [SearchResultItem] = []
     @State private var liveTrendingSongs: [Track] = []
+    @State private var liveChartPlaylists: [String: SearchResultItem] = [:]
+    @State private var liveArtists: [SearchResultItem] = []
     @State private var isLoadingLive: Bool = true
     
     // Top 3 YT Music Navigation Cards
@@ -151,30 +153,22 @@ public struct ExploreView: View {
         Track(id: "fJ9rUzIMcZQ", title: "Bohemian Rhapsody", artist: "Queen", album: "A Night at the Opera", duration: 354, artworkURL: URL(string: "https://i.ytimg.com/vi/fJ9rUzIMcZQ/hqdefault.jpg"), source: .youtube)
     ]
     
-    // Curated Daily Top Charts (YouTube Music Charts)
-    private let dailyTopCharts: [(title: String, subtitle: String, image: String, color: Color)] = [
-        ("Daily Top 100 Indonesia", "Top daily national chart", "chart.bar.fill", Color(red: 0.90, green: 0.18, blue: 0.28)),
-        ("Daily Top 100 Global", "Worldwide daily hits", "globe.americas.fill", Color(red: 0.15, green: 0.50, blue: 0.92)),
-        ("Daily Viral 50", "Fastest rising tracks today", "flame.fill", Color(red: 0.95, green: 0.45, blue: 0.12)),
-        ("Trending 20 Indo Pop", "Today's top trending pop", "music.note.list", Color(red: 0.20, green: 0.75, blue: 0.55)),
-        ("Daily Top Music Videos", "Most viewed music videos", "play.rectangle.fill", Color(red: 0.85, green: 0.25, blue: 0.45)),
-        ("Indonesian Rock Legends", "90s & 2000s top classic rock", "guitars.fill", Color(red: 0.55, green: 0.22, blue: 0.85))
+    // Daily Top Charts — each resolves LIVE to the real YouTube Music chart playlist via `query`
+    private let dailyTopCharts: [(title: String, subtitle: String, image: String, color: Color, query: String)] = [
+        ("Daily Top 100 Indonesia", "Top daily national chart", "chart.bar.fill", Color(red: 0.90, green: 0.18, blue: 0.28), "Top 100 Songs Indonesia"),
+        ("Daily Top 100 Global", "Worldwide daily hits", "globe.americas.fill", Color(red: 0.15, green: 0.50, blue: 0.92), "Top 100 Songs Global"),
+        ("Daily Top Music Videos Indonesia", "Most viewed music videos today", "play.rectangle.fill", Color(red: 0.85, green: 0.25, blue: 0.45), "Top 100 Music Videos Indonesia"),
+        ("Daily Top Music Videos Global", "Most viewed worldwide", "play.tv.fill", Color(red: 0.35, green: 0.30, blue: 0.85), "Top 100 Music Videos Global"),
+        ("Trending Indonesia", "Fastest rising tracks today", "flame.fill", Color(red: 0.95, green: 0.45, blue: 0.12), "Trending 20 Indonesia"),
+        ("Trending Global", "Rising worldwide", "chart.line.uptrend.xyaxis", Color(red: 0.20, green: 0.75, blue: 0.55), "Trending 20 Global"),
+        ("Top 100 USA", "United States daily chart", "star.fill", Color(red: 0.55, green: 0.22, blue: 0.85), "Top 100 Songs United States"),
+        ("Top 100 South Korea", "K-chart daily", "sparkles", Color(red: 0.90, green: 0.35, blue: 0.65), "Top 100 Songs South Korea")
     ]
     
-    // Top Artists Charts (Pick songs by artist)
-    private let topArtists: [(name: String, imageURL: URL?)] = [
-        ("NOAH", URL(string: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400&q=80")),
-        ("Dewa 19", URL(string: "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400&q=80")),
-        ("Sheila On 7", URL(string: "https://images.unsplash.com/photo-1501386761578-eac5c94b800a?w=400&q=80")),
-        ("Tulus", URL(string: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=400&q=80")),
-        ("Mahalini", URL(string: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&q=80")),
-        ("Bernadya", URL(string: "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=400&q=80")),
-        ("Bruno Mars", URL(string: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&q=80")),
-        ("Taylor Swift", URL(string: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400&q=80")),
-        ("The Weeknd", URL(string: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&q=80")),
-        ("Billie Eilish", URL(string: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400&q=80")),
-        ("Coldplay", URL(string: "https://images.unsplash.com/photo-1465847899084-d164df4dedc6?w=400&q=80")),
-        ("Lady Gaga", URL(string: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=400&q=80"))
+    // Seed names used only if the live artist chart cannot be fetched (artwork still resolved live)
+    private let fallbackArtistNames: [String] = [
+        "NOAH", "Dewa 19", "Sheila On 7", "Tulus", "Mahalini", "Bernadya",
+        "Bruno Mars", "Taylor Swift", "The Weeknd", "Billie Eilish", "Coldplay", "Lady Gaga"
     ]
     
     // Expanded Moods & Genres (24 choices matching YT Music colored left-border strips)
@@ -204,7 +198,29 @@ public struct ExploreView: View {
         ("90s & 2000s Nostalgia", .mint),
         ("Viral & TikTok Hits", .red),
         ("Sleep & Meditation", .purple),
-        ("Sad & Melancholy", .blue)
+        ("Sad & Melancholy", .blue),
+        ("Pop Punk & Emo", .pink),
+        ("Reggae & Ska", .green),
+        ("Latin & Reggaeton", .orange),
+        ("Afrobeats", .yellow),
+        ("Lo-Fi Beats", .indigo),
+        ("Gospel & Rohani", .mint),
+        ("Musik Religi & Islami", .teal),
+        ("Keroncong & Tradisional", .brown),
+        ("Pop Daerah (Jawa, Sunda, Batak)", .orange),
+        ("Malaysian Pop", .cyan),
+        ("Thai & C-Pop", .red),
+        ("OST & Soundtracks", .gray),
+        ("Gaming", .purple),
+        ("Kids & Family", .yellow),
+        ("Blues Rock", .blue),
+        ("Funk & Disco", .pink),
+        ("80s Classics", .mint),
+        ("70s Classics", .brown),
+        ("Wedding & Love Songs", .pink),
+        ("Rainy Day", .gray),
+        ("Road Trip", .orange),
+        ("Coffee Shop", .brown)
     ]
     
     public init() {}
@@ -515,9 +531,20 @@ public struct ExploreView: View {
                     ForEach(dailyTopCharts, id: \.title) { chart in
                         NavigationLink {
                             PlaylistOrAlbumDetailView(
-                                item: SearchResultItem(
+                                item: liveChartPlaylists[chart.title].map { live in
+                                    SearchResultItem(
+                                        id: live.id,
+                                        title: chart.title,
+                                        subtitle: "Daily Chart • \(live.title)",
+                                        type: .playlist,
+                                        artist: "YouTube Music",
+                                        artworkURL: live.artworkURL,
+                                        browseId: live.browseId,
+                                        playlistId: live.playlistId ?? live.id
+                                    )
+                                } ?? SearchResultItem(
                                     id: "chart_\(chart.title)",
-                                    title: chart.title,
+                                    title: chart.query,
                                     subtitle: "Daily Chart • \(chart.subtitle)",
                                     type: .playlist,
                                     artist: "YouTube Music"
@@ -589,16 +616,23 @@ public struct ExploreView: View {
             
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 16) {
-                    ForEach(topArtists, id: \.name) { artist in
+                    if liveArtists.isEmpty && isLoadingLive {
+                        ForEach(0..<6, id: \.self) { _ in
+                            Circle().fill(Color.secondary.opacity(0.18)).frame(width: 90, height: 90)
+                        }
+                    }
+                    ForEach(liveArtists) { artistItem in
+                        let artist = (name: artistItem.title, imageURL: artistItem.artworkURL)
                         NavigationLink {
                             PlaylistOrAlbumDetailView(
                                 item: SearchResultItem(
-                                    id: "artist_\(artist.name)",
+                                    id: artistItem.id,
                                     title: artist.name,
-                                    subtitle: "Top Artist • Charts",
+                                    subtitle: "Artist • Top songs",
                                     type: .artist,
                                     artist: artist.name,
-                                    artworkURL: artist.imageURL
+                                    artworkURL: artist.imageURL,
+                                    browseId: artistItem.browseId
                                 )
                             )
                         } label: {
@@ -712,17 +746,80 @@ public struct ExploreView: View {
     
     // MARK: - Live Data Fetching
     private func loadLiveExploreData() async {
-        let albums = (try? await YTMusicClient.shared.searchItems(query: "New Albums Singles Releases", filter: "Albums")) ?? []
-        let trending = (try? await YTMusicClient.shared.search(query: "Top Trending Songs Indonesia Global", filter: "songs")) ?? []
+        let client = YTMusicClient.shared
+        let year = Calendar.current.component(.year, from: Date())
+        
+        // All sections are fetched in parallel from live YouTube Music data.
+        async let albumsA = (try? client.searchItems(query: "New album releases \(year)", filter: "Albums")) ?? []
+        async let albumsB = (try? client.searchItems(query: "New singles this week \(year)", filter: "Albums")) ?? []
+        async let albumsC = (try? client.searchItems(query: "Album baru Indonesia \(year)", filter: "Albums")) ?? []
+        async let trendA = (try? client.search(query: "Trending songs Indonesia today", filter: "Songs")) ?? []
+        async let trendB = (try? client.search(query: "Trending songs global today \(year)", filter: "Songs")) ?? []
+        async let artistsA = (try? client.searchItems(query: "Top artists Indonesia \(year)", filter: "Artists")) ?? []
+        async let artistsB = (try? client.searchItems(query: "Top artists global charts \(year)", filter: "Artists")) ?? []
+        async let charts = loadLiveCharts()
+        
+        let albums = dedupe(await albumsA + albumsB + albumsC).filter { $0.type == .album }
+        let trending = dedupeTracks(await interleave(trendA, trendB))
+        var artists = dedupe(await interleave(artistsA, artistsB)).filter { $0.type == .artist }
+        if artists.count < 6 { artists = await resolveFallbackArtists() }
+        let chartMap = await charts
         
         await MainActor.run {
-            if !albums.isEmpty {
-                self.liveNewAlbums = albums
-            }
-            if !trending.isEmpty {
-                self.liveTrendingSongs = trending
-            }
+            if !albums.isEmpty { self.liveNewAlbums = Array(albums.prefix(24)) }
+            if !trending.isEmpty { self.liveTrendingSongs = Array(trending.prefix(20)) }
+            self.liveArtists = Array(artists.prefix(20))
+            self.liveChartPlaylists = chartMap
             self.isLoadingLive = false
         }
+    }
+    
+    /// Resolves every daily chart card to its real, live YouTube Music chart playlist.
+    private func loadLiveCharts() async -> [String: SearchResultItem] {
+        await withTaskGroup(of: (String, SearchResultItem?).self) { group in
+            for chart in dailyTopCharts {
+                group.addTask {
+                    let items = (try? await YTMusicClient.shared.searchItems(query: chart.query, filter: "Playlists")) ?? []
+                    return (chart.title, items.first { ($0.playlistId ?? $0.browseId ?? $0.id).isEmpty == false })
+                }
+            }
+            var map: [String: SearchResultItem] = [:]
+            for await (title, item) in group { if let item { map[title] = item } }
+            return map
+        }
+    }
+    
+    /// Live artist lookups (real names + real artwork + channel browseId) for the seed list.
+    private func resolveFallbackArtists() async -> [SearchResultItem] {
+        await withTaskGroup(of: (Int, SearchResultItem?).self) { group in
+            for (idx, name) in fallbackArtistNames.enumerated() {
+                group.addTask {
+                    let items = (try? await YTMusicClient.shared.searchItems(query: name, filter: "Artists")) ?? []
+                    return (idx, items.first { $0.type == .artist })
+                }
+            }
+            var results: [(Int, SearchResultItem)] = []
+            for await (idx, item) in group { if let item { results.append((idx, item)) } }
+            return results.sorted { $0.0 < $1.0 }.map { $0.1 }
+        }
+    }
+    
+    private func interleave<T>(_ a: [T], _ b: [T]) -> [T] {
+        var out: [T] = []
+        for i in 0..<max(a.count, b.count) {
+            if i < a.count { out.append(a[i]) }
+            if i < b.count { out.append(b[i]) }
+        }
+        return out
+    }
+    
+    private func dedupe(_ items: [SearchResultItem]) -> [SearchResultItem] {
+        var seen = Set<String>()
+        return items.filter { seen.insert($0.id).inserted }
+    }
+    
+    private func dedupeTracks(_ tracks: [Track]) -> [Track] {
+        var seen = Set<String>()
+        return tracks.filter { seen.insert($0.id).inserted }
     }
 }

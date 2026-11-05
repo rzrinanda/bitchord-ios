@@ -1169,10 +1169,11 @@ public final class AudioPlayerEngine: ObservableObject {
                     self.player?.rate = self.playbackSpeed
                     self.player?.play()
                     if let seekTime = self.pendingSeekTime, seekTime > 0 {
-                        let cmTime = CMTime(seconds: seekTime, preferredTimescale: 600)
-                        self.player?.seek(to: cmTime, toleranceBefore: .zero, toleranceAfter: .zero)
-                        self.currentTime = seekTime
                         self.pendingSeekTime = nil
+                        self.currentTime = seekTime
+                        self.pendingSeekTarget = seekTime
+                        self.isSeeking = true
+                        self.performAVSeek(to: seekTime, attempt: 0)
                     }
                     self.updateNowPlayingInfo()
                     self.startReadyToPlayWatchdog(for: track, streamURL: url, initialTime: self.currentTime)
@@ -1744,20 +1745,47 @@ public final class AudioPlayerEngine: ObservableObject {
         case .youtubeBridge:
             YouTubeAudioBridge.shared.seek(to: clampedTime)
         case .avPlayer:
-            let cmTime = CMTime(seconds: clampedTime, preferredTimescale: 600)
-            player?.seek(to: cmTime, toleranceBefore: .positiveInfinity, toleranceAfter: .positiveInfinity) { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    guard let self = self else { return }
-                    self.currentTime = clampedTime
-                    self.pendingSeekTarget = nil
-                    self.isSeeking = false
-                }
+            // If the item is not ready yet, AVPlayer silently ignores seeks.
+            // Queue it so it is applied the moment the item becomes .readyToPlay.
+            guard let item = player?.currentItem, item.status == .readyToPlay else {
+                self.pendingSeekTime = clampedTime
+                break
             }
+            performAVSeek(to: clampedTime, attempt: 0)
         case .none:
+            // Backend still resolving the stream: remember the target so it is applied on ready.
+            self.pendingSeekTime = clampedTime
             self.isSeeking = false
             break
         }
         updateNowPlayingInfo()
+    }
+    
+    /// Precise AVPlayer seek with a small tolerance window (fast on remote streams, but never
+    /// snaps back to the start like `.positiveInfinity` can on streams with sparse sync points).
+    /// Retries when a seek is interrupted or lands far from the requested target.
+    private func performAVSeek(to target: TimeInterval, attempt: Int) {
+        guard let player = player else { return }
+        let cmTime = CMTime(seconds: target, preferredTimescale: 600)
+        let tolerance = attempt == 0 ? CMTime(seconds: 0.5, preferredTimescale: 600) : .zero
+        player.seek(to: cmTime, toleranceBefore: tolerance, toleranceAfter: tolerance) { [weak self] finished in
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                // A newer seek superseded this one — let that one finish the job.
+                guard self.pendingSeekTarget == target else { return }
+                let landed = player.currentTime().seconds
+                let missed = !finished || !landed.isFinite || abs(landed - target) > 2.0
+                if missed && attempt < 2 {
+                    self.performAVSeek(to: target, attempt: attempt + 1)
+                    return
+                }
+                self.currentTime = landed.isFinite ? landed : target
+                self.pendingSeekTarget = nil
+                self.isSeeking = false
+                if self.status == .playing { player.rate = self.playbackSpeed }
+                self.updateNowPlayingInfo()
+            }
+        }
     }
     
     public func setSpeed(_ speed: Float) {

@@ -1631,6 +1631,12 @@ public struct PlaylistOrAlbumDetailView: View {
         
         if identifier.hasPrefix("VL") || identifier.hasPrefix("PL") || identifier.hasPrefix("OLAK") || identifier.hasPrefix("MPRE") || identifier.hasPrefix("RD") {
             fetched = await YTMusicClient.shared.fetchPlaylistOrAlbumTracks(identifier: identifier)
+        } else if item.type == .artist, let browseId = item.browseId, browseId.hasPrefix("UC") {
+            fetched = await YTMusicClient.shared.fetchArtistTracks(browseId: browseId)
+        }
+        
+        if fetched.isEmpty && item.type == .artist {
+            fetched = (try? await YTMusicClient.shared.search(query: "\(item.title) songs", filter: "Songs")) ?? []
         }
         
         if fetched.isEmpty {

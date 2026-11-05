@@ -160,6 +160,8 @@ public final class YouTubeAudioBridge: NSObject {
         var timeTicker = null;
         var pendingSeekTarget = null;
         var pendingSeekTime = 0;
+        var seekConfirmed = true;
+        var seekVerifyTimer = null;
 
         function startTimeTicker() {
           if (timeTicker) clearInterval(timeTicker);
@@ -292,6 +294,26 @@ public final class YouTubeAudioBridge: NSObject {
             postCommand('unMute');
             postCommand('playVideo');
           }
+          
+          // Verify the iframe really honoured the seek. Some embeds silently drop
+          // postMessage seekTo; in that case reload the embed starting at the target.
+          seekConfirmed = false;
+          if (seekVerifyTimer) clearTimeout(seekVerifyTimer);
+          var target = seconds;
+          seekVerifyTimer = setTimeout(function() {
+            postCommand('seekTo', [target, true]); // second attempt
+            seekVerifyTimer = setTimeout(function() {
+              seekVerifyTimer = null;
+              if (seekConfirmed || pendingSeekTarget !== target || !currentLoadedId) return;
+              var iframe = document.getElementById('player');
+              if (!iframe) return;
+              iframe.src = "https://www.youtube-nocookie.com/embed/" + currentLoadedId +
+                "?autoplay=1&playsinline=1&controls=0&rel=0&enablejsapi=1&iv_load_policy=3&start=" +
+                Math.floor(target) + "&widget_referrer=https%3A%2F%2Fwww.youtube.com";
+              pendingSeekTime = Date.now();
+              if (isUserPlaying) startPlayWatchdog();
+            }, 1200);
+          }, 900);
         }
 
         function setVolume(vol) {
@@ -358,10 +380,11 @@ public final class YouTubeAudioBridge: NSObject {
               if (data.info.currentTime !== undefined) {
                 var cur = Number(data.info.currentTime) || 0;
                 if (pendingSeekTarget !== null) {
-                  if (Date.now() - pendingSeekTime < 2000) {
+                  if (Date.now() - pendingSeekTime < 4000) {
                     if (Math.abs(cur - pendingSeekTarget) > 2.5) {
                       return; // Stale pre-seek packet from YouTube iframe; drop it
                     } else {
+                      seekConfirmed = true;
                       pendingSeekTarget = null;
                     }
                   } else {
