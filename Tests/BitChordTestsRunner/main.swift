@@ -1046,6 +1046,72 @@ func runAllTests() async {
         assertTest(engine.currentTime == currentPosBeforeRadio, "Seamless Radio: Track playback position is NOT stopped or reverted")
     }
     
+    // MARK: - Test 25: Progressive Track Cache & Range Merge Logic
+    do {
+        // 1. Contiguous & overlapping range merging
+        let ranges1 = [ByteRange(start: 0, end: 99), ByteRange(start: 100, end: 199)]
+        let merged1 = CachingResourceLoader.mergeRanges(ranges1)
+        assertTest(merged1.count == 1 && merged1[0].start == 0 && merged1[0].end == 199, "Cache: Contiguous ranges [0-99] + [100-199] merge into [0-199]")
+        
+        let ranges2 = [ByteRange(start: 0, end: 150), ByteRange(start: 50, end: 200)]
+        let merged2 = CachingResourceLoader.mergeRanges(ranges2)
+        assertTest(merged2.count == 1 && merged2[0].start == 0 && merged2[0].end == 200, "Cache: Overlapping ranges [0-150] + [50-200] merge into [0-200]")
+        
+        let ranges3 = [ByteRange(start: 300, end: 399), ByteRange(start: 0, end: 99), ByteRange(start: 100, end: 299)]
+        let merged3 = CachingResourceLoader.mergeRanges(ranges3)
+        assertTest(merged3.count == 1 && merged3[0].start == 0 && merged3[0].end == 399, "Cache: Out-of-order ranges merge into single sorted [0-399]")
+        
+        let ranges4 = [ByteRange(start: 0, end: 99), ByteRange(start: 200, end: 299)]
+        let merged4 = CachingResourceLoader.mergeRanges(ranges4)
+        assertTest(merged4.count == 2, "Cache: Non-contiguous ranges preserved as separate blocks")
+        
+        // 2. Cache coverage lookup
+        let isCovered = CachingResourceLoader.isRangeFullyCovered(offset: 20, length: 50, by: merged1)
+        assertTest(isCovered == true, "Cache Lookup: Offset 20 length 50 fully covered by [0-199]")
+        
+        let notCovered = CachingResourceLoader.isRangeFullyCovered(offset: 150, length: 100, by: merged1)
+        assertTest(notCovered == false, "Cache Lookup: Offset 150 length 100 not fully covered by [0-199]")
+        
+        // 3. Content-Type UTI mapping
+        assertTest(CachingResourceLoader.contentTypeUTI(from: "audio/mp4") == "public.mpeg-4-audio", "UTI: audio/mp4 maps to public.mpeg-4-audio")
+        assertTest(CachingResourceLoader.contentTypeUTI(from: "audio/flac") == "org.xiph.flac", "UTI: audio/flac maps to org.xiph.flac")
+        assertTest(CachingResourceLoader.contentTypeUTI(from: "audio/mpeg") == "public.mp3", "UTI: audio/mpeg maps to public.mp3")
+        
+        // 4. LRU Cache Eviction with protected key
+        let tempTestDir = FileManager.default.temporaryDirectory.appendingPathComponent("BitChordLRUTest_\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: tempTestDir, withIntermediateDirectories: true)
+        
+        let fileA = tempTestDir.appendingPathComponent("trackA_high.audio")
+        let fileB = tempTestDir.appendingPathComponent("trackB_high.audio")
+        let dummyData = Data(repeating: 0x41, count: 600)
+        try? dummyData.write(to: fileA)
+        try? dummyData.write(to: fileB)
+        
+        // Set older modification date on fileA
+        let pastDate = Date().addingTimeInterval(-3600)
+        try? FileManager.default.setAttributes([.modificationDate: pastDate], ofItemAtPath: fileA.path)
+        
+        // Evict with limit of 1000 bytes, target 500 bytes, protecting trackA
+        CachingResourceLoader.evictOldCacheFiles(in: tempTestDir, maxSizeBytes: 1000, targetSizeBytes: 500, protectedKey: "trackA")
+        assertTest(FileManager.default.fileExists(atPath: fileA.path), "LRU Eviction: Protected active track is never evicted")
+        
+        try? FileManager.default.removeItem(at: tempTestDir)
+        
+        // 5. Backend preference: YouTube direct stream plays via AVPlayer with CachingResourceLoader
+        let engine = AudioPlayerEngine.shared
+        let ytTrack = Track(
+            id: "dQw4w9WgXcQ",
+            title: "Never Gonna Give You Up",
+            artist: "Rick Astley",
+            duration: 213,
+            streamURL: URL(string: "https://example.com/audio.m4a"),
+            isLossless: false,
+            source: .youtube
+        )
+        engine.setQueue([ytTrack], startIndex: 0)
+        assertTest(engine.activeBackend == .avPlayer, "Backend Routing: Direct stream track prioritizes .avPlayer backend")
+    }
+    
     print("==================================================")
     print("🏁 Test Results: \(passed) Passed, \(failed) Failed")
     print("==================================================")

@@ -300,6 +300,7 @@ public final class AudioPlayerEngine: ObservableObject {
     public private(set) var isSeeking: Bool = false
     private var pendingSeekTarget: TimeInterval? = nil
     private var lastUserSeekTimestamp: Date = Date.distantPast
+    private var activeResourceLoader: CachingResourceLoader? = nil
     
     #if os(iOS)
     private var silencePlayer: AVAudioPlayer?
@@ -312,6 +313,21 @@ public final class AudioPlayerEngine: ObservableObject {
         setupRemoteCommands()
         setupYouTubeBridge()
         restoreLastPlayedSession()
+        setupStreamExpirationObserver()
+    }
+    
+    private func setupStreamExpirationObserver() {
+        NotificationCenter.default.addObserver(forName: .bitChordStreamURLDidExpire, object: nil, queue: .main) { [weak self] notif in
+            let expiredTrackId = notif.userInfo?["trackId"] as? String
+            Task { @MainActor [weak self] in
+                guard let self = self,
+                      let trackId = expiredTrackId,
+                      self.currentTrack?.id == trackId,
+                      let cur = self.currentTrack else { return }
+                print("[BitChord AudioEngine] Stream URL expired for track \(trackId), refreshing stream...")
+                self.attemptStreamFallback(for: cur, reason: .unavailableOrExpiredStream)
+            }
+        }
     }
     
     private func restoreLastPlayedSession() {
@@ -963,8 +979,8 @@ public final class AudioPlayerEngine: ObservableObject {
             let targetTrackId = track.id
             
             if activeStreamAddons.isEmpty {
-                // No active addons: play directly from YouTube Music
-                self.playViaYouTubeBridge(videoId: targetTrack.id, startPos: startPos, requestId: requestId)
+                // No active addons: play direct stream via AVPlayer + CachingResourceLoader (fallback to YouTubeAudioBridge)
+                self.playYouTubeTrackWithAVPlayerPreferred(videoId: targetTrack.id, for: targetTrack, startPos: startPos, requestId: requestId)
                 return
             }
             
@@ -1025,8 +1041,8 @@ public final class AudioPlayerEngine: ObservableObject {
                     
                     self.startPlaying(url: stream.streamURL, for: updated, initialSeek: startPos)
                 } else {
-                    // Not found in Addon (or addon only has FLAC while user requested non-lossless) -> Play from YouTube Music seamlessly!
-                    self.playViaYouTubeBridge(videoId: targetTrack.id, startPos: startPos, requestId: requestId)
+                    // Not found in Addon (or addon only has FLAC while user requested non-lossless) -> Play direct stream via AVPlayer + CachingResourceLoader
+                    self.playYouTubeTrackWithAVPlayerPreferred(videoId: targetTrack.id, for: targetTrack, startPos: startPos, requestId: requestId)
                 }
             }
             return
@@ -1048,11 +1064,7 @@ public final class AudioPlayerEngine: ObservableObject {
                 if self.queueIndex == index {
                     self.currentTrack = updated
                     if index < self.queue.count { self.queue[index] = updated }
-                    self.stopAVPlayer()
-                    self.activeBackend = .youtubeBridge
-                    YouTubeAudioBridge.shared.play(videoId: vId)
-                    self.status = .loading
-                    self.updateNowPlayingInfo()
+                    self.playYouTubeTrackWithAVPlayerPreferred(videoId: vId, for: updated, startPos: startPos, requestId: requestId)
                 }
             } else {
                 self.attemptStreamFallback(for: track, reason: .unavailableOrExpiredStream)
@@ -1090,6 +1102,63 @@ public final class AudioPlayerEngine: ObservableObject {
                     duration: adjTrack.duration,
                     preferredQuality: quality
                 )
+            }
+        }
+    }
+    
+    private func playYouTubeTrackWithAVPlayerPreferred(
+        videoId: String,
+        for track: Track,
+        startPos: TimeInterval,
+        requestId: UInt64
+    ) {
+        guard self.playbackRequestId == requestId else { return }
+        self.status = .loading
+        self.updateNowPlayingInfo()
+        
+        let qualityStr = BitChordSettings.shared.audioQuality.rawValue
+        if let cachedURL = CachingResourceLoader.cachedFileURLIfComplete(trackId: videoId, quality: qualityStr) {
+            print("[BitChord AudioEngine] Playing track via AVPlayer (fully cached local file): \(videoId)")
+            var updated = track
+            updated.id = videoId
+            updated.streamURL = cachedURL
+            self.currentTrack = updated
+            if self.queueIndex < self.queue.count && self.queue[self.queueIndex].id == track.id {
+                self.queue[self.queueIndex] = updated
+            }
+            self.startPlaying(url: cachedURL, for: updated, initialSeek: startPos)
+            return
+        }
+        
+        Task { @MainActor [weak self] in
+            guard let self = self, self.playbackRequestId == requestId else { return }
+            
+            // 1. Attempt to extract direct audio stream (AAC / M4A) via StreamExtractor
+            let directStream = try? await StreamExtractor.shared.extractAudioStream(
+                trackId: videoId,
+                title: track.title,
+                artist: track.artist,
+                album: track.album,
+                duration: track.duration,
+                preferredQuality: BitChordSettings.shared.audioQuality
+            )
+            
+            guard self.playbackRequestId == requestId else { return }
+            
+            if let stream = directStream, stream.isIOSAVPlayerCompatible {
+                print("[BitChord AudioEngine] Playing track via AVPlayer + CachingResourceLoader (backend: .avPlayer, format: \(stream.format))")
+                var updated = track
+                updated.id = videoId
+                updated.streamURL = stream.streamURL
+                self.currentTrack = updated
+                if self.queueIndex < self.queue.count && self.queue[self.queueIndex].id == track.id {
+                    self.queue[self.queueIndex] = updated
+                }
+                self.startPlaying(url: stream.streamURL, for: updated, initialSeek: startPos, sourceId: stream.sourceId)
+            } else {
+                // 2. Fallback to YouTubeAudioBridge iframe embed ONLY when direct stream is unreachable
+                print("[BitChord AudioEngine] Direct stream extraction unavailable, falling back to YouTubeAudioBridge iframe (backend: .youtubeBridge)")
+                self.playViaYouTubeBridge(videoId: videoId, startPos: startPos, requestId: requestId)
             }
         }
     }
@@ -1144,12 +1213,16 @@ public final class AudioPlayerEngine: ObservableObject {
         let userAgent = isAndroidSigned
             ? "com.google.android.youtube/20.10.35 (Linux; U; Android 14) gzip"
             : "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)"
-        let assetOptions: [String: Any] = [
-            "AVURLAssetHTTPHeaderFieldsKey": [
-                "User-Agent": userAgent
-            ]
-        ]
-        let asset = url.isFileURL ? AVURLAsset(url: url) : AVURLAsset(url: url, options: assetOptions)
+        let asset: AVURLAsset
+        if url.isFileURL {
+            self.activeResourceLoader = nil
+            asset = AVURLAsset(url: url)
+        } else {
+            let qualityStr = BitChordSettings.shared.audioQuality.rawValue
+            let loader = CachingResourceLoader(originalURL: url, trackId: track.id, quality: qualityStr, userAgent: userAgent)
+            self.activeResourceLoader = loader
+            asset = loader.createAsset()
+        }
         let playerItem = AVPlayerItem(asset: asset)
         if player == nil {
             player = AVPlayer(playerItem: playerItem)
