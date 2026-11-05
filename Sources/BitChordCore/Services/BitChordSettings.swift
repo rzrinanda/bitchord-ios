@@ -375,6 +375,62 @@ public actor AddonService {
         )
     }
     
+    /// Searches for tracks across all enabled addons supporting the "search" resource
+    public func searchAddons(query: String, filter: String = "All") async -> [SearchResultItem] {
+        let activeAddons = await MainActor.run {
+            BitChordSettings.shared.addonSources.filter { $0.isEnabled && $0.resources.contains("search") }
+        }
+        guard !activeAddons.isEmpty else { return [] }
+        
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let encodedQuery = trimmedQuery.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+            return []
+        }
+        
+        var allResults: [SearchResultItem] = []
+        for addon in activeAddons {
+            guard let searchURL = URL(string: "\(addon.baseURL)/search?q=\(encodedQuery)") else { continue }
+            var req = URLRequest(url: searchURL)
+            req.timeoutInterval = 6.0
+            
+            guard let (data, resp) = try? await session.data(for: req),
+                  let http = resp as? HTTPURLResponse, http.statusCode == 200,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let tracks = json["tracks"] as? [[String: Any]] else {
+                continue
+            }
+            
+            for item in tracks {
+                guard let tId = (item["id"] as? String) ?? (item["id"] as? Int).map(String.init) else { continue }
+                let title = (item["title"] as? String) ?? (item["name"] as? String) ?? "Unknown Track"
+                let artist = (item["artist"] as? String) ?? ((item["artist"] as? [String: Any])?["name"] as? String) ?? "Unknown Artist"
+                let album = (item["album"] as? String) ?? ((item["album"] as? [String: Any])?["title"] as? String) ?? ""
+                let dur = (item["duration"] as? Double) ?? (item["duration"] as? Int).map(Double.init) ?? 210
+                let coverStr = (item["cover"] as? String) ?? (item["artwork"] as? String) ?? (item["image"] as? String)
+                let coverURL = coverStr != nil ? URL(string: coverStr!) : nil
+                
+                let result = SearchResultItem(
+                    id: "addon_\(addon.id)_\(tId)",
+                    title: title,
+                    subtitle: "\(addon.name) • \(artist)",
+                    type: .song,
+                    artist: artist,
+                    album: album,
+                    artworkURL: coverURL,
+                    videoId: nil,
+                    browseId: nil,
+                    playlistId: nil,
+                    duration: dur,
+                    streamURL: nil,
+                    source: .addon,
+                    sourceId: addon.id
+                )
+                allResults.append(result)
+            }
+        }
+        return allResults
+    }
+    
     /// Attempts to resolve direct stream via configured addon
     public func resolveStream(
         trackTitle: String,

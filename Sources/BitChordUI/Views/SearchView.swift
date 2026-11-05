@@ -1,5 +1,13 @@
 import SwiftUI
 
+public enum SearchSource: String, CaseIterable, Identifiable, Codable, Sendable {
+    case youtube = "YouTube"
+    case library = "Library"
+    case addons = "Addons"
+    
+    public var id: String { rawValue }
+}
+
 public enum SearchCategory: String, CaseIterable, Identifiable {
     case all = "All"
     case songs = "Songs"
@@ -7,37 +15,99 @@ public enum SearchCategory: String, CaseIterable, Identifiable {
     case albums = "Albums"
     case artists = "Artists"
     case playlists = "Playlists"
+    case downloaded = "Downloaded"
     
     public var id: String { rawValue }
+    
+    public static func categories(for source: SearchSource) -> [SearchCategory] {
+        switch source {
+        case .youtube:
+            return [.all, .songs, .videos, .albums, .artists, .playlists]
+        case .library:
+            return [.all, .songs, .playlists, .albums, .artists, .downloaded]
+        case .addons:
+            return [.all, .songs, .albums, .artists]
+        }
+    }
+}
+
+private struct BrowseCategoryCard: Identifiable {
+    let id = UUID()
+    let title: String
+    let subtitle: String
+    let gradientColors: [Color]
+    let imageURL: URL?
 }
 
 public struct SearchView: View {
     @ObservedObject var engine = AudioPlayerEngine.shared
     @ObservedObject var library = LibraryDatabase.shared
     @ObservedObject var accountManager = AccountManager.shared
+    @ObservedObject var settings = BitChordSettings.shared
     
     @State private var query: String = ""
+    @State private var selectedSource: SearchSource = .youtube
+    @State private var selectedCategory: SearchCategory = .all
     @State private var searchResults: [SearchResultItem] = []
     @State private var isSearching: Bool = false
-    @State private var selectedCategory: SearchCategory = .all
     @State private var searchTask: Task<Void, Never>? = nil
     @State private var showingAccountMenu: Bool = false
+    @State private var showingAddAddonSheet: Bool = false
     @State private var selectedTrackForMenu: Track? = nil
     @State private var loadingItemId: String? = nil
+    
+    private let browseCategories: [BrowseCategoryCard] = [
+        BrowseCategoryCard(
+            title: "Hits Cafe",
+            subtitle: "Chill",
+            gradientColors: [Color(red: 0.35, green: 0.28, blue: 0.20), Color(red: 0.18, green: 0.14, blue: 0.10)],
+            imageURL: URL(string: "https://images.unsplash.com/photo-1501386761578-eac5c94b800a?w=400&q=80")
+        ),
+        BrowseCategoryCard(
+            title: "Commute",
+            subtitle: "Feel-good music",
+            gradientColors: [Color(red: 0.22, green: 0.22, blue: 0.24), Color(red: 0.12, green: 0.12, blue: 0.14)],
+            imageURL: URL(string: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=400&q=80")
+        ),
+        BrowseCategoryCard(
+            title: "Energize",
+            subtitle: "Workout & Vibes",
+            gradientColors: [Color(red: 0.35, green: 0.18, blue: 0.40), Color(red: 0.12, green: 0.15, blue: 0.35)],
+            imageURL: URL(string: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&q=80")
+        ),
+        BrowseCategoryCard(
+            title: "Sunshine Indie",
+            subtitle: "Feel good",
+            gradientColors: [Color(red: 0.45, green: 0.30, blue: 0.15), Color(red: 0.25, green: 0.15, blue: 0.08)],
+            imageURL: URL(string: "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=400&q=80")
+        ),
+        BrowseCategoryCard(
+            title: "Acoustic Chill",
+            subtitle: "Relax",
+            gradientColors: [Color(red: 0.18, green: 0.30, blue: 0.32), Color(red: 0.10, green: 0.18, blue: 0.20)],
+            imageURL: URL(string: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400&q=80")
+        ),
+        BrowseCategoryCard(
+            title: "Top Hits",
+            subtitle: "Party & Dance",
+            gradientColors: [Color(red: 0.42, green: 0.15, blue: 0.22), Color(red: 0.20, green: 0.08, blue: 0.12)],
+            imageURL: URL(string: "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400&q=80")
+        )
+    ]
     
     public init() {}
     
     public var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // MARK: - Search Bar & Account Avatar (Matching Car HU Photo 1 & 2)
+                // MARK: - Search Bar & Account Avatar
                 HStack(spacing: 12) {
                     HStack(spacing: 10) {
                         Image(systemName: "magnifyingglass")
                             .foregroundColor(.secondary)
                             .font(.system(size: 16, weight: .medium))
                         
-                        TextField("Artists, Songs, Lyrics and More", text: $query)
+                        TextField("Artists, Songs, Lyrics, and More", text: $query)
                             .font(.system(size: 15))
                             .autocorrectionDisabled()
                             .textInputAutocapitalization(.never)
@@ -84,25 +154,62 @@ public struct SearchView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
-                .padding(.bottom, 8)
+                .padding(.bottom, 6)
                 
-                // MARK: - Category Filter Chips (Matching Car HU Photo 1 & 2: All | Songs | Videos | Albums | Artists | Playlists)
+                // MARK: - Source Selector Bar: [ YouTube ] [ Library ] [ Addons ] (Matching Reference Screenshot)
+                HStack {
+                    ForEach(SearchSource.allCases) { source in
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.18)) {
+                                selectedSource = source
+                                let validCats = SearchCategory.categories(for: source)
+                                if !validCats.contains(selectedCategory) {
+                                    selectedCategory = .all
+                                }
+                            }
+                            if !query.isEmpty {
+                                performSearch()
+                            }
+                        } label: {
+                            Text(source.rawValue)
+                                .font(.system(size: 14, weight: selectedSource == source ? .semibold : .medium))
+                                .foregroundColor(selectedSource == source ? .white : .secondary)
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 7)
+                                .background(
+                                    selectedSource == source
+                                        ? Color.white.opacity(0.24)
+                                        : Color.clear
+                                )
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        
+                        if source != SearchSource.allCases.last {
+                            Spacer()
+                        }
+                    }
+                }
+                .padding(.horizontal, 22)
+                .padding(.vertical, 6)
+                
+                // MARK: - Category Filter Chips (Dynamic per Source)
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        ForEach(SearchCategory.allCases) { category in
+                        ForEach(SearchCategory.categories(for: selectedSource)) { category in
                             Button {
                                 selectedCategory = category
                                 if !query.isEmpty {
                                     performSearch()
-                                } else {
+                                } else if selectedSource == .youtube {
                                     loadDefaultCategoryContent(category)
                                 }
                             } label: {
                                 Text(category.rawValue)
                                     .font(.system(size: 13, weight: .semibold))
                                     .foregroundColor(selectedCategory == category ? .white : .secondary)
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 7)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 6)
                                     .background(
                                         selectedCategory == category
                                             ? Color.white.opacity(0.25)
@@ -114,107 +221,131 @@ public struct SearchView: View {
                         }
                     }
                     .padding(.horizontal, 16)
-                    .padding(.bottom, 10)
+                    .padding(.bottom, 8)
                 }
                 
                 Divider()
-                    .opacity(0.2)
+                    .opacity(0.15)
                 
-                // MARK: - Content
+                // MARK: - Content Area
                 if isSearching {
                     Spacer()
                     VStack(spacing: 12) {
                         ProgressView()
                             .scaleEffect(1.2)
-                        Text("Searching \(selectedCategory.rawValue)...")
+                        Text("Searching \(selectedSource.rawValue)...")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                     }
                     Spacer()
                 } else if query.isEmpty && searchResults.isEmpty {
-                    // Recent Searches Section (Matching Car HU Photo 2)
+                    // Empty Query State
                     ScrollView {
-                        VStack(alignment: .leading, spacing: 16) {
-                            HStack {
-                                Text("Recent searches")
-                                    .font(.system(size: 17, weight: .bold))
-                                    .foregroundColor(.primary)
-                                Spacer()
-                                if !library.recentSearches.isEmpty {
-                                    Button("Clear") {
-                                        library.clearRecentSearches()
-                                    }
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundColor(.secondary)
-                                }
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.top, 12)
-                            
-                            if library.recentSearches.isEmpty {
-                                Text("No recent searches")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                                    .padding(.horizontal, 16)
-                                    .padding(.top, 12)
+                        VStack(alignment: .leading, spacing: 22) {
+                            // If Addons is selected but user has no active addons configured
+                            if selectedSource == .addons && settings.addonSources.filter({ $0.isEnabled }).isEmpty {
+                                addonEmptyPromptView
                             } else {
-                                VStack(spacing: 4) {
-                                    ForEach(library.recentSearches) { track in
-                                        HStack(spacing: 12) {
-                                            Button {
-                                                let idx = library.recentSearches.firstIndex(where: { $0.id == track.id }) ?? 0
-                                                engine.setQueue(library.recentSearches, startIndex: idx)
-                                                library.recordPlayback(track: track)
+                                // MARK: - Recently Searched Section (Matching Reference Screenshot)
+                                VStack(alignment: .leading, spacing: 12) {
+                                    HStack {
+                                        Text("Recently Searched")
+                                            .font(.system(size: 17, weight: .bold))
+                                            .foregroundColor(.primary)
+                                        Spacer()
+                                        if !library.recentSearches.isEmpty {
+                                            Button("Clear") {
+                                                library.clearRecentSearches()
+                                            }
+                                            .font(.system(size: 14, weight: .semibold))
+                                            .foregroundColor(.secondary)
+                                        }
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.top, 8)
+                                    
+                                    if library.recentSearches.isEmpty {
+                                        Text("No recent searches")
+                                            .font(.subheadline)
+                                            .foregroundColor(.secondary)
+                                            .padding(.horizontal, 16)
+                                    } else {
+                                        VStack(spacing: 8) {
+                                            ForEach(library.recentSearches.prefix(4)) { track in
+                                                recentSearchCard(for: track)
+                                            }
+                                        }
+                                        .padding(.horizontal, 16)
+                                    }
+                                }
+                                
+                                // MARK: - Browse Categories Section (Matching Reference Screenshot 2-Column Grid)
+                                VStack(alignment: .leading, spacing: 14) {
+                                    Text("Browse Categories")
+                                        .font(.system(size: 17, weight: .bold))
+                                        .foregroundColor(.primary)
+                                        .padding(.horizontal, 16)
+                                    
+                                    LazyVGrid(
+                                        columns: [
+                                            GridItem(.flexible(), spacing: 12),
+                                            GridItem(.flexible(), spacing: 12)
+                                        ],
+                                        spacing: 12
+                                    ) {
+                                        ForEach(browseCategories) { item in
+                                            NavigationLink {
+                                                CategoryPlaylistsBrowserView(categoryTitle: item.title)
                                             } label: {
-                                                HStack(spacing: 12) {
-                                                    if let artURL = track.artworkURL {
-                                                        AsyncImage(url: artURL) { phase in
+                                                ZStack(alignment: .bottomLeading) {
+                                                    // Background Image or Gradient
+                                                    if let url = item.imageURL {
+                                                        AsyncImage(url: url) { phase in
                                                             if let img = phase.image {
-                                                                img.resizable().aspectRatio(contentMode: .fill)
+                                                                img.resizable()
+                                                                    .aspectRatio(contentMode: .fill)
                                                             } else {
-                                                                Color.gray.opacity(0.3)
+                                                                LinearGradient(
+                                                                    colors: item.gradientColors,
+                                                                    startPoint: .topLeading,
+                                                                    endPoint: .bottomTrailing
+                                                                )
                                                             }
                                                         }
-                                                        .frame(width: 44, height: 44)
-                                                        .clipShape(RoundedRectangle(cornerRadius: 8))
                                                     } else {
-                                                        BitChordLogoView(size: 44, cornerRadius: 8)
+                                                        LinearGradient(
+                                                            colors: item.gradientColors,
+                                                            startPoint: .topLeading,
+                                                            endPoint: .bottomTrailing
+                                                        )
                                                     }
                                                     
-                                                    VStack(alignment: .leading, spacing: 2) {
-                                                        Text(track.title)
-                                                            .font(.system(size: 15, weight: .semibold))
-                                                            .foregroundColor(.primary)
+                                                    // Dark Gradient Overlay for clean readability
+                                                    LinearGradient(
+                                                        colors: [Color.clear, Color.black.opacity(0.8)],
+                                                        startPoint: .top,
+                                                        endPoint: .bottom
+                                                    )
+                                                    
+                                                    VStack(alignment: .leading, spacing: 3) {
+                                                        Text(item.title)
+                                                            .font(.system(size: 16, weight: .bold))
+                                                            .foregroundColor(.white)
                                                             .lineLimit(1)
-                                                        Text("Lagu • \(track.artist)")
-                                                            .font(.system(size: 12))
-                                                            .foregroundColor(.secondary)
+                                                        Text(item.subtitle)
+                                                            .font(.system(size: 12, weight: .medium))
+                                                            .foregroundColor(.white.opacity(0.8))
                                                             .lineLimit(1)
                                                     }
-                                                    Spacer()
+                                                    .padding(12)
                                                 }
-                                            }
-                                            .buttonStyle(.plain)
-                                            .simultaneousGesture(
-                                                LongPressGesture(minimumDuration: 0.45).onEnded { _ in
-                                                    selectedTrackForMenu = track
-                                                }
-                                            )
-                                            
-                                            // Delete search item button 'x'
-                                            Button {
-                                                library.removeRecentSearch(trackId: track.id)
-                                            } label: {
-                                                Image(systemName: "xmark")
-                                                    .font(.system(size: 13, weight: .semibold))
-                                                    .foregroundColor(.secondary)
-                                                    .padding(8)
+                                                .frame(height: 104)
+                                                .clipShape(RoundedRectangle(cornerRadius: 12))
                                             }
                                             .buttonStyle(.plain)
                                         }
-                                        .padding(.horizontal, 16)
-                                        .padding(.vertical, 6)
                                     }
+                                    .padding(.horizontal, 16)
                                 }
                             }
                             
@@ -223,13 +354,17 @@ public struct SearchView: View {
                     }
                 } else if searchResults.isEmpty && !query.isEmpty {
                     Spacer()
-                    ContentUnavailableView.search(text: query)
+                    if selectedSource == .addons && settings.addonSources.filter({ $0.isEnabled }).isEmpty {
+                        addonEmptyPromptView
+                    } else {
+                        ContentUnavailableView.search(text: query)
+                    }
                     Spacer()
                 } else {
-                    // Active Search Results (Matching Car HU Photo 2 & 3: Filter header, Rows with 3-dots)
+                    // Active Search Results
                     ScrollView {
                         VStack(alignment: .leading, spacing: 10) {
-                            Text(selectedCategory == .all ? "Results" : selectedCategory.rawValue)
+                            Text(selectedCategory == .all ? "\(selectedSource.rawValue) Results" : selectedCategory.rawValue)
                                 .font(.system(size: 17, weight: .bold))
                                 .foregroundColor(.primary)
                                 .padding(.horizontal, 16)
@@ -247,7 +382,7 @@ public struct SearchView: View {
                                             .buttonStyle(.plain)
                                         } else {
                                             Button {
-                                               handleItemTap(item)
+                                                handleItemTap(item)
                                             } label: {
                                                 searchResultRowContent(for: item)
                                             }
@@ -259,7 +394,7 @@ public struct SearchView: View {
                                             )
                                         }
                                         
-                                        // 3-dots Menu Button (Matching Car HU Photo 2 & 3)
+                                        // 3-dots Menu Button
                                         Button {
                                             selectedTrackForMenu = item.asTrack
                                         } label: {
@@ -304,16 +439,101 @@ public struct SearchView: View {
             .sheet(isPresented: $showingAccountMenu) {
                 AccountMenuSheet()
             }
+            .sheet(isPresented: $showingAddAddonSheet) {
+                AddAddonSheet()
+            }
             .sheet(item: $selectedTrackForMenu) { track in
                 TrackContextMenuSheet(track: track)
             }
         }
     }
     
-    // MARK: - Actions & Helpers
+    // MARK: - Recently Searched Card View (Matches Screenshot Card Style)
+    private func recentSearchCard(for track: Track) -> some View {
+        HStack(spacing: 12) {
+            Button {
+                let idx = library.recentSearches.firstIndex(where: { $0.id == track.id }) ?? 0
+                engine.setQueue(library.recentSearches, startIndex: idx)
+                library.recordPlayback(track: track)
+            } label: {
+                HStack(spacing: 12) {
+                    if let artURL = track.artworkURL {
+                        AsyncImage(url: artURL) { phase in
+                            if let img = phase.image {
+                                img.resizable().aspectRatio(contentMode: .fill)
+                            } else {
+                                Color.gray.opacity(0.3)
+                            }
+                        }
+                        .frame(width: 48, height: 48)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    } else {
+                        BitChordLogoView(size: 48, cornerRadius: 8)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(track.title)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                        Text("\(track.artist) • Song")
+                            .font(.system(size: 13))
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer()
+                }
+            }
+            .buttonStyle(.plain)
+            
+            Button {
+                library.removeRecentSearch(trackId: track.id)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .padding(8)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(Color.secondary.opacity(0.12))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+    
+    // MARK: - Addon Empty Prompt
+    private var addonEmptyPromptView: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "puzzlepiece.extension")
+                .font(.system(size: 44))
+                .foregroundColor(.cyan)
+            Text("No Addon Connected")
+                .font(.title3.bold())
+            Text("Connect a SoundFean, Qobuz, or BitPerfect addon server to stream Hi-Res lossless audio directly.")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+            Button {
+                showingAddAddonSheet = true
+            } label: {
+                Text("Connect an Addon")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 10)
+                    .background(Color.cyan)
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.top, 40)
+    }
+    
+    // MARK: - Search Result Row Content
     private func searchResultRowContent(for item: SearchResultItem) -> some View {
         HStack(spacing: 12) {
-            // Artwork or Logo
             ZStack {
                 if let artURL = item.artworkURL {
                     AsyncImage(url: artURL) { phase in
@@ -389,11 +609,39 @@ public struct SearchView: View {
         }
     }
     
+    // MARK: - Item Tap Action (Instant source-specific playback)
     private func handleItemTap(_ item: SearchResultItem) {
         switch item.type {
         case .song, .video:
-            let track = item.asTrack
-            let songsInResults = searchResults.filter { $0.type == .song || $0.type == .video }.map { $0.asTrack }
+            var track = item.asTrack
+            track.source = selectedSource == .library ? .library : (selectedSource == .addons ? .addon : .youtube)
+            track.sourceId = item.sourceId
+            
+            // If from Library source, attach local file streamURL if exists for instant 0ms playback
+            if track.source == .library {
+                if let localURL = DownloadManager.shared.getLocalFileURL(for: track.id) {
+                    track.streamURL = localURL
+                } else if let scanned = LocalMusicScanner.shared.tracks.first(where: { $0.id == track.id }),
+                          let localURL = scanned.streamURL {
+                    track.streamURL = localURL
+                }
+            }
+            
+            let songsInResults = searchResults.filter { $0.type == .song || $0.type == .video }.map { resItem -> Track in
+                var t = resItem.asTrack
+                t.source = track.source
+                t.sourceId = resItem.sourceId ?? track.sourceId
+                if t.source == .library {
+                    if let localURL = DownloadManager.shared.getLocalFileURL(for: t.id) {
+                        t.streamURL = localURL
+                    } else if let scanned = LocalMusicScanner.shared.tracks.first(where: { $0.id == t.id }),
+                              let localURL = scanned.streamURL {
+                        t.streamURL = localURL
+                    }
+                }
+                return t
+            }
+            
             let index = songsInResults.firstIndex(where: { $0.id == track.id }) ?? 0
             engine.setQueue(songsInResults.isEmpty ? [track] : songsInResults, startIndex: index)
             library.recordPlayback(track: track)
@@ -403,12 +651,23 @@ public struct SearchView: View {
             let idToLoad = item.playlistId ?? item.browseId ?? item.id
             loadingItemId = item.id
             Task {
-                var tracks = await YTMusicClient.shared.fetchPlaylistOrAlbumTracks(identifier: idToLoad)
-                if tracks.isEmpty {
-                    if let searched = try? await YTMusicClient.shared.search(query: "\(item.title) \(item.subtitle)") {
-                        tracks = searched
+                var tracks: [Track] = []
+                if selectedSource == .library {
+                    // Local playlist or album
+                    if let p = library.userPlaylists.first(where: { $0.id == idToLoad }) {
+                        tracks = p.tracks
+                    } else {
+                        tracks = LocalMusicScanner.shared.tracks.filter { $0.album == item.title }
+                    }
+                } else {
+                    tracks = await YTMusicClient.shared.fetchPlaylistOrAlbumTracks(identifier: idToLoad)
+                    if tracks.isEmpty {
+                        if let searched = try? await YTMusicClient.shared.search(query: "\(item.title) \(item.subtitle)") {
+                            tracks = searched
+                        }
                     }
                 }
+                
                 await MainActor.run {
                     self.loadingItemId = nil
                     if !tracks.isEmpty {
@@ -427,12 +686,18 @@ public struct SearchView: View {
             let browseId = item.browseId ?? item.id
             loadingItemId = item.id
             Task {
-                var tracks = await YTMusicClient.shared.fetchArtistTracks(browseId: browseId)
-                if tracks.isEmpty {
-                    if let searched = try? await YTMusicClient.shared.search(query: "\(item.title) popular") {
-                        tracks = searched
+                var tracks: [Track] = []
+                if selectedSource == .library {
+                    tracks = LocalMusicScanner.shared.tracks.filter { $0.artist.localizedCaseInsensitiveContains(item.title) }
+                } else {
+                    tracks = await YTMusicClient.shared.fetchArtistTracks(browseId: browseId)
+                    if tracks.isEmpty {
+                        if let searched = try? await YTMusicClient.shared.search(query: "\(item.title) popular") {
+                            tracks = searched
+                        }
                     }
                 }
+                
                 await MainActor.run {
                     self.loadingItemId = nil
                     if !tracks.isEmpty {
@@ -449,6 +714,7 @@ public struct SearchView: View {
         }
     }
     
+    // MARK: - Search Execution & Debounce
     private func debounceSearch(_ text: String) {
         searchTask?.cancel()
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -457,7 +723,7 @@ public struct SearchView: View {
             return
         }
         searchTask = Task {
-            try? await Task.sleep(nanoseconds: 350_000_000)
+            try? await Task.sleep(nanoseconds: 300_000_000)
             if !Task.isCancelled {
                 await MainActor.run {
                     performSearch()
@@ -472,19 +738,167 @@ public struct SearchView: View {
         
         isSearching = true
         Task {
-            do {
-                let results = try await YTMusicClient.shared.searchItems(query: trimmed, filter: selectedCategory.rawValue)
+            switch selectedSource {
+            case .youtube:
+                do {
+                    let results = try await YTMusicClient.shared.searchItems(query: trimmed, filter: selectedCategory.rawValue)
+                    await MainActor.run {
+                        self.searchResults = results
+                        self.isSearching = false
+                    }
+                } catch {
+                    await MainActor.run {
+                        self.searchResults = []
+                        self.isSearching = false
+                    }
+                }
+                
+            case .library:
+                let results = await searchLibrary(query: trimmed, category: selectedCategory)
                 await MainActor.run {
                     self.searchResults = results
                     self.isSearching = false
                 }
-            } catch {
+                
+            case .addons:
+                let results = await AddonService.shared.searchAddons(query: trimmed, filter: selectedCategory.rawValue)
+                let filtered: [SearchResultItem]
+                if selectedCategory == .all {
+                    filtered = results
+                } else if selectedCategory == .songs {
+                    filtered = results.filter { $0.type == .song }
+                } else if selectedCategory == .albums {
+                    filtered = results.filter { $0.type == .album }
+                } else if selectedCategory == .artists {
+                    filtered = results.filter { $0.type == .artist }
+                } else {
+                    filtered = results
+                }
                 await MainActor.run {
-                    self.searchResults = []
+                    self.searchResults = filtered
                     self.isSearching = false
                 }
             }
         }
+    }
+    
+    // MARK: - Local Library Search
+    @MainActor
+    private func searchLibrary(query: String, category: SearchCategory) async -> [SearchResultItem] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        
+        var pool: [Track] = []
+        let downloaded = await DownloadManager.shared.getDownloadedTracks()
+        pool.append(contentsOf: downloaded)
+        pool.append(contentsOf: LocalMusicScanner.shared.tracks)
+        pool.append(contentsOf: library.likedTracks)
+        pool.append(contentsOf: library.recentTracks)
+        
+        var seenIds = Set<String>()
+        var uniqueTracks: [Track] = []
+        for t in pool {
+            if !seenIds.contains(t.id) {
+                seenIds.insert(t.id)
+                uniqueTracks.append(t)
+            }
+        }
+        
+        let matchedTracks = uniqueTracks.filter { t in
+            if trimmed.isEmpty { return true }
+            return t.title.lowercased().contains(trimmed) ||
+                   t.artist.lowercased().contains(trimmed) ||
+                   t.album.lowercased().contains(trimmed)
+        }
+        
+        var results: [SearchResultItem] = []
+        
+        // Playlists
+        if category == .all || category == .playlists {
+            let matchedPlaylists = library.userPlaylists.filter { p in
+                if trimmed.isEmpty { return true }
+                return p.title.lowercased().contains(trimmed)
+            }
+            for p in matchedPlaylists {
+                results.append(
+                    SearchResultItem(
+                        id: p.id,
+                        title: p.title,
+                        subtitle: "\(p.tracks.count) songs • Library Playlist",
+                        type: .playlist,
+                        playlistId: p.id,
+                        source: .library
+                    )
+                )
+            }
+        }
+        
+        // Songs
+        if category == .all || category == .songs || category == .downloaded {
+            for t in matchedTracks {
+                let isDl = DownloadManager.shared.getLocalFileURL(for: t.id) != nil || t.streamURL?.isFileURL == true
+                if category == .downloaded && !isDl { continue }
+                
+                let subtitleBadge = isDl ? "Downloaded • \(t.artist)" : "Library • \(t.artist)"
+                results.append(
+                    SearchResultItem(
+                        id: t.id,
+                        title: t.title,
+                        subtitle: subtitleBadge,
+                        type: .song,
+                        artist: t.artist,
+                        album: t.album,
+                        artworkURL: t.artworkURL,
+                        duration: t.duration,
+                        streamURL: t.streamURL ?? DownloadManager.shared.getLocalFileURL(for: t.id),
+                        source: .library
+                    )
+                )
+            }
+        }
+        
+        // Albums
+        if category == .all || category == .albums {
+            let albumsGrouped = Dictionary(grouping: matchedTracks.filter { !$0.album.isEmpty && $0.album != "Unknown Album" }) { $0.album }
+            for (albumName, albumTracks) in albumsGrouped {
+                let art = albumTracks.first?.artworkURL
+                let artist = albumTracks.first?.artist ?? "Various Artists"
+                results.append(
+                    SearchResultItem(
+                        id: "local_album_\(albumName)",
+                        title: albumName,
+                        subtitle: "Album • \(artist)",
+                        type: .album,
+                        artist: artist,
+                        album: albumName,
+                        artworkURL: art,
+                        browseId: "local_album_\(albumName)",
+                        source: .library
+                    )
+                )
+            }
+        }
+        
+        // Artists
+        if category == .all || category == .artists {
+            let artistsGrouped = Dictionary(grouping: matchedTracks.filter { !$0.artist.isEmpty && $0.artist != "Unknown Artist" }) { $0.artist }
+            for (artistName, artistTracks) in artistsGrouped {
+                let art = artistTracks.first?.artworkURL
+                results.append(
+                    SearchResultItem(
+                        id: "local_artist_\(artistName)",
+                        title: artistName,
+                        subtitle: "Artist • \(artistTracks.count) tracks",
+                        type: .artist,
+                        artist: artistName,
+                        artworkURL: art,
+                        browseId: "local_artist_\(artistName)",
+                        source: .library
+                    )
+                )
+            }
+        }
+        
+        return results
     }
     
     private func loadDefaultCategoryContent(_ category: SearchCategory) {
@@ -499,6 +913,13 @@ public struct SearchView: View {
             fetchCategoryDefaults(query: "Top Hits Playlist")
         case .videos:
             fetchCategoryDefaults(query: "Top Music Videos")
+        case .downloaded:
+            Task {
+                let res = await searchLibrary(query: "", category: .downloaded)
+                await MainActor.run {
+                    self.searchResults = res
+                }
+            }
         }
     }
     

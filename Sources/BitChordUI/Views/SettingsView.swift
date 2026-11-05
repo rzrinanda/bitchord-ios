@@ -676,7 +676,7 @@ private struct AudioSourcesDetailView: View {
 }
 
 // MARK: - Add Addon Sheet
-private struct AddAddonSheet: View {
+public struct AddAddonSheet: View {
     @ObservedObject var settings = BitChordSettings.shared
     @Environment(\.dismiss) private var dismiss
     
@@ -686,7 +686,9 @@ private struct AddAddonSheet: View {
     @State private var fetchedAddon: AddonSource? = nil
     @State private var hasAdded: Bool = false
     
-    var body: some View {
+    public init() {}
+    
+    public var body: some View {
         NavigationStack {
             Form {
                 Section {

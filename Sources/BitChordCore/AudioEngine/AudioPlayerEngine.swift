@@ -772,6 +772,67 @@ public final class AudioPlayerEngine: ObservableObject {
             return
         }
         
+        // 4b. Addon source track resolution & playback (Direct Hi-Res FLAC / AAC via AVPlayer)
+        if track.source == .addon || track.id.hasPrefix("addon_") {
+            YouTubeAudioBridge.shared.pause()
+            self.stopAVPlayer()
+            self.activeBackend = .avPlayer
+            self.status = .loading
+            self.updateNowPlayingInfo()
+            
+            let targetTrack = track
+            Task { @MainActor [weak self] in
+                guard let self = self, self.playbackRequestId == requestId else { return }
+                let activeAddons = BitChordSettings.shared.addonSources.filter { $0.isEnabled }
+                var resolvedStream: StreamInfo? = nil
+                
+                for addon in activeAddons {
+                    if targetTrack.sourceId == addon.id || targetTrack.id.contains("addon_\(addon.id)_") {
+                        let tiers = await AddonService.shared.resolveStreamTiers(
+                            trackTitle: targetTrack.title,
+                            artist: targetTrack.artist,
+                            album: targetTrack.album,
+                            duration: targetTrack.duration,
+                            addon: addon
+                        )
+                        resolvedStream = tiers.first
+                        if resolvedStream != nil { break }
+                    }
+                }
+                
+                if resolvedStream == nil {
+                    for addon in activeAddons {
+                        let tiers = await AddonService.shared.resolveStreamTiers(
+                            trackTitle: targetTrack.title,
+                            artist: targetTrack.artist,
+                            album: targetTrack.album,
+                            duration: targetTrack.duration,
+                            addon: addon
+                        )
+                        if let first = tiers.first {
+                            resolvedStream = first
+                            break
+                        }
+                    }
+                }
+                
+                guard self.playbackRequestId == requestId else { return }
+                if let stream = resolvedStream {
+                    var updated = targetTrack
+                    updated.streamURL = stream.streamURL
+                    updated.isLossless = stream.isGenuineLossless
+                    updated.sampleRate = stream.sampleRate
+                    updated.bitDepth = stream.bitDepth
+                    self.currentTrack = updated
+                    if index < self.queue.count { self.queue[index] = updated }
+                    self.startPlaying(url: stream.streamURL, for: updated, initialSeek: startPos)
+                } else {
+                    self.status = .error
+                }
+            }
+            return
+        }
+        
         // 5. Instant online playback for valid 11-char YouTube tracks
         if track.id.count == 11 && !track.id.hasPrefix("yt_") {
             self.stopAVPlayer()

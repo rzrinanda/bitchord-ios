@@ -1,5 +1,11 @@
 import Foundation
 
+public enum TrackSource: String, Codable, CaseIterable, Sendable {
+    case youtube = "YouTube"
+    case library = "Library"
+    case addon = "Addons"
+}
+
 public struct Track: Identifiable, Hashable, Codable, Sendable {
     public var id: String
     public var title: String
@@ -13,6 +19,8 @@ public struct Track: Identifiable, Hashable, Codable, Sendable {
     public var bitDepth: Int?
     public var lyricsId: String?
     public var isExplicit: Bool
+    public var source: TrackSource?
+    public var sourceId: String?
     
     public init(
         id: String,
@@ -26,7 +34,9 @@ public struct Track: Identifiable, Hashable, Codable, Sendable {
         sampleRate: Double? = nil,
         bitDepth: Int? = nil,
         lyricsId: String? = nil,
-        isExplicit: Bool = false
+        isExplicit: Bool = false,
+        source: TrackSource? = nil,
+        sourceId: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -40,6 +50,8 @@ public struct Track: Identifiable, Hashable, Codable, Sendable {
         self.bitDepth = bitDepth
         self.lyricsId = lyricsId
         self.isExplicit = isExplicit
+        self.source = source
+        self.sourceId = sourceId
     }
     
     public var formattedDuration: String {

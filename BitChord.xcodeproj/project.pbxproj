@@ -23,7 +23,6 @@
 		BC000013BLD000000000000 /* Sources/BitChordCore/Models/Track.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000013FILE000000000000 /* Sources/BitChordCore/Models/Track.swift */; };
 		BC000014BLD000000000000 /* Sources/BitChordCore/Network/InnertubeEndpoints.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000014FILE000000000000 /* Sources/BitChordCore/Network/InnertubeEndpoints.swift */; };
 		BC000015BLD000000000000 /* Sources/BitChordCore/Network/StreamExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000015FILE000000000000 /* Sources/BitChordCore/Network/StreamExtractor.swift */; };
-		BC000101BLD000000000000 /* Sources/BitChordCore/Network/LocalStreamProxy.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000101FILE000000000000 /* Sources/BitChordCore/Network/LocalStreamProxy.swift */; };
 		BC000016BLD000000000000 /* Sources/BitChordCore/Network/YTMusicClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000016FILE000000000000 /* Sources/BitChordCore/Network/YTMusicClient.swift */; };
 		BC000017BLD000000000000 /* Sources/BitChordCore/Services/BitChordSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000017FILE000000000000 /* Sources/BitChordCore/Services/BitChordSettings.swift */; };
 		BC000018BLD000000000000 /* Sources/BitChordCore/Services/DownloadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC000018FILE000000000000 /* Sources/BitChordCore/Services/DownloadManager.swift */; };
@@ -74,7 +73,6 @@
 		BC000013FILE000000000000 /* Sources/BitChordCore/Models/Track.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordCore/Models/Track.swift; sourceTree = SOURCE_ROOT; };
 		BC000014FILE000000000000 /* Sources/BitChordCore/Network/InnertubeEndpoints.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordCore/Network/InnertubeEndpoints.swift; sourceTree = SOURCE_ROOT; };
 		BC000015FILE000000000000 /* Sources/BitChordCore/Network/StreamExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordCore/Network/StreamExtractor.swift; sourceTree = SOURCE_ROOT; };
-		BC000101FILE000000000000 /* Sources/BitChordCore/Network/LocalStreamProxy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordCore/Network/LocalStreamProxy.swift; sourceTree = SOURCE_ROOT; };
 		BC000016FILE000000000000 /* Sources/BitChordCore/Network/YTMusicClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordCore/Network/YTMusicClient.swift; sourceTree = SOURCE_ROOT; };
 		BC000017FILE000000000000 /* Sources/BitChordCore/Services/BitChordSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordCore/Services/BitChordSettings.swift; sourceTree = SOURCE_ROOT; };
 		BC000018FILE000000000000 /* Sources/BitChordCore/Services/DownloadManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/BitChordCore/Services/DownloadManager.swift; sourceTree = SOURCE_ROOT; };
@@ -135,7 +133,6 @@
 				BC000013FILE000000000000 /* Sources/BitChordCore/Models/Track.swift */,
 				BC000014FILE000000000000 /* Sources/BitChordCore/Network/InnertubeEndpoints.swift */,
 				BC000015FILE000000000000 /* Sources/BitChordCore/Network/StreamExtractor.swift */,
-				BC000101FILE000000000000 /* Sources/BitChordCore/Network/LocalStreamProxy.swift */,
 				BC000016FILE000000000000 /* Sources/BitChordCore/Network/YTMusicClient.swift */,
 				BC000017FILE000000000000 /* Sources/BitChordCore/Services/BitChordSettings.swift */,
 				BC000018FILE000000000000 /* Sources/BitChordCore/Services/DownloadManager.swift */,
@@ -263,7 +260,6 @@
 				BC000013BLD000000000000 /* Sources/BitChordCore/Models/Track.swift in Sources */,
 				BC000014BLD000000000000 /* Sources/BitChordCore/Network/InnertubeEndpoints.swift in Sources */,
 				BC000015BLD000000000000 /* Sources/BitChordCore/Network/StreamExtractor.swift in Sources */,
-				BC000101BLD000000000000 /* Sources/BitChordCore/Network/LocalStreamProxy.swift in Sources */,
 				BC000016BLD000000000000 /* Sources/BitChordCore/Network/YTMusicClient.swift in Sources */,
 				BC000017BLD000000000000 /* Sources/BitChordCore/Services/BitChordSettings.swift in Sources */,
 				BC000018BLD000000000000 /* Sources/BitChordCore/Services/DownloadManager.swift in Sources */,

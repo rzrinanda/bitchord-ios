@@ -20,6 +20,9 @@ public struct SearchResultItem: Identifiable, Hashable, Codable, Sendable {
     public let browseId: String?
     public let playlistId: String?
     public let duration: TimeInterval
+    public let streamURL: URL?
+    public let source: TrackSource?
+    public let sourceId: String?
     
     public init(
         id: String,
@@ -32,7 +35,10 @@ public struct SearchResultItem: Identifiable, Hashable, Codable, Sendable {
         videoId: String? = nil,
         browseId: String? = nil,
         playlistId: String? = nil,
-        duration: TimeInterval = 0
+        duration: TimeInterval = 0,
+        streamURL: URL? = nil,
+        source: TrackSource? = nil,
+        sourceId: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -45,6 +51,9 @@ public struct SearchResultItem: Identifiable, Hashable, Codable, Sendable {
         self.browseId = browseId
         self.playlistId = playlistId
         self.duration = duration
+        self.streamURL = streamURL
+        self.source = source
+        self.sourceId = sourceId
     }
     
     public var asTrack: Track {
@@ -63,7 +72,7 @@ public struct SearchResultItem: Identifiable, Hashable, Codable, Sendable {
         } else if let extracted = SearchResultItem.extractAlbum(from: subtitle) {
             resolvedAlbum = extracted
         } else {
-            resolvedAlbum = "YouTube Music"
+            resolvedAlbum = source == .library ? "Local Library" : "YouTube Music"
         }
         
         return Track(
@@ -73,8 +82,10 @@ public struct SearchResultItem: Identifiable, Hashable, Codable, Sendable {
             album: resolvedAlbum,
             duration: duration > 0 ? duration : 210,
             artworkURL: artworkURL,
-            streamURL: nil,
-            isLossless: true
+            streamURL: streamURL,
+            isLossless: true,
+            source: source,
+            sourceId: sourceId
         )
     }
     
