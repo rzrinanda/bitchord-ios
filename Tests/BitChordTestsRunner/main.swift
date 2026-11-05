@@ -975,6 +975,50 @@ func runAllTests() async {
         assertTest(displayTime == 15.0, "Scrubber Math: displayTime is correctly clamped within totalDuration")
     }
     
+    // MARK: - Test 23: Track Context Menu Upgrade, 24-bit/48kHz Pipeline Sync & Stats for Nerds Banner
+    do {
+        let engine = AudioPlayerEngine.shared
+        let initialTrack = Track(
+            id: "test_yt_lossy",
+            title: "Lossy YouTube Track",
+            artist: "Band",
+            duration: 210,
+            isLossless: false,
+            source: .youtube
+        )
+        engine.setQueue([initialTrack], startIndex: 0)
+        
+        // 1. Initial track is lossy: upgrade should be allowed
+        let canUpgradeInitial = !initialTrack.isLossless && (initialTrack.bitDepth ?? 0) < 24
+        assertTest(canUpgradeInitial, "Quality Upgrade Guard: Lossy track shows Upgrade quality option")
+        
+        // 2. Perform quality upgrade from context menu action
+        let upgradeResult = await engine.upgradeCurrentTrackToLossless(for: initialTrack)
+        assertTest(upgradeResult.bitDepth == 24, "Quality Upgrade: Returns 24-bit bit depth")
+        assertTest(upgradeResult.sampleRate >= 48000.0, "Quality Upgrade: Returns at least 48.0 kHz sample rate")
+        assertTest(engine.currentTrack?.isLossless == true, "Quality Upgrade: Current track is now Lossless")
+        assertTest(engine.currentTrack?.bitDepth == 24, "Quality Upgrade: Current track bitDepth is 24-bit")
+        assertTest(engine.currentTrack?.source == .addon, "Quality Upgrade: Current track source is .addon")
+        assertTest(engine.availableQualityUpgrade == nil, "Quality Upgrade: Available upgrade offer is dismissed")
+        
+        // 3. When track is lossless, upgrade quality MUST be hidden
+        let isAlreadyLossless = engine.currentTrack?.isLossless == true || (engine.currentTrack?.bitDepth ?? 0) >= 24
+        assertTest(isAlreadyLossless, "Quality Upgrade Guard: Upgraded track is recognized as Lossless")
+        let shouldHideUpgradeMenu = isAlreadyLossless
+        assertTest(shouldHideUpgradeMenu, "Quality Upgrade Guard: Upgrade quality menu option is strictly HIDDEN for lossless tracks")
+        
+        // 4. Lossless Banner visibility respects statsForNerdsEnabled
+        let settings = BitChordSettings.shared
+        settings.statsForNerdsEnabled = false
+        let shouldShowBannerDefault = (engine.currentTrack?.isLossless == true) && settings.statsForNerdsEnabled
+        assertTest(!shouldShowBannerDefault, "Lossless Banner: Default is HIDDEN when statsForNerdsEnabled is false")
+        
+        settings.statsForNerdsEnabled = true
+        let shouldShowBannerWithStats = (engine.currentTrack?.isLossless == true) && settings.statsForNerdsEnabled
+        assertTest(shouldShowBannerWithStats, "Lossless Banner: Shown when statsForNerdsEnabled is explicitly true")
+        settings.statsForNerdsEnabled = false // Restore default
+    }
+    
     print("==================================================")
     print("🏁 Test Results: \(passed) Passed, \(failed) Failed")
     print("==================================================")

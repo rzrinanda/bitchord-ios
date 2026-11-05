@@ -146,7 +146,7 @@ public struct NowPlayingView: View {
                             .padding(.horizontal, 24)
                             
                             // Quality Upgrade Pill for Synced Lyrics mode
-                            if let upgrade = engine.availableQualityUpgrade {
+                            if let upgrade = engine.availableQualityUpgrade, !track.isLossless, (track.bitDepth ?? 0) < 24 {
                                 Button {
                                     withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
                                         engine.upgradeToAvailableQuality()
@@ -256,7 +256,7 @@ public struct NowPlayingView: View {
                                 
                                 let codecText = track.isLossless ? "FLAC / ALAC" : "AAC-LC / Opus"
                                 let srKhz = String(format: "%.1f kHz", (track.sampleRate ?? 44100) / 1000.0)
-                                let bitDepthText = track.isLossless ? "\(track.bitDepth ?? ((track.sampleRate ?? 44100) > 48000 ? 24 : 16))-bit" : "16-bit"
+                                let bitDepthText = track.isLossless ? "\(track.bitDepth ?? ((track.sampleRate ?? 44100) >= 48000 ? 24 : 16))-bit" : "16-bit"
                                 let bitrateText = track.isLossless ? ((track.sampleRate ?? 44100) > 48000 ? "4608 kbps" : "1411 kbps") : "256 kbps"
                                 
                                 Text("Codec: \(codecText) • \(bitDepthText) / \(srKhz) • \(bitrateText)")
@@ -487,8 +487,8 @@ public struct NowPlayingView: View {
                         }
                         .buttonStyle(.plain)
                         
-                        // MARK: - Quality Upgrade Banner (Prompts to switch to Lossless/Hi-Res Addon)
-                        if let upgrade = engine.availableQualityUpgrade {
+                        // MARK: - Quality Upgrade Banner (Prompts to switch to Lossless/Hi-Res Addon; hidden when already Lossless or Hi-Res)
+                        if let upgrade = engine.availableQualityUpgrade, !track.isLossless, (track.bitDepth ?? 0) < 24 {
                             Button {
                                 withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
                                     engine.upgradeToAvailableQuality()
@@ -547,7 +547,7 @@ public struct NowPlayingView: View {
                             .padding(.top, 4)
                             .padding(.bottom, 2)
                             .transition(.scale.combined(with: .opacity))
-                        } else if track.source == .addon || track.isLossless {
+                        } else if (track.source == .addon || track.isLossless) && settings.statsForNerdsEnabled {
                             HStack(spacing: 6) {
                                 Image(systemName: "checkmark.seal.fill")
                                     .font(.system(size: 12))

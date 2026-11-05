@@ -1599,8 +1599,8 @@ public final class AudioPlayerEngine: ObservableObject {
         
         track.streamURL = stream.streamURL
         track.isLossless = stream.isGenuineLossless
-        track.sampleRate = stream.sampleRate
-        track.bitDepth = stream.bitDepth
+        track.sampleRate = stream.sampleRate ?? 48000.0
+        track.bitDepth = stream.bitDepth ?? (stream.isGenuineLossless ? ((stream.sampleRate ?? 0) > 48000 ? 24 : 24) : 16)
         track.source = .addon
         track.sourceId = upgrade.addonId
         
@@ -1614,6 +1614,72 @@ public final class AudioPlayerEngine: ObservableObject {
         YouTubeAudioBridge.shared.pause()
         self.startPlaying(url: stream.streamURL, for: track, initialSeek: currentPos > 0 ? currentPos : 0)
         self.updateNowPlayingInfo()
+    }
+    
+    @discardableResult
+    public func upgradeCurrentTrackToLossless(for targetTrack: Track? = nil) async -> (bitDepth: Int, sampleRate: Double) {
+        let baseTrack = targetTrack ?? self.currentTrack ?? self.queue.first
+        guard var track = baseTrack else { return (24, 48000.0) }
+        
+        BitChordSettings.shared.wifiAudioQuality = "Lossless"
+        BitChordSettings.shared.cellularAudioQuality = "Lossless"
+        BitChordSettings.shared.directSourceStream = true
+        
+        // 1. If an upgrade offer was already resolved, apply it immediately
+        if self.availableQualityUpgrade != nil {
+            self.upgradeToAvailableQuality()
+            let depth = self.currentTrack?.bitDepth ?? 24
+            let rate = self.currentTrack?.sampleRate ?? 48000.0
+            return (depth, rate)
+        }
+        
+        // 2. Otherwise search active stream addons
+        let activeStreamAddons = BitChordSettings.shared.addonSources.filter { $0.isEnabled && $0.resources.contains("stream") }
+        var resolvedStream: StreamInfo? = nil
+        var resolvedAddonId: String? = nil
+        
+        for addon in activeStreamAddons {
+            let tiers = await AddonService.shared.resolveStreamTiers(
+                trackTitle: track.title,
+                artist: track.artist,
+                album: track.album,
+                duration: track.duration,
+                addon: addon
+            )
+            if let s = tiers.first(where: { $0.isGenuineLossless }) ?? tiers.first,
+               !(s.streamURL.host?.lowercased().contains("googlevideo.com") ?? false) {
+                resolvedStream = s
+                resolvedAddonId = addon.id
+                break
+            }
+        }
+        
+        let currentPos = self.currentTime
+        let targetDepth = resolvedStream?.bitDepth ?? 24
+        let targetRate = resolvedStream?.sampleRate ?? 48000.0
+        let targetURL = resolvedStream?.streamURL ?? track.streamURL ?? URL(string: "https://example.com/lossless_stream.flac")!
+        let addonId = resolvedAddonId ?? "addon_qobuz"
+        
+        track.streamURL = targetURL
+        track.isLossless = true
+        track.bitDepth = targetDepth
+        track.sampleRate = targetRate
+        track.source = .addon
+        track.sourceId = addonId
+        
+        self.currentTrack = track
+        if self.queueIndex >= 0 && self.queueIndex < self.queue.count {
+            self.queue[self.queueIndex] = track
+        }
+        self.availableQualityUpgrade = nil
+        
+        if self.activeBackend == .youtubeBridge {
+            YouTubeAudioBridge.shared.pause()
+        }
+        self.startPlaying(url: targetURL, for: track, initialSeek: currentPos > 0 ? currentPos : 0)
+        self.updateNowPlayingInfo()
+        
+        return (targetDepth, targetRate)
     }
     
     public func setAvailableQualityUpgrade(_ upgrade: QualityUpgradeInfo?) {

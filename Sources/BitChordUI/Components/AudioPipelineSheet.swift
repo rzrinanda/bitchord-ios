@@ -13,18 +13,28 @@ public struct AudioPipelineSheet: View {
         self.track = track
     }
     
+    private var activeTrack: Track {
+        if let cur = engine.currentTrack, cur.id == track.id || cur.title == track.title {
+            return cur
+        }
+        return engine.currentTrack ?? track
+    }
+    
     // Dynamic metrics matching user reference screenshots
     private var isLossless: Bool {
-        track.isLossless || settings.directSourceStream
+        activeTrack.isLossless || settings.directSourceStream
     }
     
     private var isHiRes: Bool {
-        track.isLossless && ((track.sampleRate ?? 0) > 48000 || (track.bitDepth ?? 0) > 16)
+        isLossless && ((activeTrack.sampleRate ?? 0) > 48000 || (activeTrack.bitDepth ?? 0) >= 24)
     }
     
     private var sourceName: String {
-        if track.id.count > 15 || track.id.contains("-") {
-            return track.id
+        if let src = activeTrack.sourceId, !src.isEmpty {
+            let clean = src.replacingOccurrences(of: "addon_", with: "").capitalized
+            return "\(clean) Lossless"
+        } else if activeTrack.id.count > 15 || activeTrack.id.contains("-") {
+            return activeTrack.id
         } else if isLossless {
             return "Qobuz FLAC · 24df8ec0-5608-4e50-9d2b-9fffaa9562f3"
         } else {
@@ -34,7 +44,7 @@ public struct AudioPipelineSheet: View {
     
     private var formatName: String {
         if isLossless {
-            let ext = track.streamURL?.pathExtension.uppercased() ?? ""
+            let ext = activeTrack.streamURL?.pathExtension.uppercased() ?? ""
             return !ext.isEmpty ? ext : "FLAC"
         }
         return "AAC"
@@ -44,16 +54,22 @@ public struct AudioPipelineSheet: View {
         if !isLossless {
             return "—"
         }
-        return "\(track.bitDepth ?? (isHiRes ? 24 : 16))-bit"
+        if let depth = activeTrack.bitDepth, depth > 0 {
+            return "\(depth)-bit"
+        }
+        return isHiRes ? "24-bit" : "16-bit"
     }
     
     private var sampleRateHz: Int {
-        Int(track.sampleRate ?? Double(isHiRes ? 96000 : 44100))
+        if let sr = activeTrack.sampleRate, sr > 0 {
+            return Int(sr)
+        }
+        return isHiRes ? 48000 : (isLossless ? 48000 : 44100)
     }
     
     private var bitrateString: String {
         if isHiRes {
-            return "4608 kbps"
+            return (activeTrack.sampleRate ?? 0) > 48000 ? "4608 kbps" : "2304 kbps"
         } else if isLossless {
             return "1411 kbps"
         } else {

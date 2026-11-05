@@ -128,13 +128,20 @@ public struct TrackContextMenuSheet: View {
                         Divider().background(Color.white.opacity(0.12)).padding(.horizontal, 20).padding(.vertical, 4)
                         
                         // MARK: - Section 2: Quality & Version (Matching Car HU Photo 4)
+                        let isAlreadyLossless: Bool = {
+                            let liveTrack = (engine.currentTrack?.id == track.id ? engine.currentTrack : nil) ?? track
+                            return liveTrack.isLossless || ((liveTrack.bitDepth ?? 0) >= 16 && liveTrack.source == .addon)
+                        }()
+                        
                         VStack(spacing: 2) {
-                            menuRow(icon: "sparkles", label: "Upgrade quality") {
-                                BitChordSettings.shared.wifiAudioQuality = "Lossless"
-                                BitChordSettings.shared.cellularAudioQuality = "Lossless"
-                                BitChordSettings.shared.directSourceStream = true
-                                withAnimation {
-                                    actionMessage = "Quality upgraded to Lossless (24-bit/48kHz)"
+                            if !isAlreadyLossless {
+                                menuRow(icon: "sparkles", label: "Upgrade quality") {
+                                    Task { @MainActor in
+                                        let res = await engine.upgradeCurrentTrackToLossless(for: track)
+                                        withAnimation {
+                                            actionMessage = "Quality upgraded to Lossless (\(res.bitDepth)-bit/\(Int(res.sampleRate / 1000.0))kHz)"
+                                        }
+                                    }
                                 }
                             }
                             
