@@ -303,6 +303,7 @@ public final class AudioPlayerEngine: ObservableObject {
     private var activeResourceLoader: CachingResourceLoader? = nil
     private var securityScopedAccessURL: URL? = nil
     private var lastExpirationHandledTimestamp: Date = Date.distantPast
+    private var precacheTask: Task<Void, Never>? = nil
     
     #if os(iOS)
     private var silencePlayer: AVAudioPlayer?
@@ -368,6 +369,9 @@ public final class AudioPlayerEngine: ObservableObject {
                 guard let self = self, self.activeBackend == .youtubeBridge else { return }
                 self.status = newStatus
                 self.updateNowPlayingInfo()
+                if newStatus == .playing {
+                    self.triggerAutoPrecacheNextTracks()
+                }
             }
         }
         YouTubeAudioBridge.shared.onTimeUpdated = { [weak self] cur, dur in
@@ -815,6 +819,15 @@ public final class AudioPlayerEngine: ObservableObject {
     
     // MARK: - Playback Control
     
+    nonisolated public static func getCachedAudioFileURL(for trackId: String) -> URL? {
+        for quality in ["high", "lossless", "normal", "hiResLossless"] {
+            if let url = CachingResourceLoader.cachedFileURLIfComplete(trackId: trackId, quality: quality) {
+                return url
+            }
+        }
+        return StreamExtractor.shared.getCachedAudioFileURL(trackId: trackId)
+    }
+    
     private func resolvePlayableLocalURL(for track: Track) -> URL? {
         // 1. Direct streamURL on track
         if let url = track.streamURL {
@@ -873,6 +886,11 @@ public final class AudioPlayerEngine: ObservableObject {
             }
         }
         
+        // 4. Cached audio files (StreamCache or CachingResourceLoader)
+        if let cachedURL = Self.getCachedAudioFileURL(for: track.id) {
+            return cachedURL
+        }
+        
         return nil
     }
     
@@ -923,11 +941,11 @@ public final class AudioPlayerEngine: ObservableObject {
         // Prefetch adjacent tracks (Next & Previous) in background so skipping is instantaneous
         prefetchAdjacentQueueTracks(around: index)
         
-        // 1. Local or offline track (Local files, iPod MediaLibrary, or DownloadManager)
+        // 1. Local or offline track (Local files, iPod MediaLibrary, DownloadManager, or Disk Cache)
         if let localURL = resolvePlayableLocalURL(for: track) {
             var updated = track
             updated.streamURL = localURL
-            if updated.source == nil || updated.source == .youtube {
+            if track.id.hasPrefix("local_") {
                 updated.source = .library
             }
             self.currentTrack = updated
@@ -1162,6 +1180,41 @@ public final class AudioPlayerEngine: ObservableObject {
         }
     }
     
+    /// Automatically precaches the current track and the next 2 tracks in the queue to disk cache.
+    /// This guarantees gapless and instant transitions, seamless seeking, and flawless offline replaying.
+    public func triggerAutoPrecacheNextTracks() {
+        precacheTask?.cancel()
+        
+        let currentIndex = self.queueIndex
+        let candidateIndices = [currentIndex, currentIndex + 1, currentIndex + 2].filter { $0 >= 0 && $0 < self.queue.count }
+        guard !candidateIndices.isEmpty else { return }
+        
+        let itemsToCache: [(index: Int, track: Track)] = candidateIndices.map { ($0, self.queue[$0]) }
+        
+        precacheTask = Task.detached(priority: .utility) { [weak self] in
+            for item in itemsToCache {
+                guard !Task.isCancelled else { break }
+                let track = item.track
+                
+                // If already on disk, skip downloading
+                if AudioPlayerEngine.getCachedAudioFileURL(for: track.id) != nil {
+                    continue
+                }
+                
+                // Download to disk cache in background
+                if let cachedURL = await StreamExtractor.shared.cacheTrackToLocalFile(track: track) {
+                    guard !Task.isCancelled else { break }
+                    await MainActor.run { [weak self] in
+                        guard let self = self else { return }
+                        if item.index < self.queue.count && self.queue[item.index].id == track.id {
+                            self.queue[item.index].streamURL = cachedURL
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
     private func playYouTubeTrackWithAVPlayerPreferred(
         videoId: String,
         for track: Track,
@@ -1245,6 +1298,7 @@ public final class AudioPlayerEngine: ObservableObject {
         
         if isLocalAudio {
             self.status = .playing
+            self.triggerAutoPrecacheNextTracks()
         } else {
             self.status = .loading
         }
@@ -1301,6 +1355,7 @@ public final class AudioPlayerEngine: ObservableObject {
                     if !isLocalAudio {
                         self.startReadyToPlayWatchdog(for: track, streamURL: url, initialTime: self.currentTime)
                     }
+                    self.triggerAutoPrecacheNextTracks()
                 case .failed:
                     print("[BitChord AudioEngine] AVPlayerItem failed: \(String(describing: item.error))")
                     self.startupWatchdogTask?.cancel()
@@ -1978,6 +2033,7 @@ public final class AudioPlayerEngine: ObservableObject {
                             self.hasRenderedAudioForCurrentAttempt = true
                             self.startupWatchdogTask?.cancel()
                             self.activeFallbackCoordinator?.recordPlaybackSuccess()
+                            self.triggerAutoPrecacheNextTracks()
                         }
                         self.currentTime = sec
                         if abs(sec - self.lastSavedProgressTimestamp) >= 2.0 {

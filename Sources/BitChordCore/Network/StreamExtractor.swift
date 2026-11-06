@@ -253,17 +253,25 @@ public actor StreamExtractor {
         )
     }
     
+    /// Directory used for disk-cached streams
+    public static var streamCacheDirectory: URL {
+        let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        let dir = base.appendingPathComponent("BitChordStreamCache", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: dir.path) {
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        return dir
+    }
+
     /// Resolves local cached audio file for a YouTube videoId by downloading its direct M4A stream with the required client User-Agent header.
     /// Avoids CoreMedia/AVPlayer HTTP 403 Forbidden on googlevideo.com streams that enforce User-Agent header checks.
     public func cacheYouTubeAudioToLocalFile(trackId: String, streamInfo: StreamInfo) async -> URL? {
-        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("BitChordStreamCache", isDirectory: true)
-        if !FileManager.default.fileExists(atPath: tempDir.path) {
-            try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        }
-        let invalidChars = CharacterSet(charactersIn: ":/\\?%*|\"<>")
+        let destDir = Self.streamCacheDirectory
+        let invalidChars = CharacterSet(charactersIn: ":/\\?%*|\"<> ")
         let safeId = trackId.components(separatedBy: invalidChars).joined(separator: "_")
         let ext = streamInfo.format.lowercased().contains("webm") ? "webm" : "m4a"
-        let destURL = tempDir.appendingPathComponent("\(safeId).\(ext)")
+        let destURL = destDir.appendingPathComponent("\(safeId).\(ext)")
         
         if FileManager.default.fileExists(atPath: destURL.path),
            let attrs = try? FileManager.default.attributesOfItem(atPath: destURL.path),
@@ -279,7 +287,7 @@ public actor StreamExtractor {
                 : "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)",
             forHTTPHeaderField: "User-Agent"
         )
-        req.timeoutInterval = 12.0
+        req.timeoutInterval = 15.0
         
         guard let (tempDownloadURL, resp) = try? await URLSession.shared.download(for: req),
               let http = resp as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
@@ -295,6 +303,133 @@ public actor StreamExtractor {
         } catch {
             return nil
         }
+    }
+    
+    /// Retrieves locally cached file if available in BitChordStreamCache
+    public nonisolated func getCachedAudioFileURL(trackId: String) -> URL? {
+        let invalidChars = CharacterSet(charactersIn: ":/\\?%*|\"<> ")
+        let safeId = trackId.components(separatedBy: invalidChars).joined(separator: "_")
+        let cleanId = safeId.replacingOccurrences(of: "yt_", with: "")
+        
+        var searchDirs = [StreamExtractor.streamCacheDirectory]
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("BitChordStreamCache", isDirectory: true)
+        if tempDir.path != StreamExtractor.streamCacheDirectory.path {
+            searchDirs.append(tempDir)
+        }
+        
+        let idVariants = [safeId, cleanId]
+        let extensions = ["m4a", "flac", "aac", "mp3", "mp4", "webm"]
+        
+        for dir in searchDirs {
+            for id in idVariants {
+                for ext in extensions {
+                    let candidate = dir.appendingPathComponent("\(id).\(ext)")
+                    if FileManager.default.fileExists(atPath: candidate.path),
+                       let attrs = try? FileManager.default.attributesOfItem(atPath: candidate.path),
+                       let size = (attrs[.size] as? NSNumber)?.int64Value, size > 32768 {
+                        return candidate
+                    }
+                }
+            }
+        }
+        return nil
+    }
+
+    /// Downloads and caches a direct remote stream (e.g. Addon FLAC or AAC) to local file in BitChordStreamCache.
+    public func cacheStreamURLToLocalFile(trackId: String, streamURL: URL, format: String) async -> URL? {
+        let destDir = Self.streamCacheDirectory
+        let invalidChars = CharacterSet(charactersIn: ":/\\?%*|\"<> ")
+        let safeId = trackId.components(separatedBy: invalidChars).joined(separator: "_")
+        let ext = format.lowercased().contains("flac") ? "flac" : (format.lowercased().contains("mp3") ? "mp3" : "m4a")
+        let destURL = destDir.appendingPathComponent("\(safeId).\(ext)")
+        
+        if FileManager.default.fileExists(atPath: destURL.path),
+           let attrs = try? FileManager.default.attributesOfItem(atPath: destURL.path),
+           let size = (attrs[.size] as? NSNumber)?.int64Value, size > 32768 {
+            return destURL
+        }
+        
+        var req = URLRequest(url: streamURL)
+        req.timeoutInterval = 20.0
+        
+        guard let (tempDownloadURL, resp) = try? await URLSession.shared.download(for: req),
+              let http = resp as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            return nil
+        }
+        
+        if FileManager.default.fileExists(atPath: destURL.path) {
+            try? FileManager.default.removeItem(at: destURL)
+        }
+        do {
+            try FileManager.default.moveItem(at: tempDownloadURL, to: destURL)
+            return destURL
+        } catch {
+            return nil
+        }
+    }
+    
+    /// Downloads and saves the audio stream for the given track to disk cache.
+    /// Checks Addon high-res / lossless stream first, then direct audio stream (AAC / M4A),
+    /// returning the local disk file URL upon completion.
+    public func cacheTrackToLocalFile(track: Track) async -> URL? {
+        // 1. If already locally cached or is a local file, return it
+        if let cached = getCachedAudioFileURL(trackId: track.id) {
+            return cached
+        }
+        if let url = track.streamURL, url.isFileURL, FileManager.default.fileExists(atPath: url.path) {
+            return url
+        }
+        
+        // 2. If track already has an active Addon stream URL or direct remote URL (not googlevideo)
+        if let streamURL = track.streamURL,
+           !streamURL.isFileURL,
+           streamURL.scheme != "ipod-library",
+           !streamURL.absoluteString.contains("googlevideo.com") {
+            let fmt = track.isLossless ? "flac" : "m4a"
+            if let local = await cacheStreamURLToLocalFile(trackId: track.id, streamURL: streamURL, format: fmt) {
+                return local
+            }
+        }
+        
+        // 3. Resolve stream candidates with Addon-first ranking
+        let candidateGroups = await extractRankedStreamCandidates(
+            trackId: track.id,
+            title: track.title,
+            artist: track.artist,
+            album: track.album,
+            duration: track.duration,
+            preferredQuality: .lossless
+        )
+        let candidates = candidateGroups.flatMap { $0 }
+        
+        // 3a. Cache Addon candidates first (Quality Tertinggi)
+        for cand in candidates where cand.sourceId != "youtube_bridge" && !cand.streamURL.absoluteString.contains("googlevideo.com") {
+            if let local = await cacheStreamURLToLocalFile(trackId: track.id, streamURL: cand.streamURL, format: cand.format) {
+                return local
+            }
+        }
+        
+        // 3b. Cache direct YouTube stream candidate if available
+        if let ytCand = candidates.first(where: { $0.streamURL.absoluteString.contains("googlevideo.com") }) {
+            if let local = await cacheYouTubeAudioToLocalFile(trackId: track.id, streamInfo: ytCand) {
+                return local
+            }
+        }
+        
+        // 3c. Fallback: extract direct YouTube audio stream via YTMusicClient / Innertube
+        if let direct = try? await extractAudioStream(trackId: track.id, title: track.title, artist: track.artist) {
+            if direct.streamURL.absoluteString.contains("googlevideo.com") {
+                if let local = await cacheYouTubeAudioToLocalFile(trackId: track.id, streamInfo: direct) {
+                    return local
+                }
+            } else {
+                if let local = await cacheStreamURLToLocalFile(trackId: track.id, streamURL: direct.streamURL, format: direct.format) {
+                    return local
+                }
+            }
+        }
+        
+        return nil
     }
     
     /// Resolves direct audio stream URL for a track/video ID with multi-source fallback

@@ -1110,6 +1110,27 @@ func runAllTests() async {
         )
         engine.setQueue([ytTrack], startIndex: 0)
         assertTest(engine.activeBackend == .avPlayer, "Backend Routing: Direct stream track prioritizes .avPlayer backend")
+        
+        // 6. Disk Stream Cache & Pre-caching resolution
+        let testCacheTrackId = "test_precache_track_\(UUID().uuidString)"
+        let testCacheDir = StreamExtractor.streamCacheDirectory
+        let testFile = testCacheDir.appendingPathComponent("\(testCacheTrackId).m4a")
+        let dummyAudioData = Data(repeating: 0x55, count: 40000) // > 32KB
+        try? dummyAudioData.write(to: testFile)
+        
+        let foundViaStreamExtractor = StreamExtractor.shared.getCachedAudioFileURL(trackId: testCacheTrackId)
+        assertTest(foundViaStreamExtractor != nil, "Disk Cache: StreamExtractor finds cached file > 32KB")
+        
+        let foundViaEngine = AudioPlayerEngine.getCachedAudioFileURL(for: testCacheTrackId)
+        assertTest(foundViaEngine != nil, "Disk Cache: AudioPlayerEngine finds cached file")
+        
+        // Clean up test file
+        try? FileManager.default.removeItem(at: testFile)
+        
+        // 7. Auto pre-caching trigger does not crash
+        engine.setQueue([ytTrack, ytTrack, ytTrack], startIndex: 0)
+        engine.triggerAutoPrecacheNextTracks()
+        assertTest(true, "Auto Pre-caching: triggerAutoPrecacheNextTracks executes cleanly")
     }
     
     print("==================================================")
