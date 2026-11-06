@@ -39,15 +39,17 @@ public struct SettingsView: View {
             .sheet(isPresented: $showingGoogleLogin) {
                 GoogleLoginSheet()
             }
-            .alert(clearAlertType.isEmpty ? "Clear Lyrics Storage?" : "Clear \(clearAlertType)?", isPresented: $showClearAlert) {
+            .alert(clearAlertType.isEmpty ? "Clear Storage?" : "Clear \(clearAlertType)?", isPresented: $showClearAlert) {
                 Button("Clear", role: .destructive) {
                     Task {
-                        await LyricsStorageManager.shared.clearAllDiskStorage()
-                        let size = await LyricsStorageManager.shared.formattedStorageSize()
-                        await MainActor.run {
-                            storageUsage = size
-                            storedCount = 0
+                        if clearAlertType == "Song Cache" {
+                            CachingResourceLoader.clearAllAudioCache()
+                        } else if clearAlertType == "Image Cache" {
+                            URLCache.shared.removeAllCachedResponses()
+                        } else {
+                            await LyricsStorageManager.shared.clearAllDiskStorage()
                         }
+                        calculateStorage()
                     }
                 }
                 Button("Cancel", role: .cancel) {}
@@ -333,8 +335,13 @@ public struct SettingsView: View {
         Task {
             let size = await LyricsStorageManager.shared.formattedStorageSize()
             let count = await LyricsStorageManager.shared.countStoredTracks()
+            let audioCache = CachingResourceLoader.calculateTotalCacheSize()
             await MainActor.run {
-                storageUsage = size
+                if audioCache.bytes > 0 {
+                    storageUsage = audioCache.formatted
+                } else {
+                    storageUsage = size
+                }
                 storedCount = count
             }
         }
@@ -625,7 +632,7 @@ public struct SourcesView: View {
                 Text("\(index)")
                     .font(.system(size: 13, weight: .medium, design: .monospaced))
                     .foregroundColor(.secondary)
-                    .frame(width: 14, alignment: .trailing)
+                    .frame(width: 24, alignment: .trailing)
                 
                 Image(systemName: "puzzlepiece.extension")
                     .font(.system(size: 16))
@@ -636,10 +643,19 @@ public struct SourcesView: View {
             
             // Text Detail Block
             VStack(alignment: .leading, spacing: 3) {
-                Text(addon.displayHost)
-                    .font(.system(size: 15, weight: .regular))
+                // Primary Title: Name of the Source
+                Text(addon.name.isEmpty ? addon.displayHost : addon.name)
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundColor(.white)
                     .lineLimit(1)
+                
+                // Host / Server URL subtitle (when name is customized or differs from host)
+                if !addon.name.isEmpty && addon.name != addon.displayHost {
+                    Text(addon.displayHost)
+                        .font(.system(size: 12))
+                        .foregroundColor(.white.opacity(0.6))
+                        .lineLimit(1)
+                }
                 
                 // Status Line 1
                 if !addon.isEnabled {
@@ -749,7 +765,7 @@ public struct SourcesView: View {
                 Text("\(index)")
                     .font(.system(size: 13, weight: .medium, design: .monospaced))
                     .foregroundColor(.secondary)
-                    .frame(width: 14, alignment: .trailing)
+                    .frame(width: 24, alignment: .trailing)
                 
                 Image(systemName: "waveform")
                     .font(.system(size: 16))
@@ -787,7 +803,7 @@ public struct SourcesView: View {
                 Text("\(index)")
                     .font(.system(size: 13, weight: .medium, design: .monospaced))
                     .foregroundColor(.secondary)
-                    .frame(width: 14, alignment: .trailing)
+                    .frame(width: 24, alignment: .trailing)
                 
                 Image(systemName: "play.circle")
                     .font(.system(size: 16))
@@ -2419,8 +2435,39 @@ private struct StorageDetailView: View {
     @Binding var showClearAlert: Bool
     @Binding var clearAlertType: String
     
+    @State private var audioCacheUsage: String = "0 KB"
+    @State private var audioCacheCount: Int = 0
+    
+    private func refreshCache() {
+        let result = CachingResourceLoader.calculateTotalCacheSize()
+        audioCacheUsage = result.formatted
+        audioCacheCount = result.count
+    }
+    
     var body: some View {
         Form {
+            Section {
+                HStack {
+                    Text("Cached audio size")
+                        .font(.system(size: 15, weight: .medium))
+                    Spacer()
+                    Text(audioCacheUsage)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.cyan)
+                }
+                
+                HStack {
+                    Text("Cached track files")
+                        .font(.system(size: 15, weight: .medium))
+                    Spacer()
+                    Text("\(audioCacheCount) files")
+                        .font(.system(size: 14))
+                        .foregroundColor(.secondary)
+                }
+            } header: {
+                Text("CURRENT CACHE USAGE")
+            }
+            
             Section {
                 Toggle(isOn: $settings.autoDownloadLyricsToStorage) {
                     VStack(alignment: .leading, spacing: 2) {
@@ -2478,14 +2525,15 @@ private struct StorageDetailView: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Clear song cache")
-                                .foregroundColor(.primary)
-                            Text("Frees space used by cached streaming audio")
+                                .foregroundColor(.red)
+                            Text("Frees space used by cached streaming audio (\(audioCacheUsage))")
                                 .font(.system(size: 11))
                                 .foregroundColor(.secondary)
                         }
                         Spacer()
-                        Text("Frees space")
-                            .foregroundColor(.secondary)
+                        Text("Clear now")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.red.opacity(0.9))
                     }
                 }
                 
@@ -2511,6 +2559,14 @@ private struct StorageDetailView: View {
             }
         }
         .navigationTitle("Storage")
+        .onAppear {
+            refreshCache()
+        }
+        .onChange(of: showClearAlert) { _, isShowing in
+            if !isShowing {
+                refreshCache()
+            }
+        }
     }
 }
 

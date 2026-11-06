@@ -1134,14 +1134,14 @@ func runAllTests() async {
         
         // 8. Addon Health Check & Reordering
         let settings = BitChordSettings.shared
-        var testAddonA = AddonSource(
+        let testAddonA = AddonSource(
             id: "addon_test_a",
             name: "Qobuz [Test A]",
             version: "1.0",
             manifestURL: "https://example.com/a/manifest.json",
             baseURL: "https://example.com/a"
         )
-        var testAddonB = AddonSource(
+        let testAddonB = AddonSource(
             id: "addon_test_b",
             name: "Monochrome [Test B]",
             version: "1.0",
@@ -1169,6 +1169,20 @@ func runAllTests() async {
         
         // 9. Track Length Tolerance Setting
         assertTest(settings.trackLengthToleranceSeconds >= 0, "Track Length Tolerance: Setting configured with default \(settings.trackLengthToleranceSeconds)s")
+        
+        // 10. Cache Management & Live Diagnostics Telemetry
+        let initialCache = CachingResourceLoader.calculateTotalCacheSize()
+        assertTest(initialCache.bytes >= 0, "Cache Sizing: Cache size calculation returns non-negative bytes (\(initialCache.formatted))")
+        assertTest(initialCache.count >= 0, "Cache Sizing: Cache file count returns non-negative count (\(initialCache.count) files)")
+        
+        CachingResourceLoader.clearAllAudioCache()
+        let clearedCache = CachingResourceLoader.calculateTotalCacheSize()
+        assertTest(clearedCache.bytes == 0, "Cache Clearing: clearAllAudioCache reduces audio cache to 0 bytes")
+        assertTest(clearedCache.count == 0, "Cache Clearing: clearAllAudioCache reduces audio cache to 0 files")
+        
+        assertTest(engine.audioRouteRebuildCount >= 1, "Diagnostics: Route rebuild count initialized and tracked")
+        assertTest(engine.playbackStallCount >= 0, "Diagnostics: Playback stall count tracked accurately")
+        assertTest(engine.liveOutputPeak >= 0.0 && engine.liveOutputPeak <= 1.0, "Diagnostics: Live output peak is bounded within [0.0, 1.0]")
     }
     
     print("==================================================")

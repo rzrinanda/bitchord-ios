@@ -175,6 +175,62 @@ public final class CachingResourceLoader: NSObject, AVAssetResourceLoaderDelegat
         return nil
     }
     
+    /// Calculates the total bytes, file count, and formatted string across all BitChord audio cache directories.
+    public static func calculateTotalCacheSize() -> (bytes: Int64, count: Int, formatted: String) {
+        let fm = FileManager.default
+        var totalBytes: Int64 = 0
+        var totalCount: Int = 0
+        
+        let directories = [
+            cacheDirectory,
+            StreamExtractor.streamCacheDirectory,
+            fm.temporaryDirectory.appendingPathComponent("BitChordStreamCache", isDirectory: true)
+        ]
+        
+        var visitedPaths = Set<String>()
+        for dir in directories {
+            guard visitedPaths.insert(dir.path).inserted else { continue }
+            guard let files = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.fileSizeKey], options: .skipsHiddenFiles) else { continue }
+            for file in files {
+                if let attrs = try? fm.attributesOfItem(atPath: file.path),
+                   let size = (attrs[.size] as? NSNumber)?.int64Value {
+                    totalBytes += size
+                    totalCount += 1
+                }
+            }
+        }
+        
+        let formatted: String
+        if totalBytes == 0 {
+            formatted = "0 KB"
+        } else if totalBytes < 1024 * 1024 {
+            formatted = "\(totalBytes / 1024) KB"
+        } else {
+            formatted = String(format: "%.1f MB", Double(totalBytes) / (1024.0 * 1024.0))
+        }
+        
+        return (totalBytes, totalCount, formatted)
+    }
+    
+    /// Completely clears all cached audio files across all cache directories.
+    public static func clearAllAudioCache() {
+        let fm = FileManager.default
+        let directories = [
+            cacheDirectory,
+            StreamExtractor.streamCacheDirectory,
+            fm.temporaryDirectory.appendingPathComponent("BitChordStreamCache", isDirectory: true)
+        ]
+        var visitedPaths = Set<String>()
+        for dir in directories {
+            guard visitedPaths.insert(dir.path).inserted else { continue }
+            if let files = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil, options: .skipsHiddenFiles) {
+                for file in files {
+                    try? fm.removeItem(at: file)
+                }
+            }
+        }
+    }
+    
     public static func evictOldCacheFiles(
         in directory: URL = CachingResourceLoader.cacheDirectory,
         maxSizeBytes: Int64 = 500 * 1024 * 1024,

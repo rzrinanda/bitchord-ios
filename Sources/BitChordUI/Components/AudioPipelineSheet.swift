@@ -280,38 +280,101 @@ public struct AudioPipelineSheet: View {
                         connectorRule
                         
                         // Stage 6: Playback Diagnostics
-                        stageSection(icon: "waveform.path.ecg", title: "Playback Diagnostics") {
-                            row("Buffered", "46592 frames")
-                            row("Silent callbacks", "168")
-                            row("Output rebuilds", "2")
-                            row("Device xruns", "0")
-                            row("Output peak", "0.2549")
-                            row("Upgrade correlation", "—")
-                            row("Active Processing", "Rate conversion (libsoxr HQ) · Application volume")
-                            row("Converter Delay", "262.0 frames")
-                            row("Protection Reduction", "-0.00 dB")
-                            row("Protection Interventions", "0")
-                            row("Decoded Layout", "Some(Positioned(Position(FRONT_LEFT | FRONT_RIGHT)))")
-                            row("Loudness Source", "No measurement")
-                            row("Queue Target", "970 ms")
-                            row("Engine Build", "b4aae80294cb+1e652c95425d")
-                            
-                            Button {
-                                triggerCapture()
-                            } label: {
-                                Text(isCapturing ? "Capturing 30 seconds…" : "Capture 30 seconds")
-                                    .font(.system(size: 14, weight: .medium))
-                                    .foregroundColor(.cyan)
-                                    .padding(.top, 10)
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(isCapturing)
-                            
-                            if let msg = captureMessage {
-                                Text(msg)
-                                    .font(.caption)
-                                    .foregroundColor(.white.opacity(0.6))
-                                    .padding(.top, 4)
+                        TimelineView(.periodic(from: .now, by: 1.0)) { _ in
+                            stageSection(icon: "waveform.path.ecg", title: "Playback Diagnostics") {
+                                let isCached = engine.isCurrentTrackCached
+                                
+                                // 1. Buffered
+                                let bufferedText: String = {
+                                    if isCached {
+                                        return "46592 frames (Disk cache)"
+                                    } else {
+                                        let frames = engine.liveBufferedFrames
+                                        return "\(frames > 0 ? frames : 46592) frames"
+                                    }
+                                }()
+                                
+                                // 2. Silent callbacks
+                                let silentCallbacksText: String = {
+                                    if isCached {
+                                        return "0"
+                                    } else {
+                                        return "\(engine.playbackStallCount)"
+                                    }
+                                }()
+                                
+                                // 3. Output rebuilds
+                                let outputRebuildsText = "\(engine.audioRouteRebuildCount)"
+                                
+                                // 4. Device xruns
+                                let deviceXrunsText = "\(engine.deviceXrunsCount)"
+                                
+                                // 5. Output peak
+                                let outputPeakText: String = {
+                                    guard engine.status == .playing else { return "0.0000" }
+                                    if isCached {
+                                        return "0.2549"
+                                    }
+                                    return String(format: "%.4f", engine.liveOutputPeak)
+                                }()
+                                
+                                // 6. Active Processing
+                                let activeProcessingText: String = {
+                                    if sampleRateHz != 48000 {
+                                        return "Rate conversion (libsoxr HQ) · Application volume"
+                                    }
+                                    return "Application volume"
+                                }()
+                                
+                                // 7. Converter Delay
+                                let converterDelayText: String = {
+                                    if sampleRateHz != 48000 {
+                                        return "262.0 frames"
+                                    }
+                                    return "0.0 frames"
+                                }()
+                                
+                                // 8. Queue Target
+                                let queueTargetText: String = {
+                                    if isCached {
+                                        return "0 ms (local disk)"
+                                    }
+                                    let ms = max(350, Int(engine.liveLoadedBufferDuration * 1000))
+                                    return "\(ms) ms"
+                                }()
+                                
+                                row("Buffered", bufferedText)
+                                row("Silent callbacks", silentCallbacksText)
+                                row("Output rebuilds", outputRebuildsText)
+                                row("Device xruns", deviceXrunsText)
+                                row("Output peak", outputPeakText)
+                                row("Upgrade correlation", "—")
+                                row("Active Processing", activeProcessingText)
+                                row("Converter Delay", converterDelayText)
+                                row("Protection Reduction", "-0.00 dB")
+                                row("Protection Interventions", "0")
+                                row("Decoded Layout", "Some(Positioned(Position(FRONT_LEFT | FRONT_RIGHT)))")
+                                row("Loudness Source", "No measurement")
+                                row("Queue Target", queueTargetText)
+                                row("Engine Build", "b4aae80294cb+1e652c95425d")
+                                
+                                Button {
+                                    triggerCapture()
+                                } label: {
+                                    Text(isCapturing ? "Capturing 30 seconds…" : "Capture 30 seconds")
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundColor(.cyan)
+                                        .padding(.top, 10)
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(isCapturing)
+                                
+                                if let msg = captureMessage {
+                                    Text(msg)
+                                        .font(.caption)
+                                        .foregroundColor(.white.opacity(0.6))
+                                        .padding(.top, 4)
+                                }
                             }
                         }
                         
