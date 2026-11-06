@@ -113,17 +113,23 @@ public struct SearchView: View {
                             .textInputAutocapitalization(.never)
                             .submitLabel(.search)
                             .onSubmit {
-                                performSearch()
+                                performSearch(dismissKeyboard: true)
                             }
                             .onChange(of: query) { _, newQuery in
                                 debounceSearch(newQuery)
                             }
+                        
+                        if isSearching {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                        }
                         
                         if !query.isEmpty {
                             Button {
                                 query = ""
                                 searchResults = []
                                 selectedCategory = .all
+                                isSearching = false
                                 searchTask?.cancel()
                             } label: {
                                 Image(systemName: "xmark.circle.fill")
@@ -232,7 +238,7 @@ public struct SearchView: View {
                     .opacity(0.15)
                 
                 // MARK: - Content Area
-                if isSearching {
+                if isSearching && searchResults.isEmpty {
                     Spacer()
                     VStack(spacing: 12) {
                         ProgressView()
@@ -708,25 +714,28 @@ public struct SearchView: View {
         guard !trimmed.isEmpty else {
             searchResults = []
             selectedCategory = .all
+            isSearching = false
             return
         }
         searchTask = Task {
-            try? await Task.sleep(nanoseconds: 300_000_000)
+            try? await Task.sleep(nanoseconds: 500_000_000)
             if !Task.isCancelled {
                 await MainActor.run {
-                    performSearch()
+                    performSearch(dismissKeyboard: false)
                 }
             }
         }
     }
     
-    private func performSearch() {
+    private func performSearch(dismissKeyboard: Bool = false) {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         
-        #if os(iOS)
-        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-        #endif
+        if dismissKeyboard {
+            #if os(iOS)
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            #endif
+        }
         
         isSearching = true
         Task {
