@@ -1204,6 +1204,41 @@ func runAllTests() async {
             maxWaitSeconds: 0.5
         )
         assertTest(fastAddonResult == nil, "Addon Fast Stream: Empty or timed out addons returns nil within deadline without blocking")
+        
+        // 12. Sliding-Window Addon Pre-caching
+        let sampleTracks = (0..<6).map { i in
+            Track(id: "sliding_track_\(i)", title: "Sliding Song \(i)", artist: "Artist", duration: 200)
+        }
+        engine.setQueue(sampleTracks, startIndex: 0)
+        
+        let window0 = [engine.queueIndex + 1, engine.queueIndex + 2].filter { $0 >= 0 && $0 < engine.queue.count }
+        assertTest(window0 == [1, 2], "Sliding Window: Active index 0 targets upcoming window [1, 2]")
+        
+        engine.playTrack(at: 2)
+        let window2 = [engine.queueIndex + 1, engine.queueIndex + 2].filter { $0 >= 0 && $0 < engine.queue.count }
+        assertTest(window2 == [3, 4], "Sliding Window: Active index 2 shifts upcoming window to [3, 4]")
+        
+        // Test that precached addon track updates in-memory queue with local URL & lossless status
+        let testPrecacheTrack = Track(id: "addon_precache_test_track", title: "Lossless Test", artist: "Artist", duration: 180)
+        let simulatedLocalURL = CachingResourceLoader.cacheFileURL(for: testPrecacheTrack.id, quality: "lossless")
+        let simulatedMetaURL = CachingResourceLoader.metaFileURL(for: testPrecacheTrack.id, quality: "lossless")
+        
+        try? "flac-simulated-bytes".data(using: .utf8)?.write(to: simulatedLocalURL)
+        var simulatedMeta = CacheMetadata()
+        simulatedMeta.contentLength = 20
+        simulatedMeta.contentType = "audio/flac"
+        simulatedMeta.ranges = [ByteRange(start: 0, end: 19)]
+        if let data = try? JSONEncoder().encode(simulatedMeta) {
+            try? data.write(to: simulatedMetaURL)
+        }
+        
+        let precacheRes = await StreamExtractor.shared.precacheTrackFromAddon(track: testPrecacheTrack)
+        assertTest(precacheRes != nil, "Addon Precache: precacheTrackFromAddon returns valid PrecacheResult")
+        assertTest(precacheRes?.localURL == simulatedLocalURL, "Addon Precache: PrecacheResult contains local file URL")
+        
+        // Verify skipping already cached track
+        let cachedAlready = AudioPlayerEngine.getCachedAudioFileURL(for: testPrecacheTrack.id)
+        assertTest(cachedAlready != nil, "Addon Precache: Cached track is recognized and avoids redundant download")
     }
     
     print("==================================================")

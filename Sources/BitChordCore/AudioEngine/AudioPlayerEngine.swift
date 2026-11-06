@@ -305,6 +305,8 @@ public final class AudioPlayerEngine: ObservableObject {
     private var securityScopedAccessURL: URL? = nil
     private var lastExpirationHandledTimestamp: Date = Date.distantPast
     private var precacheTask: Task<Void, Never>? = nil
+    private var precacheInFlightTrackId: String? = nil
+    private var activePrecacheWindowIndices: [Int] = []
     
     // MARK: - Live Diagnostics Telemetry
     public private(set) var audioRouteRebuildCount: Int = 1
@@ -799,12 +801,16 @@ public final class AudioPlayerEngine: ObservableObject {
     public func appendToQueue(_ track: Track) {
         queue.append(track)
         originalQueue.append(track)
+        if queue.count <= queueIndex + 3 {
+            triggerAutoPrecacheNextTracks()
+        }
     }
     
     public func insertNextInQueue(_ track: Track) {
         let insertIndex = min(queueIndex + 1, queue.count)
         queue.insert(track, at: insertIndex)
         originalQueue.insert(track, at: insertIndex)
+        triggerAutoPrecacheNextTracks()
     }
     
     public func removeTrackFromQueue(at index: Int) {
@@ -1215,16 +1221,31 @@ public final class AudioPlayerEngine: ObservableObject {
         }
     }
     
-    /// Automatically precaches the current track and the next 2 tracks in the queue to disk cache.
-    /// This guarantees gapless and instant transitions, seamless seeking, and flawless offline replaying.
+    // MARK: - Continuous Sliding-Window Addon Pre-caching
+    
+    /// Pre-caches the next 2 upcoming tracks in the queue from active Addon sources in highest quality (Lossless FLAC).
+    /// As playback progresses (N -> N+1), the sliding window shifts forward (N+2, N+3), ensuring upcoming tracks
+    /// are ALWAYS sitting fully downloaded on disk cache before playback reaches them.
     public func triggerAutoPrecacheNextTracks() {
-        precacheTask?.cancel()
-        
         let currentIndex = self.queueIndex
-        let candidateIndices = [currentIndex, currentIndex + 1, currentIndex + 2].filter { $0 >= 0 && $0 < self.queue.count }
-        guard !candidateIndices.isEmpty else { return }
+        let upcomingIndices = [currentIndex + 1, currentIndex + 2].filter { $0 >= 0 && $0 < self.queue.count }
+        guard !upcomingIndices.isEmpty else { return }
         
-        let itemsToCache: [(index: Int, track: Track)] = candidateIndices.map { ($0, self.queue[$0]) }
+        // If an existing precache task is already working on this exact upcoming window, let it proceed!
+        if activePrecacheWindowIndices == upcomingIndices && precacheTask != nil {
+            return
+        }
+        
+        // If a track is currently downloading and is still within our upcoming window, do NOT abort it!
+        let currentInFlight = self.precacheInFlightTrackId
+        let keepInFlight = currentInFlight != nil && upcomingIndices.contains(where: { $0 < self.queue.count && self.queue[$0].id == currentInFlight })
+        
+        if !keepInFlight {
+            precacheTask?.cancel()
+        }
+        
+        activePrecacheWindowIndices = upcomingIndices
+        let itemsToCache: [(index: Int, track: Track)] = upcomingIndices.map { ($0, self.queue[$0]) }
         
         precacheTask = Task.detached(priority: .utility) { [weak self] in
             for item in itemsToCache {
@@ -1236,16 +1257,31 @@ public final class AudioPlayerEngine: ObservableObject {
                     continue
                 }
                 
-                // Download to disk cache in background
-                if let cachedURL = await StreamExtractor.shared.cacheTrackToLocalFile(track: track) {
+                await MainActor.run { [weak self] in
+                    self?.precacheInFlightTrackId = track.id
+                }
+                
+                // Pre-cache track prioritizing Addon source in genuine Lossless quality
+                if let result = await StreamExtractor.shared.precacheTrackFromAddon(track: track) {
                     guard !Task.isCancelled else { break }
                     await MainActor.run { [weak self] in
                         guard let self = self else { return }
                         if item.index < self.queue.count && self.queue[item.index].id == track.id {
-                            self.queue[item.index].streamURL = cachedURL
+                            self.queue[item.index].streamURL = result.localURL
+                            self.queue[item.index].isLossless = result.isLossless
+                            self.queue[item.index].sampleRate = result.sampleRate
+                            self.queue[item.index].bitDepth = result.bitDepth
+                            if let addonId = result.addonId {
+                                self.queue[item.index].source = .addon
+                                self.queue[item.index].sourceId = addonId
+                            }
                         }
                     }
                 }
+            }
+            
+            await MainActor.run { [weak self] in
+                self?.precacheInFlightTrackId = nil
             }
         }
     }

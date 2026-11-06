@@ -1,5 +1,21 @@
 import Foundation
 
+public struct PrecacheResult: Sendable {
+    public let localURL: URL
+    public let isLossless: Bool
+    public let sampleRate: Double?
+    public let bitDepth: Int?
+    public let addonId: String?
+    
+    public init(localURL: URL, isLossless: Bool, sampleRate: Double?, bitDepth: Int?, addonId: String?) {
+        self.localURL = localURL
+        self.isLossless = isLossless
+        self.sampleRate = sampleRate
+        self.bitDepth = bitDepth
+        self.addonId = addonId
+    }
+}
+
 public struct StreamInfo: Sendable, Equatable {
     public let streamURL: URL
     public let format: String
@@ -427,6 +443,99 @@ public actor StreamExtractor {
                     return local
                 }
             }
+        }
+        
+        return nil
+    }
+    
+    /// Pre-resolves and caches an upcoming track prioritizing active Addon sources in genuine Lossless FLAC.
+    /// If Addons are unavailable, gracefully falls back to direct YouTube audio caching.
+    public func precacheTrackFromAddon(track: Track) async -> PrecacheResult? {
+        // 1. If already locally cached, return immediately
+        for quality in ["hiResLossless", "lossless", "high", "normal"] {
+            if let cached = CachingResourceLoader.cachedFileURLIfComplete(trackId: track.id, quality: quality) {
+                let isLossless = quality.lowercased().contains("lossless")
+                return PrecacheResult(
+                    localURL: cached,
+                    isLossless: isLossless,
+                    sampleRate: isLossless ? (track.sampleRate ?? 48000.0) : 44100.0,
+                    bitDepth: isLossless ? (track.bitDepth ?? 24) : 16,
+                    addonId: track.sourceId
+                )
+            }
+        }
+        if let cached = getCachedAudioFileURL(trackId: track.id) {
+            return PrecacheResult(
+                localURL: cached,
+                isLossless: track.isLossless,
+                sampleRate: track.sampleRate,
+                bitDepth: track.bitDepth,
+                addonId: track.sourceId
+            )
+        }
+        
+        // 2. Query active stream addons concurrently
+        let activeAddons = await MainActor.run {
+            BitChordSettings.shared.addonSources.filter { $0.isEnabled && $0.resources.contains("stream") }
+        }
+        
+        if !activeAddons.isEmpty {
+            let result = await AddonService.shared.resolveFastestStreamTiers(
+                trackTitle: track.title,
+                artist: track.artist,
+                album: track.album,
+                duration: track.duration,
+                addons: activeAddons,
+                wantsLossless: true,
+                maxWaitSeconds: 3.5
+            )
+            
+            if let (stream, addon) = result, !(stream.streamURL.host?.lowercased().contains("googlevideo.com") ?? false) {
+                let qualityKey = stream.isGenuineLossless ? "lossless" : "high"
+                let targetAudioURL = CachingResourceLoader.cacheFileURL(for: track.id, quality: qualityKey)
+                let targetMetaURL = CachingResourceLoader.metaFileURL(for: track.id, quality: qualityKey)
+                
+                var req = URLRequest(url: stream.streamURL)
+                req.timeoutInterval = 25.0
+                
+                if let (tempURL, resp) = try? await URLSession.shared.download(for: req),
+                   let http = resp as? HTTPURLResponse, (200...299).contains(http.statusCode) {
+                    let fileSize = (try? FileManager.default.attributesOfItem(atPath: tempURL.path)[.size] as? Int64) ?? 0
+                    if fileSize > 32768 {
+                        try? FileManager.default.removeItem(at: targetAudioURL)
+                        try? FileManager.default.moveItem(at: tempURL, to: targetAudioURL)
+                        
+                        var meta = CacheMetadata()
+                        meta.contentLength = fileSize
+                        meta.contentType = stream.isGenuineLossless ? "audio/flac" : "audio/mp4"
+                        meta.ranges = [ByteRange(start: 0, end: max(0, fileSize - 1))]
+                        if let metaData = try? JSONEncoder().encode(meta) {
+                            try? metaData.write(to: targetMetaURL)
+                        }
+                        
+                        CachingResourceLoader.purgeLowerQualityCaches(for: track.id, keepingQuality: qualityKey)
+                        
+                        return PrecacheResult(
+                            localURL: targetAudioURL,
+                            isLossless: stream.isGenuineLossless,
+                            sampleRate: stream.sampleRate ?? 48000.0,
+                            bitDepth: stream.bitDepth ?? 24,
+                            addonId: addon.id
+                        )
+                    }
+                }
+            }
+        }
+        
+        // 3. Fallback to direct YouTube stream cache
+        if let local = await cacheTrackToLocalFile(track: track) {
+            return PrecacheResult(
+                localURL: local,
+                isLossless: false,
+                sampleRate: 44100,
+                bitDepth: 16,
+                addonId: nil
+            )
         }
         
         return nil
