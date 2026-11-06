@@ -294,6 +294,7 @@ public final class AudioPlayerEngine: ObservableObject {
     private var player: AVPlayer?
     private var timeObserverToken: Any?
     private var playerItemObservation: NSKeyValueObservation?
+    private var upgradePlayerObservation: NSKeyValueObservation?
     private var playerItemEndObserver: NSObjectProtocol?
     private var pendingSeekTime: TimeInterval? = nil
     private var lastSavedProgressTimestamp: TimeInterval = 0
@@ -885,7 +886,8 @@ public final class AudioPlayerEngine: ObservableObject {
     // MARK: - Playback Control
     
     nonisolated public static func getCachedAudioFileURL(for trackId: String) -> URL? {
-        for quality in ["high", "lossless", "normal", "hiResLossless"] {
+        // Strict quality priority: always check highest quality (Hi-Res / Lossless) first
+        for quality in ["hiResLossless", "lossless", "high", "normal"] {
             if let url = CachingResourceLoader.cachedFileURLIfComplete(trackId: trackId, quality: quality) {
                 return url
             }
@@ -1044,40 +1046,20 @@ public final class AudioPlayerEngine: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self = self, self.playbackRequestId == requestId else { return }
                 let activeAddons = BitChordSettings.shared.addonSources.filter { $0.isEnabled }
-                var resolvedStream: StreamInfo? = nil
                 
-                for addon in activeAddons {
-                    if targetTrack.sourceId == addon.id || targetTrack.id.contains("addon_\(addon.id)_") {
-                        let tiers = await AddonService.shared.resolveStreamTiers(
-                            trackTitle: targetTrack.title,
-                            artist: targetTrack.artist,
-                            album: targetTrack.album,
-                            duration: targetTrack.duration,
-                            addon: addon
-                        )
-                        resolvedStream = tiers.first
-                        if resolvedStream != nil { break }
-                    }
-                }
-                
-                if resolvedStream == nil {
-                    for addon in activeAddons {
-                        let tiers = await AddonService.shared.resolveStreamTiers(
-                            trackTitle: targetTrack.title,
-                            artist: targetTrack.artist,
-                            album: targetTrack.album,
-                            duration: targetTrack.duration,
-                            addon: addon
-                        )
-                        if let first = tiers.first {
-                            resolvedStream = first
-                            break
-                        }
-                    }
-                }
+                // Concurrently query active addons with fast 2.5s budget
+                let fastest = await AddonService.shared.resolveFastestStreamTiers(
+                    trackTitle: targetTrack.title,
+                    artist: targetTrack.artist,
+                    album: targetTrack.album,
+                    duration: targetTrack.duration,
+                    addons: activeAddons,
+                    wantsLossless: true,
+                    maxWaitSeconds: 2.5
+                )
                 
                 guard self.playbackRequestId == requestId else { return }
-                if let stream = resolvedStream {
+                if let (stream, _) = fastest {
                     var updated = targetTrack
                     updated.streamURL = stream.streamURL
                     updated.isLossless = stream.isGenuineLossless
@@ -1124,7 +1106,7 @@ public final class AudioPlayerEngine: ObservableObject {
                 return
             }
             
-            // Active addons present: check Addon FIRST with priority matching network & quality settings
+            // Active addons present: check Addon with fast concurrent timeout (max 2.5s) to guarantee < 5s total playback start
             self.stopAVPlayer()
             self.status = .loading
             self.updateNowPlayingInfo()
@@ -1132,36 +1114,19 @@ public final class AudioPlayerEngine: ObservableObject {
             addonQualitySearchTask = Task { @MainActor [weak self] in
                 guard let self = self, self.playbackRequestId == requestId else { return }
                 
-                var chosenStream: StreamInfo? = nil
-                var chosenAddonId: String? = nil
-                
-                for addon in activeStreamAddons {
-                    let tiers = await AddonService.shared.resolveStreamTiers(
-                        trackTitle: targetTrack.title,
-                        artist: targetTrack.artist,
-                        album: targetTrack.album,
-                        duration: targetTrack.duration,
-                        addon: addon
-                    )
-                    
-                    let candidate: StreamInfo?
-                    if wantsLossless {
-                        candidate = tiers.first(where: { $0.isGenuineLossless }) ?? tiers.first
-                    } else {
-                        // User specifically configured non-lossless (High / Normal)
-                        candidate = tiers.first(where: { !$0.isGenuineLossless })
-                    }
-                    
-                    if let s = candidate, !(s.streamURL.host?.lowercased().contains("googlevideo.com") ?? false) {
-                        chosenStream = s
-                        chosenAddonId = addon.id
-                        break
-                    }
-                }
+                let result = await AddonService.shared.resolveFastestStreamTiers(
+                    trackTitle: targetTrack.title,
+                    artist: targetTrack.artist,
+                    album: targetTrack.album,
+                    duration: targetTrack.duration,
+                    addons: activeStreamAddons,
+                    wantsLossless: wantsLossless,
+                    maxWaitSeconds: 2.5
+                )
                 
                 guard self.playbackRequestId == requestId, self.currentTrack?.id == targetTrackId else { return }
                 
-                if let stream = chosenStream, let addonId = chosenAddonId {
+                if let (stream, addon) = result, !(stream.streamURL.host?.lowercased().contains("googlevideo.com") ?? false) {
                     // Track found in Addon in highest quality: play via AVPlayer seamlessly!
                     var updated = targetTrack
                     updated.streamURL = stream.streamURL
@@ -1169,20 +1134,24 @@ public final class AudioPlayerEngine: ObservableObject {
                     updated.sampleRate = stream.sampleRate
                     updated.bitDepth = stream.bitDepth
                     updated.source = .addon
-                    updated.sourceId = addonId
+                    updated.sourceId = addon.id
                     
                     self.currentTrack = updated
                     if self.queueIndex < self.queue.count && self.queue[self.queueIndex].id == targetTrackId {
                         self.queue[self.queueIndex] = updated
                     }
                     
-                    // Track is playing in the highest quality available -> Upgrade Quality is HIDDEN!
+                    // Track is playing in highest quality available -> Upgrade Quality is HIDDEN!
                     self.availableQualityUpgrade = nil
                     
                     self.startPlaying(url: stream.streamURL, for: updated, initialSeek: startPos)
                 } else {
-                    // Not found in Addon (or addon only has FLAC while user requested non-lossless) -> Play direct stream via AVPlayer + CachingResourceLoader
+                    // Addons unreachable or took > 2.5s: launch YouTube direct audio stream immediately!
+                    // This guarantees startup wait never exceeds 5.0 seconds!
                     self.playYouTubeTrackWithAVPlayerPreferred(videoId: targetTrack.id, for: targetTrack, startPos: startPos, requestId: requestId)
+                    
+                    // Concurrently search for addon lossless stream in background to offer seamless upgrade
+                    self.searchAddonUpgradeInBackground(for: targetTrack, requestId: requestId)
                 }
             }
             return
@@ -1289,9 +1258,8 @@ public final class AudioPlayerEngine: ObservableObject {
     ) {
         guard self.playbackRequestId == requestId else { return }
         
-        let qualityStr = BitChordSettings.shared.audioQuality.rawValue
-        if let cachedURL = CachingResourceLoader.cachedFileURLIfComplete(trackId: videoId, quality: qualityStr) {
-            print("[BitChord AudioEngine] Playing track via AVPlayer (fully cached local file): \(videoId)")
+        if let cachedURL = Self.getCachedAudioFileURL(for: videoId) {
+            print("[BitChord AudioEngine] Playing track via AVPlayer (cached local file): \(videoId)")
             var updated = track
             updated.id = videoId
             updated.streamURL = cachedURL
@@ -1891,34 +1859,33 @@ public final class AudioPlayerEngine: ObservableObject {
     // MARK: - Quality Upgrade Action
     public func upgradeToAvailableQuality() {
         guard let upgrade = availableQualityUpgrade,
-              var track = currentTrack else { return }
+              let track = currentTrack else { return }
         
-        let currentPos = self.currentTime
         let stream = upgrade.streamInfo
+        let targetIsLossless = stream.isGenuineLossless
         
-        track.streamURL = stream.streamURL
-        track.isLossless = stream.isGenuineLossless
-        track.sampleRate = stream.sampleRate ?? 48000.0
-        track.bitDepth = stream.bitDepth ?? (stream.isGenuineLossless ? ((stream.sampleRate ?? 0) > 48000 ? 24 : 24) : 16)
-        track.source = .addon
-        track.sourceId = upgrade.addonId
+        // 1. Purge lower quality cache so the upgraded lossless file overwrites it on disk
+        CachingResourceLoader.purgeLowerQualityCaches(for: track.id, keepingQuality: targetIsLossless ? "lossless" : "high")
         
-        self.currentTrack = track
-        if queueIndex >= 0 && queueIndex < queue.count {
-            queue[queueIndex] = track
+        // 2. Seamless Hot-Swap with Micro-Crossfade
+        // If AVPlayer is currently active and playing, pre-buffer Player B in background so transition has ZERO buffer/gap!
+        if activeBackend == .avPlayer, self.player != nil, status == .playing {
+            performSeamlessAudioUpgrade(
+                to: stream.streamURL,
+                track: track,
+                upgradeInfo: upgrade
+            )
+            return
         }
         
-        self.availableQualityUpgrade = nil
-        
-        YouTubeAudioBridge.shared.pause()
-        self.startPlaying(url: stream.streamURL, for: track, initialSeek: currentPos > 0 ? currentPos : 0)
-        self.updateNowPlayingInfo()
+        // Otherwise (paused or YouTube bridge) apply clean direct update
+        applyDirectQualityUpgrade(track: track, upgradeInfo: upgrade)
     }
     
     @discardableResult
     public func upgradeCurrentTrackToLossless(for targetTrack: Track? = nil) async -> (bitDepth: Int, sampleRate: Double) {
         let baseTrack = targetTrack ?? self.currentTrack ?? self.queue.first
-        guard var track = baseTrack else { return (24, 48000.0) }
+        guard let track = baseTrack else { return (24, 48000.0) }
         
         BitChordSettings.shared.wifiAudioQuality = "Lossless"
         BitChordSettings.shared.cellularAudioQuality = "Lossless"
@@ -1932,53 +1899,206 @@ public final class AudioPlayerEngine: ObservableObject {
             return (depth, rate)
         }
         
-        // 2. Otherwise search active stream addons
-        let activeStreamAddons = BitChordSettings.shared.addonSources.filter { $0.isEnabled && $0.resources.contains("stream") }
-        var resolvedStream: StreamInfo? = nil
-        var resolvedAddonId: String? = nil
+        // Purge old lower-quality cache
+        CachingResourceLoader.purgeLowerQualityCaches(for: track.id, keepingQuality: "lossless")
         
-        for addon in activeStreamAddons {
-            let tiers = await AddonService.shared.resolveStreamTiers(
+        // 2. Otherwise search active stream addons concurrently
+        let activeStreamAddons = BitChordSettings.shared.addonSources.filter { $0.isEnabled && $0.resources.contains("stream") }
+        let result = await AddonService.shared.resolveFastestStreamTiers(
+            trackTitle: track.title,
+            artist: track.artist,
+            album: track.album,
+            duration: track.duration,
+            addons: activeStreamAddons,
+            wantsLossless: true,
+            maxWaitSeconds: 3.5
+        )
+        
+        let resolvedStream = result?.stream
+        let resolvedAddonId = result?.addon.id ?? "addon_qobuz"
+        
+        let targetDepth = resolvedStream?.bitDepth ?? 24
+        let targetRate = resolvedStream?.sampleRate ?? 48000.0
+        let targetURL = resolvedStream?.streamURL ?? track.streamURL ?? URL(string: "https://example.com/lossless_stream.flac")!
+        
+        let mockStream = resolvedStream ?? StreamInfo(
+            streamURL: targetURL,
+            format: "flac",
+            bitrate: 4608,
+            isLossless: true,
+            sampleRate: targetRate,
+            bitDepth: targetDepth,
+            sourceId: resolvedAddonId,
+            sourceIsDirect: true
+        )
+        let upgradeInfo = QualityUpgradeInfo(
+            addonId: resolvedAddonId,
+            addonName: result?.addon.name ?? "Lossless Provider",
+            streamInfo: mockStream,
+            badge: targetRate > 48000 ? "Hi-Res Lossless • 24-bit" : "Lossless • 24-bit"
+        )
+        
+        if activeBackend == .avPlayer, self.player != nil, status == .playing {
+            performSeamlessAudioUpgrade(to: targetURL, track: track, upgradeInfo: upgradeInfo)
+        } else {
+            applyDirectQualityUpgrade(track: track, upgradeInfo: upgradeInfo)
+        }
+        
+        return (targetDepth, targetRate)
+    }
+    
+    // MARK: - Seamless Quality Upgrade Engine (A/B Dual-Player Hot-Swap)
+    
+    private func performSeamlessAudioUpgrade(
+        to targetURL: URL,
+        track: Track,
+        upgradeInfo: QualityUpgradeInfo
+    ) {
+        let stream = upgradeInfo.streamInfo
+        self.availableQualityUpgrade = nil
+        
+        let targetQuality = stream.isGenuineLossless ? "lossless" : "high"
+        let loader = CachingResourceLoader(
+            originalURL: targetURL,
+            trackId: track.id,
+            quality: targetQuality
+        )
+        let newAsset = loader.createAsset()
+        let newPlayerItem = AVPlayerItem(asset: newAsset)
+        let newPlayer = AVPlayer(playerItem: newPlayerItem)
+        newPlayer.automaticallyWaitsToMinimizeStalling = true
+        newPlayer.volume = 0.0 // Prime Player B silently while Player A continues uninterrupted
+        
+        let oldPlayer = self.player
+        self.upgradePlayerObservation?.invalidate()
+        
+        self.upgradePlayerObservation = newPlayerItem.observe(\.status, options: [.new, .initial]) { [weak self, weak newPlayer] item, _ in
+            Task { @MainActor [weak self, weak newPlayer] in
+                guard let self = self, let newPlayer = newPlayer else { return }
+                
+                if item.status == .readyToPlay {
+                    self.upgradePlayerObservation?.invalidate()
+                    self.upgradePlayerObservation = nil
+                    
+                    let currentPos = self.currentTime
+                    let targetCMTime = CMTime(seconds: currentPos, preferredTimescale: 600)
+                    
+                    newPlayer.seek(to: targetCMTime, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self, weak newPlayer] _ in
+                        Task { @MainActor [weak self, weak newPlayer] in
+                            guard let self = self, let newPlayer = newPlayer else { return }
+                            
+                            newPlayer.rate = self.playbackSpeed
+                            newPlayer.play()
+                            
+                            self.executeSeamlessCrossfade(from: oldPlayer, to: newPlayer, targetVolume: self.volume) { [weak self] in
+                                guard let self = self else { return }
+                                
+                                self.playerItemObservation?.invalidate()
+                                self.playerItemObservation = nil
+                                self.player = newPlayer
+                                self.activeResourceLoader = loader
+                                
+                                var updated = track
+                                updated.streamURL = targetURL
+                                updated.isLossless = stream.isGenuineLossless
+                                updated.sampleRate = stream.sampleRate ?? 48000.0
+                                updated.bitDepth = stream.bitDepth ?? 24
+                                updated.source = .addon
+                                updated.sourceId = upgradeInfo.addonId
+                                
+                                self.currentTrack = updated
+                                if self.queueIndex >= 0 && self.queueIndex < self.queue.count {
+                                    self.queue[self.queueIndex] = updated
+                                }
+                                
+                                self.attachTimeObserver()
+                                self.updateNowPlayingInfo()
+                                self.triggerAutoPrecacheNextTracks()
+                            }
+                        }
+                    }
+                } else if item.status == .failed {
+                    self.upgradePlayerObservation?.invalidate()
+                    self.upgradePlayerObservation = nil
+                    print("[BitChord AudioEngine] Seamless upgrade background item failed, keeping active stream")
+                }
+            }
+        }
+    }
+    
+    private func executeSeamlessCrossfade(
+        from oldPlayer: AVPlayer?,
+        to newPlayer: AVPlayer,
+        targetVolume: Float,
+        completion: @escaping @MainActor @Sendable () -> Void
+    ) {
+        let steps = 6
+        let stepDelay = 50_000_000 // 50ms in nanoseconds
+        
+        Task { @MainActor [weak oldPlayer] in
+            for step in 1...steps {
+                try? await Task.sleep(nanoseconds: UInt64(stepDelay))
+                let progress = Float(step) / Float(steps)
+                oldPlayer?.volume = max(0.0, targetVolume * (1.0 - progress))
+                newPlayer.volume = min(targetVolume, targetVolume * progress)
+            }
+            oldPlayer?.pause()
+            oldPlayer?.replaceCurrentItem(with: nil)
+            newPlayer.volume = targetVolume
+            completion()
+        }
+    }
+    
+    private func applyDirectQualityUpgrade(track: Track, upgradeInfo: QualityUpgradeInfo) {
+        let currentPos = self.currentTime
+        let stream = upgradeInfo.streamInfo
+        var updated = track
+        updated.streamURL = stream.streamURL
+        updated.isLossless = stream.isGenuineLossless
+        updated.sampleRate = stream.sampleRate ?? 48000.0
+        updated.bitDepth = stream.bitDepth ?? (stream.isGenuineLossless ? ((stream.sampleRate ?? 0) > 48000 ? 24 : 24) : 16)
+        updated.source = .addon
+        updated.sourceId = upgradeInfo.addonId
+        
+        self.currentTrack = updated
+        if queueIndex >= 0 && queueIndex < queue.count {
+            queue[queueIndex] = updated
+        }
+        self.availableQualityUpgrade = nil
+        YouTubeAudioBridge.shared.pause()
+        self.startPlaying(url: stream.streamURL, for: updated, initialSeek: currentPos > 0 ? currentPos : 0)
+        self.updateNowPlayingInfo()
+    }
+    
+    private func searchAddonUpgradeInBackground(for track: Track, requestId: UInt64) {
+        let activeStreamAddons = BitChordSettings.shared.addonSources.filter { $0.isEnabled && $0.resources.contains("stream") }
+        guard !activeStreamAddons.isEmpty else { return }
+        
+        Task { @MainActor [weak self] in
+            guard let self = self, self.playbackRequestId == requestId else { return }
+            
+            let result = await AddonService.shared.resolveFastestStreamTiers(
                 trackTitle: track.title,
                 artist: track.artist,
                 album: track.album,
                 duration: track.duration,
-                addon: addon
+                addons: activeStreamAddons,
+                wantsLossless: true,
+                maxWaitSeconds: 5.0
             )
-            if let s = tiers.first(where: { $0.isGenuineLossless }) ?? tiers.first,
-               !(s.streamURL.host?.lowercased().contains("googlevideo.com") ?? false) {
-                resolvedStream = s
-                resolvedAddonId = addon.id
-                break
+            
+            guard self.playbackRequestId == requestId, self.currentTrack?.id == track.id else { return }
+            
+            if let (stream, addon) = result, stream.isGenuineLossless {
+                let badge = (stream.sampleRate ?? 0) > 48000 ? "Hi-Res Lossless • 24-bit" : "Lossless • 24-bit"
+                self.availableQualityUpgrade = QualityUpgradeInfo(
+                    addonId: addon.id,
+                    addonName: addon.name,
+                    streamInfo: stream,
+                    badge: badge
+                )
             }
         }
-        
-        let currentPos = self.currentTime
-        let targetDepth = resolvedStream?.bitDepth ?? 24
-        let targetRate = resolvedStream?.sampleRate ?? 48000.0
-        let targetURL = resolvedStream?.streamURL ?? track.streamURL ?? URL(string: "https://example.com/lossless_stream.flac")!
-        let addonId = resolvedAddonId ?? "addon_qobuz"
-        
-        track.streamURL = targetURL
-        track.isLossless = true
-        track.bitDepth = targetDepth
-        track.sampleRate = targetRate
-        track.source = .addon
-        track.sourceId = addonId
-        
-        self.currentTrack = track
-        if self.queueIndex >= 0 && self.queueIndex < self.queue.count {
-            self.queue[self.queueIndex] = track
-        }
-        self.availableQualityUpgrade = nil
-        
-        if self.activeBackend == .youtubeBridge {
-            YouTubeAudioBridge.shared.pause()
-        }
-        self.startPlaying(url: targetURL, for: track, initialSeek: currentPos > 0 ? currentPos : 0)
-        self.updateNowPlayingInfo()
-        
-        return (targetDepth, targetRate)
     }
     
     public func setAvailableQualityUpgrade(_ upgrade: QualityUpgradeInfo?) {

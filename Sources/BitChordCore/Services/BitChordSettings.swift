@@ -344,11 +344,20 @@ public actor AddonService {
     public static let shared = AddonService()
     
     private let session: URLSession
+    private var streamTiersCache: [String: (timestamp: Date, tiers: [StreamInfo])] = [:]
+    
+    private func cacheKey(addonId: String, title: String, artist: String?, duration: TimeInterval?) -> String {
+        let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let cleanArtist = (artist ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let dur = Int(duration ?? 0)
+        return "\(addonId)_\(cleanTitle)_\(cleanArtist)_\(dur)"
+    }
     
     public init() {
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 35
-        config.timeoutIntervalForResource = 50
+        config.timeoutIntervalForRequest = 15
+        config.timeoutIntervalForResource = 30
+        config.httpMaximumConnectionsPerHost = 6
         self.session = URLSession(configuration: config)
     }
     
@@ -679,6 +688,11 @@ public actor AddonService {
     ) async -> [StreamInfo] {
         guard addon.isEnabled, addon.resources.contains("stream") else { return [] }
         
+        let cKey = cacheKey(addonId: addon.id, title: trackTitle, artist: artist, duration: duration)
+        if let cached = streamTiersCache[cKey], cached.timestamp.timeIntervalSinceNow > -900 {
+            return cached.tiers
+        }
+        
         let query = "\(trackTitle) \(artist ?? "")".trimmingCharacters(in: .whitespacesAndNewlines)
         guard let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
               let searchURL = URL(string: "\(addon.baseURL)/search?q=\(encodedQuery)") else {
@@ -686,7 +700,7 @@ public actor AddonService {
         }
         
         var searchReq = URLRequest(url: searchURL)
-        searchReq.timeoutInterval = 8.0
+        searchReq.timeoutInterval = 3.5
         
         guard let (data, resp) = try? await session.data(for: searchReq),
               let http = resp as? HTTPURLResponse, http.statusCode == 200,
@@ -759,7 +773,7 @@ public actor AddonService {
         
         guard let streamURL = URL(string: "\(addon.baseURL)/stream/\(trackId)") else { return [] }
         var streamReq = URLRequest(url: streamURL)
-        streamReq.timeoutInterval = 8.0
+        streamReq.timeoutInterval = 3.5
         
         guard let (streamData, sResp) = try? await session.data(for: streamReq),
               let sHttp = sResp as? HTTPURLResponse, sHttp.statusCode == 200,
@@ -834,7 +848,84 @@ public actor AddonService {
             }
         }
         
-        return StreamInfo.selectTopDistinctQualityLevels(from: tiers, maxLevels: 3)
+        let result = StreamInfo.selectTopDistinctQualityLevels(from: tiers, maxLevels: 3)
+        streamTiersCache[cKey] = (Date(), result)
+        return result
+    }
+    
+    /// Concurrently resolves stream tiers from multiple enabled addons with prioritized race.
+    /// Returns the first genuine lossless stream found, or highest ranked stream, with a strict deadline (default 2.8s).
+    public func resolveFastestStreamTiers(
+        trackTitle: String,
+        artist: String?,
+        album: String? = nil,
+        duration: TimeInterval? = nil,
+        addons: [AddonSource],
+        wantsLossless: Bool,
+        maxWaitSeconds: Double = 2.8
+    ) async -> (stream: StreamInfo, addon: AddonSource)? {
+        guard !addons.isEmpty else { return nil }
+        
+        // 1. Instant cache lookup
+        for addon in addons {
+            let key = cacheKey(addonId: addon.id, title: trackTitle, artist: artist, duration: duration)
+            if let entry = streamTiersCache[key], entry.timestamp.timeIntervalSinceNow > -900 {
+                if wantsLossless {
+                    if let match = entry.tiers.first(where: { $0.isGenuineLossless }) {
+                        return (match, addon)
+                    }
+                } else if let match = entry.tiers.first(where: { !$0.isGenuineLossless }) ?? entry.tiers.first {
+                    return (match, addon)
+                }
+            }
+        }
+        
+        // 2. Fast concurrent multi-addon query
+        return await withTaskGroup(of: (stream: StreamInfo, addon: AddonSource)?.self) { group in
+            for addon in addons {
+                group.addTask {
+                    let tiers = await self.resolveStreamTiers(
+                        trackTitle: trackTitle,
+                        artist: artist,
+                        album: album,
+                        duration: duration,
+                        addon: addon
+                    )
+                    if wantsLossless {
+                        if let match = tiers.first(where: { $0.isGenuineLossless }) {
+                            return (match, addon)
+                        } else if let fallback = tiers.first {
+                            return (fallback, addon)
+                        }
+                    } else {
+                        if let match = tiers.first(where: { !$0.isGenuineLossless }) ?? tiers.first {
+                            return (match, addon)
+                        }
+                    }
+                    return nil
+                }
+            }
+            
+            // Timeout task enforcing the maximum wait budget
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(maxWaitSeconds * 1_000_000_000))
+                return nil
+            }
+            
+            var fallbackCandidate: (stream: StreamInfo, addon: AddonSource)? = nil
+            for await result in group {
+                if let r = result {
+                    if wantsLossless && r.stream.isGenuineLossless {
+                        group.cancelAll()
+                        return r
+                    }
+                    if fallbackCandidate == nil {
+                        fallbackCandidate = r
+                    }
+                }
+            }
+            return fallbackCandidate
+        }
     }
 }
 

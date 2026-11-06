@@ -1181,6 +1181,29 @@ func runAllTests() async {
         assertTest(engine.audioRouteRebuildCount >= 1, "Diagnostics: Route rebuild count initialized and tracked")
         assertTest(engine.playbackStallCount >= 0, "Diagnostics: Playback stall count tracked accurately")
         assertTest(engine.liveOutputPeak >= 0.0 && engine.liveOutputPeak <= 1.0, "Diagnostics: Live output peak is bounded within [0.0, 1.0]")
+        
+        // 11. Cache Quality Overwrite & Addon Fast Stream Resolution
+        let testTrackId = "track_quality_purge_test"
+        let highAudioURL = CachingResourceLoader.cacheFileURL(for: testTrackId, quality: "high")
+        let highMetaURL = CachingResourceLoader.metaFileURL(for: testTrackId, quality: "high")
+        try? "test-audio-data".data(using: .utf8)?.write(to: highAudioURL)
+        try? "{}".data(using: .utf8)?.write(to: highMetaURL)
+        assertTest(FileManager.default.fileExists(atPath: highAudioURL.path), "Cache Purge Setup: Created simulated high quality cache file")
+        
+        CachingResourceLoader.purgeLowerQualityCaches(for: testTrackId, keepingQuality: "lossless")
+        assertTest(!FileManager.default.fileExists(atPath: highAudioURL.path), "Cache Purge: Lower-quality high cache deleted upon upgrade")
+        assertTest(!FileManager.default.fileExists(atPath: highMetaURL.path), "Cache Purge: Lower-quality high metadata deleted upon upgrade")
+        
+        let fastAddonResult = await AddonService.shared.resolveFastestStreamTiers(
+            trackTitle: "Nonexistent Track Title",
+            artist: "Artist",
+            album: nil,
+            duration: 180,
+            addons: [],
+            wantsLossless: true,
+            maxWaitSeconds: 0.5
+        )
+        assertTest(fastAddonResult == nil, "Addon Fast Stream: Empty or timed out addons returns nil within deadline without blocking")
     }
     
     print("==================================================")

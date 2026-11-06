@@ -231,6 +231,39 @@ public final class CachingResourceLoader: NSObject, AVAssetResourceLoaderDelegat
         }
     }
     
+    /// Purges all lower-quality cached files for a specific trackId when upgraded to a higher quality (e.g. lossless or hiResLossless).
+    /// This guarantees that disk storage only retains the highest quality version, and future plays always yield the highest quality.
+    public static func purgeLowerQualityCaches(for trackId: String, keepingQuality: String = "lossless") {
+        let fm = FileManager.default
+        let qualitiesToPurge: [String]
+        switch keepingQuality.lowercased() {
+        case "hireslossless", "hi_res_lossless":
+            qualitiesToPurge = ["lossless", "high", "normal", "low"]
+        case "lossless":
+            qualitiesToPurge = ["high", "normal", "low"]
+        default:
+            qualitiesToPurge = ["normal", "low"]
+        }
+        
+        for q in qualitiesToPurge {
+            let audioFile = cacheFileURL(for: trackId, quality: q)
+            let metaFile = metaFileURL(for: trackId, quality: q)
+            try? fm.removeItem(at: audioFile)
+            try? fm.removeItem(at: metaFile)
+        }
+        
+        // Also remove legacy StreamExtractor cache for this trackId so old lower quality files don't linger
+        let streamCacheDir = StreamExtractor.streamCacheDirectory
+        let legacyCandidates = [
+            streamCacheDir.appendingPathComponent("\(trackId).audio"),
+            streamCacheDir.appendingPathComponent("\(trackId).m4a"),
+            streamCacheDir.appendingPathComponent("\(trackId).webm")
+        ]
+        for file in legacyCandidates {
+            try? fm.removeItem(at: file)
+        }
+    }
+    
     public static func evictOldCacheFiles(
         in directory: URL = CachingResourceLoader.cacheDirectory,
         maxSizeBytes: Int64 = 500 * 1024 * 1024,
