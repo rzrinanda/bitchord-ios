@@ -567,8 +567,8 @@ public final class AudioPlayerEngine: ObservableObject {
         #if os(iOS)
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .default, options: [.allowBluetoothHFP, .allowBluetoothA2DP, .allowAirPlay])
-            try session.setActive(true, options: .notifyOthersOnDeactivation)
+            try session.setCategory(.playback, mode: .default, options: [.allowBluetoothA2DP, .allowAirPlay])
+            try session.setActive(true)
         } catch {
             print("[BitChord AudioEngine] Failed to activate AVAudioSession: \(error.localizedDescription)")
         }
@@ -1359,8 +1359,8 @@ public final class AudioPlayerEngine: ObservableObject {
         // Ensure AVAudioSession is active for playback
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .default, options: [.allowBluetoothHFP, .allowBluetoothA2DP, .allowAirPlay])
-            try session.setActive(true, options: [])
+            try session.setCategory(.playback, mode: .default, options: [.allowBluetoothA2DP, .allowAirPlay])
+            try session.setActive(true)
         } catch {
             print("[BitChord AudioEngine] Failed to activate AVAudioSession: \(error.localizedDescription)")
         }
@@ -2392,9 +2392,6 @@ public final class AudioPlayerEngine: ObservableObject {
         #if canImport(MediaPlayer)
         guard let track = currentTrack else {
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
-            #if os(iOS)
-            MPNowPlayingInfoCenter.default().playbackState = .stopped
-            #endif
             return
         }
         
@@ -2409,17 +2406,6 @@ public final class AudioPlayerEngine: ObservableObject {
         ]
         
         #if os(iOS)
-        switch status {
-        case .playing:
-            MPNowPlayingInfoCenter.default().playbackState = .playing
-        case .paused:
-            MPNowPlayingInfoCenter.default().playbackState = .paused
-        case .loading:
-            MPNowPlayingInfoCenter.default().playbackState = .playing
-        case .idle, .error:
-            MPNowPlayingInfoCenter.default().playbackState = .stopped
-        }
-        
         if let cached = cachedArtworkImage, cachedTrackId == track.id {
             info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: cached.size) { _ in cached }
         } else if let artworkURL = track.artworkURL {
