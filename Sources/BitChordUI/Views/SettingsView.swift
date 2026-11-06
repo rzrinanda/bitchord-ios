@@ -135,7 +135,7 @@ public struct SettingsView: View {
     private var audioQualitySection: some View {
         Section {
             NavigationLink {
-                AudioSourcesDetailView()
+                SourcesView()
             } label: {
                 HStack(spacing: 14) {
                     Image(systemName: "puzzlepiece.extension.fill")
@@ -509,120 +509,428 @@ private struct AccountIntegrationsDetailView: View {
     }
 }
 
-// MARK: - 2. Sources Detail View (Photos 03, 08)
-private struct AudioSourcesDetailView: View {
+// MARK: - 2. Sources View (Matches Reference Screenshot)
+public struct SourcesView: View {
     @ObservedObject var settings = BitChordSettings.shared
-    @State private var showingAddAddonSheet: Bool = false
+    @Environment(\.dismiss) private var dismiss
     
-    var body: some View {
-        Form {
+    @State private var editMode: EditMode = .inactive
+    @State private var showingAddAddonSheet: Bool = false
+    @State private var editingAddon: AddonSource? = nil
+    
+    public init() {}
+    
+    public var body: some View {
+        List {
             Section {
-                // Dynamically list user-added addons first
+                // MARK: - Addon Sources List (Reorderable)
                 ForEach(Array(settings.addonSources.enumerated()), id: \.element.id) { index, addon in
-                    HStack(spacing: 12) {
-                        Toggle(isOn: Binding(
-                            get: { addon.isEnabled },
-                            set: { _ in settings.toggleAddonSource(id: addon.id) }
-                        )) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack(spacing: 6) {
-                                    Text("\(index + 1)")
-                                        .font(.system(size: 12, weight: .bold))
-                                        .foregroundColor(.secondary)
-                                    Text(addon.name)
-                                        .font(.system(size: 15, weight: .semibold))
-                                }
-                                Text("v\(addon.version) • \(addon.resources.map { $0.capitalized }.joined(separator: ", "))")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                        .tint(.cyan)
-                    }
-                    .swipeActions(edge: .trailing) {
-                        Button(role: .destructive) {
-                            settings.removeAddonSource(id: addon.id)
-                        } label: {
-                            Label("Delete", systemImage: "trash")
+                    addonRow(index: index + 1, addon: addon)
+                }
+                .onMove { indices, destination in
+                    settings.moveAddonSources(from: indices, to: destination)
+                }
+                .onDelete { indices in
+                    for idx in indices {
+                        if idx < settings.addonSources.count {
+                            settings.removeAddonSource(id: settings.addonSources[idx].id)
                         }
                     }
                 }
                 
-                // JioSaavn
-                Toggle(isOn: $settings.jiosaavnSourceEnabled) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack {
-                            Text("\(settings.addonSources.count + 1)")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(.secondary)
-                            Text("JioSaavn")
-                                .font(.system(size: 15, weight: .semibold))
-                        }
-                        Text("May match the wrong version of a song. Enable at your own risk.")
-                            .font(.system(size: 12))
-                            .foregroundColor(.secondary)
-                    }
-                }
-                .tint(.cyan)
+                // MARK: - JioSaavn Row
+                jioSaavnRow(index: settings.addonSources.count + 1)
                 
-                // YouTube Music
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack {
-                            Text("\(settings.addonSources.count + 2)")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(.secondary)
-                            Text("YouTube Music")
-                                .font(.system(size: 15, weight: .semibold))
-                        }
-                        Text("Lossy • Full catalogue • Radio")
-                            .font(.system(size: 12))
-                            .foregroundColor(.secondary)
-                    }
-                    Spacer()
-                    Text("Always on")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.secondary)
-                }
+                // MARK: - YouTube Music Row
+                youtubeMusicRow(index: settings.addonSources.count + 2)
                 
-                // Add an addon button
+                // MARK: - Add an Addon Action Button
                 Button {
                     showingAddAddonSheet = true
                 } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: "plus")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(.cyan)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Add an addon")
-                                .font(.system(size: 15, weight: .semibold))
-                                .foregroundColor(.primary)
-                            Text("Point BitChord at an addon server you host or were given a link to")
-                                .font(.system(size: 12))
-                                .foregroundColor(.secondary)
-                        }
+                    HStack(spacing: 10) {
+                        Image(systemName: "plus.circle")
+                            .font(.system(size: 18))
+                        Text("Add an addon")
+                            .font(.system(size: 15, weight: .medium))
                     }
+                    .foregroundColor(.cyan)
+                    .padding(.vertical, 6)
                 }
-            } header: {
-                Text("SOURCES, TRIED IN THIS ORDER")
-            } footer: {
-                Text("If a source does not have a track or cannot be reached, BitChord tries the next one. Sources above YouTube can replace its recording when they return a better version.")
+                .buttonStyle(.plain)
             }
             
+            // MARK: - Explanatory Footer & Track Length Tolerance
             Section {
-                NavigationLink("WebDAV Server Setup") {
-                    Text("WebDAV configuration")
-                }
-            } header: {
-                Text("WEBDAV")
+                footerSection
             }
         }
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .background(Color(red: 0.08, green: 0.08, blue: 0.10).ignoresSafeArea())
         .navigationTitle("Sources")
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
+        .environment(\.editMode, $editMode)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(.white.opacity(0.9))
+                        .frame(width: 32, height: 32)
+                        .background(Color.white.opacity(0.12))
+                        .clipShape(Circle())
+                }
+            }
+            
+            ToolbarItem(placement: .topBarTrailing) {
+                if settings.addonSources.count > 1 {
+                    Button(editMode == .active ? "Done" : "Reorder") {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            editMode = (editMode == .active ? .inactive : .active)
+                        }
+                    }
+                    .font(.system(size: 14, weight: .semibold))
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 7)
+                    .background(Color.white.opacity(0.14))
+                    .foregroundColor(.white)
+                    .clipShape(Capsule())
+                }
+            }
+        }
         .sheet(isPresented: $showingAddAddonSheet) {
             AddAddonSheet()
         }
+        .sheet(item: $editingAddon) { addon in
+            EditAddonSourceSheet(addon: addon)
+        }
+        .onAppear {
+            settings.checkAllAddonSources()
+        }
+        .refreshable {
+            await AddonService.shared.checkAllAddons()
+        }
+    }
+    
+    // MARK: - Addon Row
+    @ViewBuilder
+    private func addonRow(index: Int, addon: AddonSource) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            // Position Index & Icon
+            HStack(spacing: 8) {
+                Text("\(index)")
+                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+                    .foregroundColor(.secondary)
+                    .frame(width: 14, alignment: .trailing)
+                
+                Image(systemName: "puzzlepiece.extension")
+                    .font(.system(size: 16))
+                    .foregroundColor(.white.opacity(0.85))
+                    .frame(width: 20)
+            }
+            .padding(.top, 2)
+            
+            // Text Detail Block
+            VStack(alignment: .leading, spacing: 3) {
+                Text(addon.displayHost)
+                    .font(.system(size: 15, weight: .regular))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                
+                // Status Line 1
+                if !addon.isEnabled {
+                    Text("Off · not checked or used for playback")
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
+                } else if addon.isChecking {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .scaleEffect(0.65)
+                        Text("Checking…")
+                            .font(.system(size: 13))
+                            .foregroundColor(.secondary)
+                    }
+                } else if addon.isReachable == true {
+                    Text("Reachable · \(addon.statusDetail ?? addon.name)")
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                } else if addon.isReachable == false {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Unreachable · \(addon.statusDetail ?? "Could not reach server")")
+                            .font(.system(size: 13))
+                            .foregroundColor(.red.opacity(0.9))
+                            .lineLimit(1)
+                        
+                        Button {
+                            Task {
+                                await AddonService.shared.checkAddonHealth(addonId: addon.id)
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.clockwise")
+                                Text("Try again")
+                            }
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.cyan)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                } else {
+                    Text("Not checked yet")
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
+                }
+                
+                // Status Line 2: Automatic Renewal
+                Text("Automatic renewal off · configure in Edit source")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary.opacity(0.75))
+                
+                // Status Line 3: Checked at time
+                if addon.isEnabled && !addon.isChecking, let checked = addon.formattedCheckedTime {
+                    Text(checked)
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary.opacity(0.75))
+                }
+            }
+            
+            Spacer(minLength: 8)
+            
+            // Toggle & Menu
+            HStack(spacing: 12) {
+                Toggle("", isOn: Binding(
+                    get: { addon.isEnabled },
+                    set: { _ in settings.toggleAddonSource(id: addon.id) }
+                ))
+                .labelsHidden()
+                .tint(.green)
+                
+                Menu {
+                    Button {
+                        Task {
+                            await AddonService.shared.checkAddonHealth(addonId: addon.id)
+                        }
+                    } label: {
+                        Label("Check Health Now", systemImage: "arrow.clockwise")
+                    }
+                    
+                    Button {
+                        editingAddon = addon
+                    } label: {
+                        Label("Edit Source", systemImage: "pencil")
+                    }
+                    
+                    Button(role: .destructive) {
+                        settings.removeAddonSource(id: addon.id)
+                    } label: {
+                        Label("Delete Addon", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .font(.system(size: 20))
+                        .foregroundColor(.cyan)
+                        .frame(width: 28, height: 28)
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+    
+    // MARK: - JioSaavn Row
+    @ViewBuilder
+    private func jioSaavnRow(index: Int) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            HStack(spacing: 8) {
+                Text("\(index)")
+                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+                    .foregroundColor(.secondary)
+                    .frame(width: 14, alignment: .trailing)
+                
+                Image(systemName: "waveform")
+                    .font(.system(size: 16))
+                    .foregroundColor(.white.opacity(0.85))
+                    .frame(width: 20)
+            }
+            .padding(.top, 2)
+            
+            VStack(alignment: .leading, spacing: 3) {
+                Text("JioSaavn")
+                    .font(.system(size: 15, weight: .regular))
+                    .foregroundColor(.white)
+                
+                Text(settings.jiosaavnSourceEnabled
+                     ? "May match the wrong version of a song. Enable at your own risk."
+                     : "Off · not checked or used for playback")
+                    .font(.system(size: 13))
+                    .foregroundColor(.secondary)
+            }
+            
+            Spacer(minLength: 8)
+            
+            Toggle("", isOn: $settings.jiosaavnSourceEnabled)
+                .labelsHidden()
+                .tint(.green)
+        }
+        .padding(.vertical, 4)
+    }
+    
+    // MARK: - YouTube Music Row
+    @ViewBuilder
+    private func youtubeMusicRow(index: Int) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            HStack(spacing: 8) {
+                Text("\(index)")
+                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+                    .foregroundColor(.secondary)
+                    .frame(width: 14, alignment: .trailing)
+                
+                Image(systemName: "play.circle")
+                    .font(.system(size: 16))
+                    .foregroundColor(.white.opacity(0.85))
+                    .frame(width: 20)
+            }
+            .padding(.top, 2)
+            
+            VStack(alignment: .leading, spacing: 3) {
+                Text("YouTube Music")
+                    .font(.system(size: 15, weight: .regular))
+                    .foregroundColor(.white)
+                
+                Text("Lossy · Full catalogue · Radio")
+                    .font(.system(size: 13))
+                    .foregroundColor(.secondary)
+            }
+            
+            Spacer(minLength: 8)
+            
+            Text("Always on")
+                .font(.system(size: 13, weight: .regular))
+                .foregroundColor(.secondary)
+                .padding(.top, 4)
+        }
+        .padding(.vertical, 4)
+    }
+    
+    // MARK: - Footer Section & Track Length Tolerance
+    private var footerSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Reachable means the provider answered its checks. Audio quality is verified separately for each track.")
+                .font(.system(size: 13))
+                .foregroundColor(.secondary)
+                .lineSpacing(2)
+            
+            Text("If a source does not have a track or cannot be reached, BitChord tries the next one. Sources above YouTube can replace its recording when they return a better version.")
+                .font(.system(size: 13))
+                .foregroundColor(.secondary)
+                .lineSpacing(2)
+            
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Track Length Tolerance")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.white)
+                        
+                        Text("Maximum duration difference allowed for a replacement stream")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer(minLength: 8)
+                    
+                    Text("\(settings.trackLengthToleranceSeconds) s")
+                        .font(.system(size: 14, weight: .medium, design: .monospaced))
+                        .foregroundColor(.secondary)
+                }
+                
+                Slider(
+                    value: Binding(
+                        get: { Double(settings.trackLengthToleranceSeconds) },
+                        set: { settings.trackLengthToleranceSeconds = Int($0) }
+                    ),
+                    in: 0...15,
+                    step: 1
+                )
+                .tint(.white)
+                
+                Text("A larger tolerance accepts more source matches; a smaller tolerance is stricter. The default is 3 seconds.")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
+            .padding(.top, 8)
+        }
+        .padding(.vertical, 6)
+        .listRowBackground(Color.clear)
+        .listRowInsets(EdgeInsets(top: 8, leading: 4, bottom: 20, trailing: 4))
     }
 }
+
+// MARK: - Edit Addon Source Sheet
+public struct EditAddonSourceSheet: View {
+    @ObservedObject var settings = BitChordSettings.shared
+    @Environment(\.dismiss) private var dismiss
+    
+    public let addon: AddonSource
+    @State private var name: String
+    @State private var baseURL: String
+    
+    public init(addon: AddonSource) {
+        self.addon = addon
+        _name = State(initialValue: addon.name)
+        _baseURL = State(initialValue: addon.baseURL)
+    }
+    
+    public var body: some View {
+        NavigationStack {
+            Form {
+                Section("Source Details") {
+                    TextField("Name", text: $name)
+                    TextField("Base URL", text: $baseURL)
+                        .autocapitalization(.none)
+                        .disableAutocorrection(true)
+                }
+                
+                Section {
+                    Button("Check Health Now") {
+                        Task {
+                            await AddonService.shared.checkAddonHealth(addonId: addon.id)
+                            dismiss()
+                        }
+                    }
+                    
+                    Button("Delete Source", role: .destructive) {
+                        settings.removeAddonSource(id: addon.id)
+                        dismiss()
+                    }
+                }
+            }
+            .navigationTitle("Edit Source")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        var updated = addon
+                        updated.name = name
+                        updated.baseURL = baseURL
+                        settings.addAddonSource(updated)
+                        dismiss()
+                    }
+                }
+            }
+        }
+        .presentationDetents([.medium])
+    }
+}
+
+typealias AudioSourcesDetailView = SourcesView
 
 // MARK: - Add Addon Sheet
 public struct AddAddonSheet: View {

@@ -25,6 +25,9 @@ public struct BitChordApp: App {
                     .background(Color.black)
                     .zIndex(1)
             }
+            .onAppear {
+                settings.checkAllAddonSources()
+            }
         }
     }
 }

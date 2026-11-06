@@ -1131,6 +1131,44 @@ func runAllTests() async {
         engine.setQueue([ytTrack, ytTrack, ytTrack], startIndex: 0)
         engine.triggerAutoPrecacheNextTracks()
         assertTest(true, "Auto Pre-caching: triggerAutoPrecacheNextTracks executes cleanly")
+        
+        // 8. Addon Health Check & Reordering
+        let settings = BitChordSettings.shared
+        var testAddonA = AddonSource(
+            id: "addon_test_a",
+            name: "Qobuz [Test A]",
+            version: "1.0",
+            manifestURL: "https://example.com/a/manifest.json",
+            baseURL: "https://example.com/a"
+        )
+        var testAddonB = AddonSource(
+            id: "addon_test_b",
+            name: "Monochrome [Test B]",
+            version: "1.0",
+            manifestURL: "https://example.com/b/manifest.json",
+            baseURL: "https://example.com/b"
+        )
+        settings.addAddonSource(testAddonA)
+        settings.addAddonSource(testAddonB)
+        
+        let now = Date()
+        settings.updateAddonHealth(id: testAddonA.id, isReachable: true, detail: "Qobuz FLAC", checkedAt: now)
+        let updatedA = settings.addonSources.first(where: { $0.id == testAddonA.id })
+        assertTest(updatedA?.isReachable == true, "Addon Health: Mark as reachable")
+        assertTest(updatedA?.formattedCheckedTime?.hasPrefix("Checked") == true, "Addon Health: Formats checked timestamp")
+        
+        // Test Reordering: Move B before A
+        if let idxB = settings.addonSources.firstIndex(where: { $0.id == testAddonB.id }) {
+            settings.moveAddonSources(from: IndexSet(integer: idxB), to: 0)
+            assertTest(settings.addonSources.first?.id == testAddonB.id, "Addon Reorder: Successfully moved addon to priority #1")
+        }
+        
+        // Clean up test addons
+        settings.removeAddonSource(id: testAddonA.id)
+        settings.removeAddonSource(id: testAddonB.id)
+        
+        // 9. Track Length Tolerance Setting
+        assertTest(settings.trackLengthToleranceSeconds >= 0, "Track Length Tolerance: Setting configured with default \(settings.trackLengthToleranceSeconds)s")
     }
     
     print("==================================================")

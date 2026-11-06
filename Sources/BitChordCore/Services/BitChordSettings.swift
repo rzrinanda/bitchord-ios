@@ -86,6 +86,7 @@ public final class BitChordSettings: ObservableObject {
     
     // Sources & Streaming
     @AppStorage("BitChord.Source.JioSaavn") public var jiosaavnSourceEnabled: Bool = false
+    @AppStorage("BitChord.Source.TrackLengthTolerance") public var trackLengthToleranceSeconds: Int = 3
     
     // Addon Sources (Dynamic fallback sources e.g. SoundFean Qobuz)
     @Published public var addonSources: [AddonSource] = [] {
@@ -201,6 +202,31 @@ public final class BitChordSettings: ObservableObject {
         }
     }
     
+    public func moveAddonSources(from source: IndexSet, to destination: Int) {
+        addonSources.move(fromOffsets: source, toOffset: destination)
+    }
+    
+    public func updateAddonHealth(id: String, isReachable: Bool, detail: String?, checkedAt: Date) {
+        if let idx = addonSources.firstIndex(where: { $0.id == id }) {
+            addonSources[idx].isReachable = isReachable
+            addonSources[idx].statusDetail = detail
+            addonSources[idx].lastCheckedAt = checkedAt
+            addonSources[idx].isChecking = false
+        }
+    }
+    
+    public func setAddonChecking(id: String, isChecking: Bool) {
+        if let idx = addonSources.firstIndex(where: { $0.id == id }) {
+            addonSources[idx].isChecking = isChecking
+        }
+    }
+    
+    public func checkAllAddonSources() {
+        Task.detached(priority: .utility) {
+            await AddonService.shared.checkAllAddons()
+        }
+    }
+    
     private func saveAddonSources() {
         if let data = try? JSONEncoder().encode(addonSources) {
             UserDefaults.standard.set(data, forKey: "BitChord.Source.Addons")
@@ -241,6 +267,10 @@ public struct AddonSource: Identifiable, Codable, Hashable, Sendable {
     public var allowDownloads: Bool
     public var isEnabled: Bool
     public var addedAt: Date
+    public var isReachable: Bool?
+    public var statusDetail: String?
+    public var lastCheckedAt: Date?
+    public var isChecking: Bool
     
     public init(
         id: String,
@@ -251,7 +281,11 @@ public struct AddonSource: Identifiable, Codable, Hashable, Sendable {
         resources: [String] = [],
         allowDownloads: Bool = true,
         isEnabled: Bool = true,
-        addedAt: Date = Date()
+        addedAt: Date = Date(),
+        isReachable: Bool? = nil,
+        statusDetail: String? = nil,
+        lastCheckedAt: Date? = nil,
+        isChecking: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -262,6 +296,46 @@ public struct AddonSource: Identifiable, Codable, Hashable, Sendable {
         self.allowDownloads = allowDownloads
         self.isEnabled = isEnabled
         self.addedAt = addedAt
+        self.isReachable = isReachable
+        self.statusDetail = statusDetail
+        self.lastCheckedAt = lastCheckedAt
+        self.isChecking = isChecking
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case id, name, version, manifestURL, baseURL, resources
+        case allowDownloads, isEnabled, addedAt, isReachable, statusDetail, lastCheckedAt
+    }
+    
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(String.self, forKey: .id)
+        self.name = try container.decode(String.self, forKey: .name)
+        self.version = try container.decodeIfPresent(String.self, forKey: .version) ?? "1.0.0"
+        self.manifestURL = try container.decodeIfPresent(String.self, forKey: .manifestURL) ?? ""
+        self.baseURL = try container.decodeIfPresent(String.self, forKey: .baseURL) ?? ""
+        self.resources = try container.decodeIfPresent([String].self, forKey: .resources) ?? []
+        self.allowDownloads = try container.decodeIfPresent(Bool.self, forKey: .allowDownloads) ?? true
+        self.isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
+        self.addedAt = try container.decodeIfPresent(Date.self, forKey: .addedAt) ?? Date()
+        self.isReachable = try container.decodeIfPresent(Bool.self, forKey: .isReachable)
+        self.statusDetail = try container.decodeIfPresent(String.self, forKey: .statusDetail)
+        self.lastCheckedAt = try container.decodeIfPresent(Date.self, forKey: .lastCheckedAt)
+        self.isChecking = false
+    }
+    
+    public var formattedCheckedTime: String? {
+        guard let date = lastCheckedAt else { return nil }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH.mm"
+        return "Checked \(formatter.string(from: date))"
+    }
+    
+    public var displayHost: String {
+        if let url = URL(string: baseURL), let host = url.host {
+            return host
+        }
+        return name
     }
 }
 
@@ -276,6 +350,93 @@ public actor AddonService {
         config.timeoutIntervalForRequest = 35
         config.timeoutIntervalForResource = 50
         self.session = URLSession(configuration: config)
+    }
+    
+    /// Probes a single addon source to test its reachability and validity.
+    /// Employs a strict 6-second timeout to avoid any hang.
+    public func checkAddonHealth(addonId: String) async {
+        let addon = await MainActor.run {
+            BitChordSettings.shared.addonSources.first(where: { $0.id == addonId })
+        }
+        guard let addon = addon else { return }
+        
+        await MainActor.run {
+            BitChordSettings.shared.setAddonChecking(id: addonId, isChecking: true)
+        }
+        
+        let manifestString = addon.manifestURL.isEmpty ? "\(addon.baseURL)/manifest.json" : addon.manifestURL
+        guard let url = URL(string: manifestString) else {
+            await MainActor.run {
+                BitChordSettings.shared.updateAddonHealth(
+                    id: addonId,
+                    isReachable: false,
+                    detail: "Invalid URL",
+                    checkedAt: Date()
+                )
+            }
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 6.0
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("BitChord-iOS/1.0", forHTTPHeaderField: "User-Agent")
+        
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+                let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+                await MainActor.run {
+                    BitChordSettings.shared.updateAddonHealth(
+                        id: addonId,
+                        isReachable: false,
+                        detail: "HTTP \(code) error",
+                        checkedAt: Date()
+                    )
+                }
+                return
+            }
+            
+            var detail = addon.name
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                if let name = json["name"] as? String {
+                    detail = name
+                }
+            }
+            
+            await MainActor.run {
+                BitChordSettings.shared.updateAddonHealth(
+                    id: addonId,
+                    isReachable: true,
+                    detail: detail,
+                    checkedAt: Date()
+                )
+            }
+        } catch {
+            let errDesc = (error as? URLError)?.code == .timedOut ? "Timeout" : "Connection error"
+            await MainActor.run {
+                BitChordSettings.shared.updateAddonHealth(
+                    id: addonId,
+                    isReachable: false,
+                    detail: errDesc,
+                    checkedAt: Date()
+                )
+            }
+        }
+    }
+    
+    /// Concurrently checks all enabled addon sources.
+    public func checkAllAddons() async {
+        let addons = await MainActor.run {
+            BitChordSettings.shared.addonSources.filter { $0.isEnabled }
+        }
+        await withTaskGroup(of: Void.self) { group in
+            for addon in addons {
+                group.addTask {
+                    await self.checkAddonHealth(addonId: addon.id)
+                }
+            }
+        }
     }
     
     /// Fetches and parses manifest from a user-supplied addon URL
@@ -533,6 +694,8 @@ public actor AddonService {
             return []
         }
         
+        let tolerance = await MainActor.run { Double(BitChordSettings.shared.trackLengthToleranceSeconds) }
+        
         // Strictly match exact track title, artist, and version (never substitute Live/Acoustic/Remix/Cover for Studio or vice versa)
         var bestCandidate: [String: Any]? = nil
         var bestScore: Double = -1
@@ -540,6 +703,13 @@ public actor AddonService {
             if let isSample = item["sample"] as? Bool, isSample { continue }
             let dur = (item["duration"] as? Double) ?? (item["duration"] as? Int).map(Double.init)
             if let d = dur, d > 0 && d < 60 { continue }
+            
+            // Track Length Tolerance: Reject candidate streams exceeding the allowed duration difference
+            if let reqDur = duration, reqDur > 0, let candDur = dur, candDur > 0 {
+                if abs(reqDur - candDur) > tolerance {
+                    continue
+                }
+            }
             
             let candTitle = (item["title"] as? String) ?? (item["name"] as? String) ?? ""
             let candArtist: String
