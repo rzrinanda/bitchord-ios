@@ -941,14 +941,12 @@ func runAllTests() async {
         ]
         
         // 1. Lossless setting selects top Hi-Res FLAC stream
-        let wantsLossless = true
-        let selectedLossless = wantsLossless ? (streamTiers.first(where: { $0.isGenuineLossless }) ?? streamTiers.first) : streamTiers.first(where: { !$0.isGenuineLossless })
+        let selectedLossless = streamTiers.first(where: { $0.isGenuineLossless }) ?? streamTiers.first
         assertTest(selectedLossless?.isGenuineLossless == true, "Quality Selection: Lossless setting selects genuine lossless stream")
         assertTest(selectedLossless?.sampleRate == 96000, "Quality Selection: Highest sample rate 96kHz prioritized")
         
         // 2. Non-lossless setting selects lossy stream
-        let wantsNonLossless = false
-        let selectedNonLossless = wantsNonLossless ? (streamTiers.first(where: { $0.isGenuineLossless }) ?? streamTiers.first) : streamTiers.first(where: { !$0.isGenuineLossless })
+        let selectedNonLossless = streamTiers.first(where: { !$0.isGenuineLossless })
         assertTest(selectedNonLossless?.isGenuineLossless == false, "Quality Selection: Non-lossless setting strictly rejects FLAC")
         assertTest(selectedNonLossless?.bitrate == 256, "Quality Selection: Non-lossless selects 256 kbps AAC")
         

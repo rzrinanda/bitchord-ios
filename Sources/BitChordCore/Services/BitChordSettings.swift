@@ -397,18 +397,19 @@ public actor AddonService {
                 return
             }
             
-            var detail = addon.name
-            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                if let name = json["name"] as? String {
-                    detail = name
-                }
+            let finalDetail: String
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let name = json["name"] as? String {
+                finalDetail = name
+            } else {
+                finalDetail = addon.name
             }
             
             await MainActor.run {
                 BitChordSettings.shared.updateAddonHealth(
                     id: addonId,
                     isReachable: true,
-                    detail: detail,
+                    detail: finalDetail,
                     checkedAt: Date()
                 )
             }
