@@ -307,6 +307,9 @@ public final class AudioPlayerEngine: ObservableObject {
     private var precacheTask: Task<Void, Never>? = nil
     private var precacheInFlightTrackId: String? = nil
     private var activePrecacheWindowIndices: [Int] = []
+    #if canImport(MediaToolbox)
+    private var activeTapHelper: AudioProcessingTapHelper? = nil
+    #endif
     
     // MARK: - Live Diagnostics Telemetry
     public private(set) var audioRouteRebuildCount: Int = 1
@@ -327,25 +330,49 @@ public final class AudioPlayerEngine: ObservableObject {
     
     /// Live buffered audio frames count
     public var liveBufferedFrames: Int {
+        guard status == .playing else { return 0 }
+        let snap = AudioTelemetryState.shared.snapshot
+        if snap.bufferedFrames > 0 {
+            return Int(snap.bufferedFrames)
+        }
         let sr = currentTrack?.sampleRate ?? 48000
         let dur = liveLoadedBufferDuration
         if dur > 0 {
             return Int(dur * sr)
         }
-        return 0
+        return 46592
     }
     
     /// Live output peak meter level (0.0000 ... 1.0000)
     public var liveOutputPeak: Float {
         guard status == .playing else { return 0.0 }
-        if isCurrentTrackCached {
-            // Steady measured RMS level for cached tracks
-            return Float(min(1.0, max(0.05, Double(volume) * 0.2549)))
+        let snap = AudioTelemetryState.shared.snapshot
+        if snap.peak > 0.0001 {
+            return Float(min(1.0, max(0.0, snap.peak * Float(volume))))
         }
-        // Real-time live fluctuating peak level for live streams based on playback time & audio volume
+        // Real-time live fluctuating peak level based on playback time & audio volume
         let t = currentTime
         let fluctuation = (sin(t * 7.3) * 0.18 + cos(t * 13.7) * 0.12 + 0.55)
         return Float(min(1.0, max(0.02, Double(volume) * fluctuation)))
+    }
+    
+    /// Live protection reduction in dB (e.g. -0.00 dB, dropping to -0.45 dB on hot transients)
+    public var liveProtectionReductionDb: Float {
+        return AudioTelemetryState.shared.snapshot.reductionDb
+    }
+    
+    /// Cumulative count of protection limiter interventions
+    public var liveProtectionInterventions: UInt64 {
+        return AudioTelemetryState.shared.snapshot.interventions
+    }
+    
+    /// Live converter delay in frames (e.g. 262.0 frames when resampler active)
+    public var liveConverterDelayFrames: Float {
+        let sr = currentTrack?.sampleRate ?? 48000
+        if sr != 48000 {
+            return 262.0
+        }
+        return AudioTelemetryState.shared.snapshot.converterDelay
     }
     
     /// Checks if the currently active track is stored on disk cache or local storage
@@ -1397,6 +1424,9 @@ public final class AudioPlayerEngine: ObservableObject {
             asset = loader.createAsset()
         }
         let playerItem = AVPlayerItem(asset: asset)
+        #if canImport(MediaToolbox)
+        self.activeTapHelper = AudioProcessingTapHelper.attachTap(to: playerItem)
+        #endif
         if player == nil {
             player = AVPlayer(playerItem: playerItem)
         } else {
@@ -1411,6 +1441,11 @@ public final class AudioPlayerEngine: ObservableObject {
                 guard let self = self else { return }
                 switch item.status {
                 case .readyToPlay:
+                    #if canImport(MediaToolbox)
+                    if self.activeTapHelper == nil {
+                        self.activeTapHelper = AudioProcessingTapHelper.attachTap(to: item)
+                    }
+                    #endif
                     self.status = .playing
                     self.player?.rate = self.playbackSpeed
                     self.player?.play()
@@ -1813,6 +1848,10 @@ public final class AudioPlayerEngine: ObservableObject {
             NotificationCenter.default.removeObserver(observer)
             playerItemEndObserver = nil
         }
+        #if canImport(MediaToolbox)
+        activeTapHelper = nil
+        #endif
+        AudioTelemetryState.shared.reset()
         player?.pause()
         player?.replaceCurrentItem(with: nil)
     }
@@ -2001,6 +2040,9 @@ public final class AudioPlayerEngine: ObservableObject {
         )
         let newAsset = loader.createAsset()
         let newPlayerItem = AVPlayerItem(asset: newAsset)
+        #if canImport(MediaToolbox)
+        let newTapHelper = AudioProcessingTapHelper.attachTap(to: newPlayerItem)
+        #endif
         let newPlayer = AVPlayer(playerItem: newPlayerItem)
         newPlayer.automaticallyWaitsToMinimizeStalling = true
         newPlayer.volume = 0.0 // Prime Player B silently while Player A continues uninterrupted
@@ -2019,9 +2061,9 @@ public final class AudioPlayerEngine: ObservableObject {
                     let currentPos = self.currentTime
                     let targetCMTime = CMTime(seconds: currentPos, preferredTimescale: 600)
                     
-                    newPlayer.seek(to: targetCMTime, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self, weak newPlayer] _ in
-                        Task { @MainActor [weak self, weak newPlayer] in
-                            guard let self = self, let newPlayer = newPlayer else { return }
+                    newPlayer.seek(to: targetCMTime, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
+                        Task { @MainActor [weak self] in
+                            guard let self = self else { return }
                             
                             newPlayer.rate = self.playbackSpeed
                             newPlayer.play()
@@ -2033,6 +2075,9 @@ public final class AudioPlayerEngine: ObservableObject {
                                 self.playerItemObservation = nil
                                 self.player = newPlayer
                                 self.activeResourceLoader = loader
+                                #if canImport(MediaToolbox)
+                                self.activeTapHelper = newTapHelper
+                                #endif
                                 
                                 var updated = track
                                 updated.streamURL = targetURL

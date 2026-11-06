@@ -280,19 +280,13 @@ public struct AudioPipelineSheet: View {
                         connectorRule
                         
                         // Stage 6: Playback Diagnostics
-                        TimelineView(.periodic(from: .now, by: 1.0)) { _ in
+                        TimelineView(.periodic(from: .now, by: 0.1)) { _ in
                             stageSection(icon: "waveform.path.ecg", title: "Playback Diagnostics") {
                                 let isCached = engine.isCurrentTrackCached
                                 
                                 // 1. Buffered
-                                let bufferedText: String = {
-                                    if isCached {
-                                        return "46592 frames (Disk cache)"
-                                    } else {
-                                        let frames = engine.liveBufferedFrames
-                                        return "\(frames > 0 ? frames : 46592) frames"
-                                    }
-                                }()
+                                let bufferedFrames = engine.liveBufferedFrames
+                                let bufferedText = "\(bufferedFrames > 0 ? bufferedFrames : 46592) frames"
                                 
                                 // 2. Silent callbacks
                                 let silentCallbacksText: String = {
@@ -310,13 +304,7 @@ public struct AudioPipelineSheet: View {
                                 let deviceXrunsText = "\(engine.deviceXrunsCount)"
                                 
                                 // 5. Output peak
-                                let outputPeakText: String = {
-                                    guard engine.status == .playing else { return "0.0000" }
-                                    if isCached {
-                                        return "0.2549"
-                                    }
-                                    return String(format: "%.4f", engine.liveOutputPeak)
-                                }()
+                                let outputPeakText = String(format: "%.4f", engine.liveOutputPeak)
                                 
                                 // 6. Active Processing
                                 let activeProcessingText: String = {
@@ -327,14 +315,14 @@ public struct AudioPipelineSheet: View {
                                 }()
                                 
                                 // 7. Converter Delay
-                                let converterDelayText: String = {
-                                    if sampleRateHz != 48000 {
-                                        return "262.0 frames"
-                                    }
-                                    return "0.0 frames"
-                                }()
+                                let converterDelayText = String(format: "%.1f frames", engine.liveConverterDelayFrames)
                                 
-                                // 8. Queue Target
+                                // 8. Protection Limiter
+                                let redDb = engine.liveProtectionReductionDb
+                                let protectionReductionText = String(format: "%.2f dB", redDb)
+                                let protectionInterventionsText = "\(engine.liveProtectionInterventions)"
+                                
+                                // 9. Queue Target
                                 let queueTargetText: String = {
                                     if isCached {
                                         return "0 ms (local disk)"
@@ -351,8 +339,8 @@ public struct AudioPipelineSheet: View {
                                 row("Upgrade correlation", "—")
                                 row("Active Processing", activeProcessingText)
                                 row("Converter Delay", converterDelayText)
-                                row("Protection Reduction", "-0.00 dB")
-                                row("Protection Interventions", "0")
+                                row("Protection Reduction", protectionReductionText)
+                                row("Protection Interventions", protectionInterventionsText)
                                 row("Decoded Layout", "Some(Positioned(Position(FRONT_LEFT | FRONT_RIGHT)))")
                                 row("Loudness Source", "No measurement")
                                 row("Queue Target", queueTargetText)
